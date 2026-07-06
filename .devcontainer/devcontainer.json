@@ -1,0 +1,27 @@
+{
+    "name": "pdf-editor-dev",
+    "dockerComposeFile": "../docker-compose.yml",
+    "service": "dev",
+    "workspaceFolder": "/workspace",
+    "remoteUser": "node",
+    "forwardPorts": [
+        5173,
+        8000
+    ],
+    "postCreateCommand": "mkdir -p /home/node/.codex /home/node/.local/bin && curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh && codex --version",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "dbaeumer.vscode-eslint",
+                "esbenp.prettier-vscode",
+                "ms-azuretools.vscode-docker"
+            ],
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "python.defaultInterpreterPath": "/usr/bin/python3"
+            }
+        }
+    }
+}
