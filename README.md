@@ -15,7 +15,7 @@ Local-first web MVP for a PDF editor.
 ```bash
 cd apps/web
 npm install
-npm run dev -- --host 0.0.0.0 --port 5173
+npm run dev -- --host 0.0.0.0
 ```
 
 Build and type-check:

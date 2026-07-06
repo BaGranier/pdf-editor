@@ -7,7 +7,12 @@ __pycache__/
 # build outputs
 dist/
 build/
+*.tsbuildinfo
 data/output/*
+!data/output/.gitkeep
+data/input/*.pdf
+data/input/**/*.pdf
+!data/input/.gitkeep
 
 # env / secrets
 .env
