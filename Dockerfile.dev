@@ -29,12 +29,23 @@ RUN apt-get update && apt-get install -y \
 RUN mkdir -p /home/node/.codex /home/node/.local/bin /home/node/.cache/uv \
     && chown -R node:node /home/node/.codex /home/node/.local /home/node/.cache
 
+RUN chsh -s /usr/bin/zsh node
+
 ENV CODEX_HOME=/home/node/.codex
 ENV UV_CACHE_DIR=/home/node/.cache/uv
 ENV PATH="/home/node/.local/bin:${PATH}"
 
 USER node
+
+
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+RUN test -x /usr/bin/zsh \
+    && test -d /home/node/.oh-my-zsh \
+    && test -f /home/node/.zshrc \
+    && test "$(stat -c '%U:%G' /home/node/.zshrc)" = "node:node" \
+    && zsh -ic 'case ":$PATH:" in *:/home/node/.local/bin:*) exit 0 ;; *) exit 1 ;; esac' \
+    && uv --version
 
 ENV PATH="/home/node/.local/bin:${PATH}"
 
