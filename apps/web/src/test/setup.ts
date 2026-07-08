@@ -6,9 +6,47 @@ afterEach(() => {
   cleanup();
 });
 
+function resolveScrollPosition(target: HTMLElement, options: ScrollToOptions | number | undefined) {
+  if (typeof options === "number") {
+    return { left: target.scrollLeft, top: options };
+  }
+
+  return {
+    left: options?.left ?? target.scrollLeft,
+    top: options?.top ?? target.scrollTop,
+  };
+}
+
 Object.defineProperty(HTMLElement.prototype, "scrollTo", {
   configurable: true,
-  value: vi.fn(),
+  value: vi.fn(function scrollTo(this: HTMLElement, options?: ScrollToOptions | number) {
+    const { left, top } = resolveScrollPosition(this, options);
+
+    this.scrollLeft = left;
+    this.scrollTop = top;
+    this.dispatchEvent(new Event("scroll"));
+  }),
+});
+
+Object.defineProperty(HTMLElement.prototype, "scrollBy", {
+  configurable: true,
+  value: vi.fn(function scrollBy(this: HTMLElement, options?: ScrollToOptions | number) {
+    if (typeof options === "number") {
+      this.scrollTop += options;
+      return;
+    }
+
+    this.scrollLeft += options?.left ?? 0;
+    this.scrollTop += options?.top ?? 0;
+    this.dispatchEvent(new Event("scroll"));
+  }),
+});
+
+Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+  configurable: true,
+  value: vi.fn(function scrollIntoView(this: HTMLElement) {
+    this.dispatchEvent(new Event("scroll"));
+  }),
 });
 
 Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {

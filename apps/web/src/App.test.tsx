@@ -16,7 +16,7 @@ vi.mock("pdfjs-dist/build/pdf.worker.mjs?url", () => ({
   default: "mock-pdf-worker-url",
 }));
 
-function createPdfDocumentMock() {
+function createPdfDocumentMock(pageCount = 1) {
   const page = {
     getViewport: vi.fn(() => ({ width: 800, height: 1000 })),
     render: vi.fn(() => ({
@@ -26,7 +26,7 @@ function createPdfDocumentMock() {
   };
 
   return {
-    numPages: 1,
+    numPages: pageCount,
     getPage: vi.fn().mockResolvedValue(page),
   };
 }
@@ -79,6 +79,10 @@ describe("App", () => {
       expect(screen.getByRole("complementary", { name: "Documents ouverts" })).toBeInTheDocument();
     });
 
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Aperçu PDF sample.pdf" })).toHaveFocus();
+    });
+
     let documentSidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
     expect(within(documentSidebar).getByRole("button", { name: "sample.pdf, document actif" })).toHaveAttribute(
       "aria-current",
@@ -99,23 +103,30 @@ describe("App", () => {
     });
   });
 
-  it("navigates the sidebar with the keyboard and closes the active document", async () => {
+  it("navigates the sidebar with the keyboard and closes the focused document", async () => {
     render(<App />);
 
     const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
     const fileInput = within(sidebar).getByLabelText("Ouvrir un PDF");
     const pdfA = new File(["%PDF-1.4"], "alpha.pdf", { type: "application/pdf" });
     const pdfB = new File(["%PDF-1.4"], "beta.pdf", { type: "application/pdf" });
+    const pdfC = new File(["%PDF-1.4"], "gamma.pdf", { type: "application/pdf" });
 
     fireEvent.change(fileInput, { target: { files: [pdfA] } });
     fireEvent.change(fileInput, { target: { files: [pdfB] } });
+    fireEvent.change(fileInput, { target: { files: [pdfC] } });
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "beta.pdf, document actif" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "gamma.pdf, document actif" })).toBeInTheDocument();
     });
 
+    fileInput.focus();
+    fireEvent.keyDown(fileInput, { key: "Backspace" });
+
+    expect(screen.getByRole("button", { name: "gamma.pdf, document actif" })).toBeInTheDocument();
+
     sidebar.focus();
-    fireEvent.keyDown(sidebar, { key: "ArrowUp" });
+    fireEvent.keyDown(sidebar, { key: "Home" });
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "alpha.pdf, document actif" })).toHaveAttribute(
@@ -124,21 +135,33 @@ describe("App", () => {
       );
     });
 
-    fireEvent.keyDown(sidebar, { key: "Backspace" });
+    fireEvent.keyDown(sidebar, { key: "End" });
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "beta.pdf, document actif" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "gamma.pdf, document actif" })).toHaveAttribute(
+        "aria-current",
+        "true",
+      );
+    });
+
+    fireEvent.keyDown(sidebar, { key: "ArrowUp" });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "beta.pdf, document actif" })).toHaveAttribute(
+        "aria-current",
+        "true",
+      );
     });
 
     fireEvent.keyDown(sidebar, { key: "Delete" });
 
     await waitFor(() => {
-      expect(screen.getByRole("region", { name: "Aucun PDF ouvert" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "gamma.pdf, document actif" })).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("complementary", { name: "Documents ouverts" })).toHaveTextContent(
-      "Aucun document ouvert.",
-    );
+    expect(screen.queryByRole("button", { name: "beta.pdf" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "beta.pdf, document actif" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "gamma.pdf, document actif" })).toBeInTheDocument();
   });
 
   it("toggles the sidebar and the theme without losing the active document", async () => {
@@ -175,7 +198,7 @@ describe("App", () => {
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
   });
 
-  it("restores scroll positions and supports keyboard and mouse panning", async () => {
+  it("scrolls fluidly with the arrow keys and supports mouse panning", async () => {
     render(<App />);
 
     const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
@@ -189,6 +212,16 @@ describe("App", () => {
     });
 
     const viewer = screen.getByRole("region", { name: "Aperçu PDF scroll.pdf" });
+    const scrollBySpy = vi.spyOn(viewer, "scrollBy");
+    Object.defineProperty(viewer, "clientHeight", {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(viewer, "scrollHeight", {
+      configurable: true,
+      value: 1600,
+    });
+    viewer.focus();
 
     viewer.scrollLeft = 24;
     viewer.scrollTop = 48;
@@ -197,8 +230,15 @@ describe("App", () => {
     fireEvent.keyDown(viewer, { key: "ArrowRight" });
     fireEvent.keyDown(viewer, { key: "ArrowDown" });
 
+    expect(scrollBySpy).toHaveBeenCalledWith({ left: 56, top: 0, behavior: "smooth" });
+    expect(scrollBySpy).toHaveBeenCalledWith({ left: 0, top: 56, behavior: "smooth" });
     expect(viewer).toHaveProperty("scrollLeft", 80);
     expect(viewer).toHaveProperty("scrollTop", 104);
+
+    fireEvent.keyDown(viewer, { key: "ArrowDown", shiftKey: true });
+
+    expect(scrollBySpy).toHaveBeenCalledWith({ left: 0, top: 280, behavior: "smooth" });
+    expect(viewer).toHaveProperty("scrollTop", 384);
 
     fireEvent.mouseDown(viewer, { button: 0, clientX: 100, clientY: 100 });
 
@@ -209,7 +249,7 @@ describe("App", () => {
     fireEvent.mouseMove(window, { clientX: 70, clientY: 60 });
 
     expect(viewer).toHaveProperty("scrollLeft", 110);
-    expect(viewer).toHaveProperty("scrollTop", 144);
+    expect(viewer).toHaveProperty("scrollTop", 424);
 
     fireEvent.mouseUp(window);
 
@@ -221,7 +261,75 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Afficher la barre latérale" }));
 
     expect(screen.getByRole("region", { name: "Aperçu PDF scroll.pdf" })).toHaveProperty("scrollLeft", 110);
-    expect(screen.getByRole("region", { name: "Aperçu PDF scroll.pdf" })).toHaveProperty("scrollTop", 144);
+    expect(screen.getByRole("region", { name: "Aperçu PDF scroll.pdf" })).toHaveProperty("scrollTop", 424);
+  });
+
+  it("moves between PDF pages with PageUp and PageDown", async () => {
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.resolve(createPdfDocumentMock(3)),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    const fileInput = within(sidebar).getByLabelText("Ouvrir un PDF");
+    const pdfFile = new File(["%PDF-1.4"], "pages.pdf", { type: "application/pdf" });
+
+    fireEvent.change(fileInput, { target: { files: [pdfFile] } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Aperçu PDF pages.pdf" })).toBeInTheDocument();
+    });
+
+    const viewer = screen.getByRole("region", { name: "Aperçu PDF pages.pdf" });
+    const scrollToSpy = vi.spyOn(viewer, "scrollTo");
+    Object.defineProperty(viewer, "clientHeight", {
+      configurable: true,
+      value: 400,
+    });
+
+    const page1 = screen.getByLabelText("Page 1");
+    const page2 = screen.getByLabelText("Page 2");
+    const page3 = screen.getByLabelText("Page 3");
+
+    Object.defineProperty(page1, "offsetTop", { configurable: true, value: 0 });
+    Object.defineProperty(page1, "offsetHeight", { configurable: true, value: 900 });
+    Object.defineProperty(page2, "offsetTop", { configurable: true, value: 1000 });
+    Object.defineProperty(page2, "offsetHeight", { configurable: true, value: 900 });
+    Object.defineProperty(page3, "offsetTop", { configurable: true, value: 2000 });
+    Object.defineProperty(page3, "offsetHeight", { configurable: true, value: 900 });
+
+    viewer.focus();
+
+    fireEvent.keyDown(viewer, { key: "PageDown" });
+
+    expect(scrollToSpy).toHaveBeenCalledWith({ top: 1000, behavior: "smooth" });
+    expect(viewer).toHaveProperty("scrollTop", 1000);
+    expect(viewer).toHaveFocus();
+
+    fireEvent.keyDown(viewer, { key: "PageDown" });
+
+    expect(scrollToSpy).toHaveBeenCalledWith({ top: 2000, behavior: "smooth" });
+    expect(viewer).toHaveProperty("scrollTop", 2000);
+
+    const callsBeforeBoundary = scrollToSpy.mock.calls.length;
+    fireEvent.keyDown(viewer, { key: "PageDown" });
+    expect(scrollToSpy).toHaveBeenCalledTimes(callsBeforeBoundary);
+    expect(viewer).toHaveProperty("scrollTop", 2000);
+
+    fireEvent.keyDown(viewer, { key: "PageUp" });
+
+    expect(scrollToSpy).toHaveBeenCalledWith({ top: 1000, behavior: "smooth" });
+    expect(viewer).toHaveProperty("scrollTop", 1000);
+
+    fireEvent.keyDown(viewer, { key: "PageUp" });
+    expect(viewer).toHaveProperty("scrollTop", 0);
+
+    const callsBeforeFirstPage = scrollToSpy.mock.calls.length;
+    fireEvent.keyDown(viewer, { key: "PageUp" });
+    expect(scrollToSpy).toHaveBeenCalledTimes(callsBeforeFirstPage);
+    expect(viewer).toHaveProperty("scrollTop", 0);
   });
 
   it("restores persisted viewer preferences and documents after a remount", async () => {

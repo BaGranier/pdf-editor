@@ -176,18 +176,20 @@ h1 {
   margin-top: auto;
   padding-top: 0.5rem;
   border-top: 1px solid var(--border-color);
+  justify-items: center;
 }
 
 .sidebar-footer__primary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(2, max-content);
   gap: 0.4rem;
+  justify-content: center;
 }
 
 .sidebar-section {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   gap: 0.5rem;
   padding: 0;
   border: 0;
@@ -443,6 +445,7 @@ button:focus-visible {
   font-weight: 600;
   width: fit-content;
   box-shadow: none;
+  margin: 0 auto;
 }
 
 .sidebar-file-picker input {

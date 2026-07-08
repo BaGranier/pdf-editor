@@ -66,6 +66,8 @@ type DocumentSidebarProps = {
 };
 
 type SidebarKeyTarget = "file-input" | string | null;
+type ViewerFocusTarget = "viewer" | null;
+type FocusTarget = SidebarKeyTarget | ViewerFocusTarget;
 
 function clampZoom(value: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * 100) / 100));
@@ -162,14 +164,45 @@ function isInteractiveElement(target: EventTarget | null) {
   );
 }
 
+function getSidebarDocumentId(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return null;
+  }
+
+  const documentButton = target.closest<HTMLElement>("[data-document-id]");
+
+  return documentButton?.dataset.documentId ?? null;
+}
+
+function scrollViewerToPosition(viewer: HTMLElement, left: number, top: number) {
+  if (typeof viewer.scrollTo === "function") {
+    viewer.scrollTo({ left, top, behavior: "smooth" });
+    return;
+  }
+
+  viewer.scrollLeft = left;
+  viewer.scrollTop = top;
+}
+
+function scrollViewerByDelta(viewer: HTMLElement, left: number, top: number) {
+  if (typeof viewer.scrollBy === "function") {
+    viewer.scrollBy({ left, top, behavior: "smooth" });
+    return;
+  }
+
+  viewer.scrollLeft += left;
+  viewer.scrollTop += top;
+}
+
 type PdfPageCanvasProps = {
   pdfDocument: PDFDocumentProxy;
   pageNumber: number;
   zoom: number;
   scrollRootRef: RefObject<HTMLElement | null>;
+  registerPageRef: (pageNumber: number, node: HTMLElement | null) => void;
 };
 
-function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef }: PdfPageCanvasProps) {
+function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef, registerPageRef }: PdfPageCanvasProps) {
   const pageRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [shouldRender, setShouldRender] = useState(false);
@@ -276,7 +309,15 @@ function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef }: PdfPage
   }, []);
 
   return (
-    <article ref={pageRef} className="pdf-page" aria-label={`Page ${pageNumber}`}>
+    <article
+      ref={(node) => {
+        pageRef.current = node;
+        registerPageRef(pageNumber, node);
+      }}
+      className="pdf-page"
+      data-page-number={pageNumber}
+      aria-label={`Page ${pageNumber}`}
+    >
       <div className="page-number">Page {pageNumber}</div>
       <div className="page-surface">
         {renderState === "error" ? (
@@ -297,11 +338,14 @@ type PdfViewerProps = {
   document: OpenPdfDocument;
   onZoomChange: (documentId: string, delta: number) => void;
   onScrollPositionChange: (documentId: string, scrollLeft: number, scrollTop: number) => void;
+  focusRequest: number;
 };
 
-function PdfViewer({ document, onZoomChange, onScrollPositionChange }: PdfViewerProps) {
+function PdfViewer({ document, onZoomChange, onScrollPositionChange, focusRequest }: PdfViewerProps) {
   const viewerRef = useRef<HTMLElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
+  const lastFocusRequestRef = useRef<number | null>(null);
+  const pageRefs = useRef(new Map<number, HTMLElement | null>());
   const dragStateRef = useRef<{
     startX: number;
     startY: number;
@@ -314,6 +358,61 @@ function PdfViewer({ document, onZoomChange, onScrollPositionChange }: PdfViewer
     [document.pageCount],
   );
 
+  const registerPageRef = useCallback((pageNumber: number, node: HTMLElement | null) => {
+    if (node === null) {
+      pageRefs.current.delete(pageNumber);
+      return;
+    }
+
+    pageRefs.current.set(pageNumber, node);
+  }, []);
+
+  const getCurrentPageNumber = useCallback(() => {
+    const viewer = viewerRef.current;
+
+    if (!viewer) {
+      return 1;
+    }
+
+    const targetScrollTop = viewer.scrollTop + viewer.clientHeight / 2;
+    let currentPageNumber = 1;
+
+    for (const pageNumber of pages) {
+      const pageElement = pageRefs.current.get(pageNumber);
+
+      if (!pageElement) {
+        continue;
+      }
+
+      const pageTop = pageElement.offsetTop;
+      const pageBottom = pageTop + pageElement.offsetHeight;
+
+      if (targetScrollTop >= pageTop && targetScrollTop < pageBottom) {
+        return pageNumber;
+      }
+
+      if (targetScrollTop >= pageTop) {
+        currentPageNumber = pageNumber;
+      }
+    }
+
+    return currentPageNumber;
+  }, [pages]);
+
+  const scrollPageIntoView = useCallback((pageNumber: number) => {
+    const viewer = viewerRef.current;
+    const pageElement = pageRefs.current.get(pageNumber);
+
+    if (!viewer || !pageElement) {
+      return;
+    }
+
+    viewer.scrollTo({
+      top: pageElement.offsetTop,
+      behavior: "smooth",
+    });
+  }, []);
+
   useEffect(() => {
     const viewer = viewerRef.current;
 
@@ -324,6 +423,17 @@ function PdfViewer({ document, onZoomChange, onScrollPositionChange }: PdfViewer
     viewer.scrollLeft = document.scrollLeft;
     viewer.scrollTop = document.scrollTop;
   }, [document.id, document.scrollLeft, document.scrollTop]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+
+    if (!viewer || lastFocusRequestRef.current === focusRequest) {
+      return;
+    }
+
+    lastFocusRequestRef.current = focusRequest;
+    viewer.focus();
+  }, [document.id, focusRequest]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -429,32 +539,52 @@ function PdfViewer({ document, onZoomChange, onScrollPositionChange }: PdfViewer
         return;
       }
 
-      let nextScrollLeft = viewer.scrollLeft;
-      let nextScrollTop = viewer.scrollTop;
+      const arrowStep = event.shiftKey ? 280 : VIEWER_PAN_STEP;
+      const currentPageNumber = getCurrentPageNumber();
+      const maxScrollTop = Math.max(0, viewer.scrollHeight - viewer.clientHeight);
 
       switch (event.key) {
         case "ArrowLeft":
-          nextScrollLeft -= VIEWER_PAN_STEP;
+          event.preventDefault();
+          scrollViewerByDelta(viewer, -arrowStep, 0);
           break;
         case "ArrowRight":
-          nextScrollLeft += VIEWER_PAN_STEP;
+          event.preventDefault();
+          scrollViewerByDelta(viewer, arrowStep, 0);
           break;
         case "ArrowUp":
-          nextScrollTop -= VIEWER_PAN_STEP;
+          event.preventDefault();
+          scrollViewerByDelta(viewer, 0, -arrowStep);
           break;
         case "ArrowDown":
-          nextScrollTop += VIEWER_PAN_STEP;
+          event.preventDefault();
+          scrollViewerByDelta(viewer, 0, arrowStep);
+          break;
+        case "PageUp":
+          event.preventDefault();
+          if (currentPageNumber > 1) {
+            scrollPageIntoView(currentPageNumber - 1);
+          }
+          break;
+        case "PageDown":
+          event.preventDefault();
+          if (currentPageNumber < document.pageCount) {
+            scrollPageIntoView(currentPageNumber + 1);
+          }
+          break;
+        case "Home":
+          event.preventDefault();
+          scrollViewerToPosition(viewer, viewer.scrollLeft, 0);
+          break;
+        case "End":
+          event.preventDefault();
+          scrollViewerToPosition(viewer, viewer.scrollLeft, maxScrollTop);
           break;
         default:
           return;
       }
-
-      event.preventDefault();
-      viewer.scrollLeft = nextScrollLeft;
-      viewer.scrollTop = nextScrollTop;
-      onScrollPositionChange(document.id, viewer.scrollLeft, viewer.scrollTop);
     },
-    [document.id, onScrollPositionChange],
+    [document.id, document.pageCount, getCurrentPageNumber, scrollPageIntoView],
   );
 
   const handleMouseDown = useCallback((event: MouseEvent<HTMLElement>) => {
@@ -497,6 +627,7 @@ function PdfViewer({ document, onZoomChange, onScrollPositionChange }: PdfViewer
             pageNumber={pageNumber}
             zoom={document.zoom}
             scrollRootRef={viewerRef}
+            registerPageRef={registerPageRef}
           />
         ))}
       </div>
@@ -550,10 +681,12 @@ function DocumentSidebar({
                     <button
                       type="button"
                       className="document-select"
+                      data-document-id={document.id}
                       ref={getDocumentButtonRef(document.id)}
                       onClick={() => onSelectDocument(document.id)}
                       aria-current={isActive ? "true" : undefined}
                       aria-selected={isActive}
+                      tabIndex={isActive ? 0 : -1}
                       aria-label={`${document.fileName}${isActive ? ", document actif" : ""}`}
                       title={document.fileName}
                     >
@@ -565,6 +698,7 @@ function DocumentSidebar({
                     <button
                       type="button"
                       className="document-close"
+                      data-document-id={document.id}
                       onClick={() => onCloseDocument(document.id)}
                       aria-label={`Fermer ${document.fileName}`}
                       title="Fermer"
@@ -678,13 +812,14 @@ export function App() {
   const documentsRef = useRef<OpenPdfDocument[]>([]);
   const openFileInputRef = useRef<HTMLInputElement | null>(null);
   const documentButtonRefs = useRef(new Map<string, HTMLButtonElement | null>());
-  const pendingFocusTargetRef = useRef<SidebarKeyTarget>(null);
+  const pendingFocusTargetRef = useRef<FocusTarget>(null);
   const sidebarId = "documents-sidebar";
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme(storedPreferences));
   const [isSidebarVisible, setIsSidebarVisible] = useState(() => storedPreferences?.sidebarVisible ?? true);
   const [documents, setDocuments] = useState<OpenPdfDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [status, setStatus] = useState("Sélectionnez un PDF local.");
+  const [viewerFocusRequest, setViewerFocusRequest] = useState(0);
   const [isRestoringDocuments, setIsRestoringDocuments] = useState(
     () => (storedPreferences?.documentOrder.length ?? 0) > 0,
   );
@@ -709,7 +844,9 @@ export function App() {
 
     const pendingFocusTarget = pendingFocusTargetRef.current;
 
-    if (pendingFocusTarget === "file-input") {
+    if (pendingFocusTarget === "viewer") {
+      setViewerFocusRequest((currentRequest) => currentRequest + 1);
+    } else if (pendingFocusTarget === "file-input") {
       openFileInputRef.current?.focus();
     } else {
       documentButtonRefs.current.get(pendingFocusTarget)?.focus();
@@ -769,6 +906,9 @@ export function App() {
           ? storedPreferences.activeDocumentId
           : restoredDocuments[restoredDocuments.length - 1]?.id ?? null,
       );
+      if (restoredDocuments.length > 0) {
+        pendingFocusTargetRef.current = "viewer";
+      }
       setStatus(
         failedCount > 0
           ? failedCount === 1
@@ -898,6 +1038,20 @@ export function App() {
     [documents],
   );
 
+  const activateFocusedDocument = useCallback(
+    (documentId: string | null) => {
+      if (!documentId) {
+        return;
+      }
+
+      if (documents.some((document) => document.id === documentId)) {
+        pendingFocusTargetRef.current = documentId;
+        setActiveDocumentId(documentId);
+      }
+    },
+    [documents],
+  );
+
   const closeActiveDocumentByKeyboard = useCallback(() => {
     if (!activeDocument) {
       return;
@@ -908,6 +1062,11 @@ export function App() {
 
   const toggleTheme = useCallback(() => {
     setTheme((currentTheme) => (currentTheme === "light" ? "dark" : "light"));
+  }, []);
+
+  const selectDocumentFromSidebar = useCallback((documentId: string) => {
+    pendingFocusTargetRef.current = "viewer";
+    setActiveDocumentId(documentId);
   }, []);
 
   const clearLocalData = useCallback(() => {
@@ -936,31 +1095,77 @@ export function App() {
         return;
       }
 
+      const targetElement = event.target instanceof HTMLElement ? event.target : null;
+
+      if (targetElement !== event.currentTarget && targetElement?.closest(".document-list") === null) {
+        return;
+      }
+
       if (documents.length === 0) {
         return;
       }
 
+      const targetDocumentId = getSidebarDocumentId(event.target);
+      const focusedDocumentIndex =
+        targetDocumentId === null ? -1 : documents.findIndex((document) => document.id === targetDocumentId);
+
       if (event.key === "Delete" || event.key === "Backspace") {
         event.preventDefault();
-        closeActiveDocumentByKeyboard();
+        if (targetDocumentId !== null) {
+          closeDocument(targetDocumentId);
+        } else {
+          closeActiveDocumentByKeyboard();
+        }
         return;
       }
 
-      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") {
+      if (event.key === "Enter" || event.key === " ") {
+        if (targetDocumentId !== null && targetElement?.classList.contains("document-select")) {
+          event.preventDefault();
+          activateFocusedDocument(targetDocumentId);
+        }
+
         return;
+      }
+
+      if (event.key === "PageUp" || event.key === "PageDown") {
+        event.preventDefault();
+        return;
+      }
+
+      let nextIndex = -1;
+
+      switch (event.key) {
+        case "ArrowUp":
+          nextIndex = Math.max((focusedDocumentIndex >= 0 ? focusedDocumentIndex : activeDocumentIndex) - 1, 0);
+          break;
+        case "ArrowDown":
+          nextIndex = Math.min(
+            (focusedDocumentIndex >= 0 ? focusedDocumentIndex : activeDocumentIndex) + 1,
+            documents.length - 1,
+          );
+          break;
+        case "Home":
+          nextIndex = 0;
+          break;
+        case "End":
+          nextIndex = documents.length - 1;
+          break;
+        default:
+          return;
       }
 
       event.preventDefault();
-
-      const currentIndex = activeDocumentIndex < 0 ? 0 : activeDocumentIndex;
-      const nextIndex =
-        event.key === "ArrowDown"
-          ? Math.min(currentIndex + 1, documents.length - 1)
-          : Math.max(currentIndex - 1, 0);
-
       selectDocumentByKeyboard(nextIndex);
     },
-    [activeDocumentIndex, closeActiveDocumentByKeyboard, documents.length, selectDocumentByKeyboard],
+    [
+      activeDocumentIndex,
+      activateFocusedDocument,
+      closeActiveDocumentByKeyboard,
+      closeDocument,
+      documents,
+      selectDocumentByKeyboard,
+    ],
   );
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -1021,6 +1226,7 @@ export function App() {
     if (openedDocuments.length > 0) {
       setDocuments((currentDocuments) => [...currentDocuments, ...openedDocuments]);
       setActiveDocumentId(openedDocuments[openedDocuments.length - 1].id);
+      pendingFocusTargetRef.current = "viewer";
     }
 
     if (failedFileNames.length > 0) {
@@ -1108,7 +1314,7 @@ export function App() {
             activeDocumentId={activeDocumentId}
             theme={theme}
             openFileInputRef={openFileInputRef}
-            onSelectDocument={setActiveDocumentId}
+            onSelectDocument={selectDocumentFromSidebar}
             onCloseDocument={closeDocument}
             onToggleTheme={toggleTheme}
             onClearLocalData={clearLocalData}
@@ -1127,6 +1333,7 @@ export function App() {
             document={activeDocument}
             onZoomChange={updateDocumentZoom}
             onScrollPositionChange={updateDocumentScrollPosition}
+            focusRequest={viewerFocusRequest}
           />
         ) : (
           <EmptyState status={status} />
