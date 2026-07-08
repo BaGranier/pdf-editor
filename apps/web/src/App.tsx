@@ -1,14 +1,40 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type RefObject,
+} from "react";
 import * as pdfjsLib from "pdfjs-dist";
-import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
+import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import "./App.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 2;
-const ZOOM_STEP = 0.25;
+const MAX_ZOOM = 4;
+const ZOOM_STEP = 0.1;
+
+type RenderState = "idle" | "loading" | "ready" | "error";
+
+type OpenPdfDocument = {
+  id: string;
+  fileName: string;
+  file: File;
+  pdfDocument: PDFDocumentProxy;
+  loadingTask: PDFDocumentLoadingTask;
+  pageCount: number;
+  zoom: number;
+  scrollTop: number;
+  error: string | null;
+};
+
+function clampZoom(value: number) {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * 100) / 100));
+}
 
 function clearCanvas(canvas: HTMLCanvasElement | null) {
   if (!canvas) {
@@ -22,38 +48,74 @@ function clearCanvas(canvas: HTMLCanvasElement | null) {
   canvas.removeAttribute("style");
 }
 
-export function App() {
+function releasePdfDocument(document: OpenPdfDocument) {
+  window.setTimeout(() => {
+    void document.loadingTask.destroy().catch(() => undefined);
+  }, 0);
+}
+
+type PdfPageCanvasProps = {
+  pdfDocument: PDFDocumentProxy;
+  pageNumber: number;
+  zoom: number;
+  scrollRootRef: RefObject<HTMLElement | null>;
+};
+
+function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef }: PdfPageCanvasProps) {
+  const pageRef = useRef<HTMLElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
-  const [fileName, setFileName] = useState<string>("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageCount, setPageCount] = useState(0);
-  const [zoom, setZoom] = useState(1);
-  const [status, setStatus] = useState("Sélectionnez un PDF local.");
+  const [shouldRender, setShouldRender] = useState(false);
+  const [renderState, setRenderState] = useState<RenderState>("idle");
 
   useEffect(() => {
+    const pageElement = pageRef.current;
+
+    if (!pageElement) {
+      return;
+    }
+
+    if (!("IntersectionObserver" in window)) {
+      setShouldRender(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setShouldRender(true);
+          observer.disconnect();
+        }
+      },
+      {
+        root: scrollRootRef.current,
+        rootMargin: "1200px 0px",
+        threshold: 0.01,
+      },
+    );
+
+    observer.observe(pageElement);
+
     return () => {
-      void pdfDocument?.cleanup();
+      observer.disconnect();
     };
-  }, [pdfDocument]);
+  }, [scrollRootRef]);
 
   useEffect(() => {
     let isCancelled = false;
     let renderTask: RenderTask | null = null;
+    const canvas = canvasRef.current;
+
+    if (!shouldRender || !canvas) {
+      return;
+    }
 
     async function renderPage() {
-      const canvas = canvasRef.current;
-
-      if (!pdfDocument || !canvas) {
-        return;
-      }
-
-      setStatus("Chargement de la page...");
+      setRenderState("loading");
 
       try {
-        const page = await pdfDocument.getPage(currentPage);
+        const page = await pdfDocument.getPage(pageNumber);
 
-        if (isCancelled) {
+        if (isCancelled || !canvas) {
           return;
         }
 
@@ -82,11 +144,11 @@ export function App() {
         await renderTask.promise;
 
         if (!isCancelled) {
-          setStatus("");
+          setRenderState("ready");
         }
       } catch (error) {
         if (!isCancelled && (error as Error).name !== "RenderingCancelledException") {
-          setStatus("Impossible d'afficher cette page PDF.");
+          setRenderState("error");
         }
       }
     }
@@ -97,92 +159,384 @@ export function App() {
       isCancelled = true;
       renderTask?.cancel();
     };
-  }, [currentPage, pdfDocument, zoom]);
+  }, [pageNumber, pdfDocument, shouldRender, zoom]);
 
-  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+  useEffect(() => {
+    return () => {
+      clearCanvas(canvasRef.current);
+    };
+  }, []);
 
-    if (!file) {
+  return (
+    <article ref={pageRef} className="pdf-page" aria-label={`Page ${pageNumber}`}>
+      <div className="page-number">Page {pageNumber}</div>
+      <div className="page-surface">
+        {renderState === "error" ? (
+          <p className="page-error">Impossible d'afficher cette page.</p>
+        ) : null}
+        {renderState !== "ready" && renderState !== "error" ? (
+          <div className="page-placeholder" aria-hidden="true">
+            {renderState === "loading" ? "Chargement..." : ""}
+          </div>
+        ) : null}
+        <canvas ref={canvasRef} className="pdf-canvas" />
+      </div>
+    </article>
+  );
+}
+
+type PdfViewerProps = {
+  document: OpenPdfDocument;
+  onZoomChange: (documentId: string, delta: number) => void;
+  onScrollTopChange: (documentId: string, scrollTop: number) => void;
+};
+
+function PdfViewer({ document, onZoomChange, onScrollTopChange }: PdfViewerProps) {
+  const viewerRef = useRef<HTMLElement | null>(null);
+  const scrollFrameRef = useRef<number | null>(null);
+  const pages = useMemo(
+    () => Array.from({ length: document.pageCount }, (_, index) => index + 1),
+    [document.pageCount],
+  );
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+
+    if (!viewer) {
       return;
     }
 
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+    viewer.scrollTop = document.scrollTop;
+  }, [document.id]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+
+    if (!viewer) {
+      return;
+    }
+
+    function handleWheel(event: WheelEvent) {
+      if (!event.ctrlKey && !event.metaKey) {
+        return;
+      }
+
+      event.preventDefault();
+      onZoomChange(document.id, event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
+    }
+
+    viewer.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      viewer.removeEventListener("wheel", handleWheel);
+    };
+  }, [document.id, onZoomChange]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+
+    return () => {
+      if (scrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+
+      if (viewer) {
+        onScrollTopChange(document.id, viewer.scrollTop);
+      }
+    };
+  }, [document.id, onScrollTopChange]);
+
+  const handleScroll = useCallback(() => {
+    const viewer = viewerRef.current;
+
+    if (!viewer || scrollFrameRef.current !== null) {
+      return;
+    }
+
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      onScrollTopChange(document.id, viewer.scrollTop);
+    });
+  }, [document.id, onScrollTopChange]);
+
+  return (
+    <section
+      ref={viewerRef}
+      className="viewer"
+      aria-label={`Aperçu PDF ${document.fileName}`}
+      onScroll={handleScroll}
+    >
+      {document.error ? <p className="status">{document.error}</p> : null}
+      <div className="pdf-document" aria-label={`Document PDF ${document.fileName}`}>
+        {pages.map((pageNumber) => (
+          <PdfPageCanvas
+            key={`${document.id}-${pageNumber}`}
+            pdfDocument={document.pdfDocument}
+            pageNumber={pageNumber}
+            zoom={document.zoom}
+            scrollRootRef={viewerRef}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+type TabsBarProps = {
+  documents: OpenPdfDocument[];
+  activeDocumentId: string | null;
+  onSelectDocument: (documentId: string) => void;
+  onCloseDocument: (documentId: string) => void;
+};
+
+function TabsBar({
+  documents,
+  activeDocumentId,
+  onSelectDocument,
+  onCloseDocument,
+}: TabsBarProps) {
+  return (
+    <nav className="tabs-bar" aria-label="Documents ouverts">
+      <div className="tabs-list" role="tablist" aria-label="Documents PDF">
+        {documents.map((document) => {
+          const isActive = document.id === activeDocumentId;
+
+          return (
+            <div key={document.id} className={isActive ? "tab is-active" : "tab"}>
+              <button
+                type="button"
+                className="tab-select"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => onSelectDocument(document.id)}
+                title={document.fileName}
+              >
+                <span className="tab-title">{document.fileName}</span>
+              </button>
+              <button
+                type="button"
+                className="tab-close"
+                onClick={() => onCloseDocument(document.id)}
+                aria-label={`Fermer ${document.fileName}`}
+                title="Fermer"
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
+type EmptyStateProps = {
+  status: string;
+  onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
+};
+
+function EmptyState({ status, onFileChange }: EmptyStateProps) {
+  return (
+    <section className="empty-state" aria-label="Aucun PDF ouvert">
+      <p className="status">{status}</p>
+      <label className="file-picker empty-file-picker">
+        <span>Ouvrir un PDF</span>
+        <input type="file" accept="application/pdf,.pdf" multiple onChange={onFileChange} />
+      </label>
+    </section>
+  );
+}
+
+export function App() {
+  const nextDocumentId = useRef(1);
+  const documentsRef = useRef<OpenPdfDocument[]>([]);
+  const [documents, setDocuments] = useState<OpenPdfDocument[]>([]);
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+  const [status, setStatus] = useState("Sélectionnez un PDF local.");
+  const activeDocument = useMemo(
+    () => documents.find((document) => document.id === activeDocumentId) ?? null,
+    [activeDocumentId, documents],
+  );
+
+  useEffect(() => {
+    documentsRef.current = documents;
+  }, [documents]);
+
+  useEffect(() => {
+    return () => {
+      documentsRef.current.forEach(releasePdfDocument);
+    };
+  }, []);
+
+  const updateDocumentZoom = useCallback((documentId: string, delta: number) => {
+    setDocuments((currentDocuments) =>
+      currentDocuments.map((document) => {
+        if (document.id !== documentId) {
+          return document;
+        }
+
+        const nextZoom = clampZoom(document.zoom + delta);
+        return nextZoom === document.zoom ? document : { ...document, zoom: nextZoom };
+      }),
+    );
+  }, []);
+
+  const updateDocumentScrollTop = useCallback((documentId: string, scrollTop: number) => {
+    setDocuments((currentDocuments) =>
+      currentDocuments.map((document) => {
+        if (document.id !== documentId || document.scrollTop === scrollTop) {
+          return document;
+        }
+
+        return { ...document, scrollTop };
+      }),
+    );
+  }, []);
+
+  const closeDocument = useCallback(
+    (documentId: string) => {
+      const closingIndex = documents.findIndex((document) => document.id === documentId);
+
+      if (closingIndex < 0) {
+        return;
+      }
+
+      const closingDocument = documents[closingIndex];
+      const nextDocuments = documents.filter((document) => document.id !== documentId);
+      const fallbackIndex = Math.min(closingIndex, nextDocuments.length - 1);
+      const fallbackDocument = fallbackIndex >= 0 ? nextDocuments[fallbackIndex] : null;
+
+      setDocuments(nextDocuments);
+      setActiveDocumentId((currentActiveId) => {
+        if (currentActiveId !== documentId) {
+          return nextDocuments.some((document) => document.id === currentActiveId)
+            ? currentActiveId
+            : (fallbackDocument?.id ?? null);
+        }
+
+        return fallbackDocument?.id ?? null;
+      });
+      setStatus(nextDocuments.length > 0 ? "" : "Sélectionnez un PDF local.");
+      releasePdfDocument(closingDocument);
+    },
+    [documents],
+  );
+
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const selectedFiles = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+
+    if (selectedFiles.length === 0) {
+      return;
+    }
+
+    const pdfFiles = selectedFiles.filter(
+      (file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"),
+    );
+
+    if (pdfFiles.length === 0) {
       setStatus("Choisissez un fichier PDF.");
       return;
     }
 
-    setStatus("Ouverture du PDF...");
+    setStatus(
+      pdfFiles.length === 1 ? "Ouverture du PDF..." : `Ouverture de ${pdfFiles.length} PDF...`,
+    );
 
-    try {
-      const data = new Uint8Array(await file.arrayBuffer());
-      const loadedDocument = await pdfjsLib.getDocument({ data }).promise;
+    const openedDocuments: OpenPdfDocument[] = [];
+    const failedFileNames: string[] = [];
 
-      setPdfDocument(loadedDocument);
-      setFileName(file.name);
-      setCurrentPage(1);
-      setPageCount(loadedDocument.numPages);
-      setZoom(1);
-      setStatus("");
-    } catch {
-      setPdfDocument(null);
-      setFileName("");
-      setCurrentPage(1);
-      setPageCount(0);
-      clearCanvas(canvasRef.current);
-      setStatus("Impossible d'ouvrir ce PDF.");
+    for (const file of pdfFiles) {
+      try {
+        const data = new Uint8Array(await file.arrayBuffer());
+        const loadingTask = pdfjsLib.getDocument({ data });
+        const pdfDocument = await loadingTask.promise;
+        const documentId = `pdf-${Date.now()}-${nextDocumentId.current}`;
+
+        nextDocumentId.current += 1;
+        openedDocuments.push({
+          id: documentId,
+          fileName: file.name,
+          file,
+          pdfDocument,
+          loadingTask,
+          pageCount: pdfDocument.numPages,
+          zoom: 1,
+          scrollTop: 0,
+          error: null,
+        });
+      } catch {
+        failedFileNames.push(file.name);
+      }
     }
-  }
 
-  const hasDocument = pdfDocument !== null;
+    if (openedDocuments.length > 0) {
+      setDocuments((currentDocuments) => [...currentDocuments, ...openedDocuments]);
+      setActiveDocumentId(openedDocuments[openedDocuments.length - 1].id);
+    }
+
+    if (failedFileNames.length > 0) {
+      setStatus(
+        failedFileNames.length === 1
+          ? `Impossible d'ouvrir ${failedFileNames[0]}.`
+          : `${failedFileNames.length} PDF n'ont pas pu être ouverts.`,
+      );
+      return;
+    }
+
+    const ignoredFiles = selectedFiles.length - pdfFiles.length;
+    setStatus(ignoredFiles > 0 ? `${ignoredFiles} fichier non PDF ignoré.` : "");
+  }
 
   return (
     <main className="app-shell">
-      <section className="toolbar" aria-label="Contrôles PDF">
+      <section className="toolbar toolbar--sticky" aria-label="Contrôles PDF">
         <div className="file-controls">
           <h1>PDF Editor MVP</h1>
           <label className="file-picker">
             <span>Ouvrir un PDF</span>
-            <input type="file" accept="application/pdf,.pdf" onChange={handleFileChange} />
+            <input type="file" accept="application/pdf,.pdf" multiple onChange={handleFileChange} />
           </label>
         </div>
 
         <div className="document-meta" aria-live="polite">
-          {fileName ? <strong>{fileName}</strong> : <span>Aucun PDF sélectionné</span>}
-          {hasDocument ? (
-            <span>
-              Page {currentPage} / {pageCount}
-            </span>
-          ) : null}
+          {activeDocument ? (
+            <>
+              <strong>{activeDocument.fileName}</strong>
+              <span>
+                {activeDocument.pageCount} page{activeDocument.pageCount > 1 ? "s" : ""}
+              </span>
+            </>
+          ) : (
+            <span>Aucun PDF sélectionné</span>
+          )}
         </div>
 
         <div className="page-controls">
           <button
             type="button"
-            onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
-            disabled={!hasDocument || currentPage <= 1}
-          >
-            Page précédente
-          </button>
-          <button
-            type="button"
-            onClick={() => setCurrentPage((page) => Math.min(pageCount, page + 1))}
-            disabled={!hasDocument || currentPage >= pageCount}
-          >
-            Page suivante
-          </button>
-          <button
-            type="button"
-            onClick={() => setZoom((value) => Math.max(MIN_ZOOM, value - ZOOM_STEP))}
-            disabled={!hasDocument || zoom <= MIN_ZOOM}
+            onClick={() => {
+              if (activeDocument) {
+                updateDocumentZoom(activeDocument.id, -ZOOM_STEP);
+              }
+            }}
+            disabled={!activeDocument || activeDocument.zoom <= MIN_ZOOM}
             aria-label="Réduire le zoom"
           >
             -
           </button>
-          <span className="zoom-value">{Math.round(zoom * 100)}%</span>
+          <span className="zoom-value">
+            {activeDocument ? `${Math.round(activeDocument.zoom * 100)}%` : "-"}
+          </span>
           <button
             type="button"
-            onClick={() => setZoom((value) => Math.min(MAX_ZOOM, value + ZOOM_STEP))}
-            disabled={!hasDocument || zoom >= MAX_ZOOM}
+            onClick={() => {
+              if (activeDocument) {
+                updateDocumentZoom(activeDocument.id, ZOOM_STEP);
+              }
+            }}
+            disabled={!activeDocument || activeDocument.zoom >= MAX_ZOOM}
             aria-label="Augmenter le zoom"
           >
             +
@@ -190,10 +544,24 @@ export function App() {
         </div>
       </section>
 
-      <section className="viewer" aria-label="Aperçu PDF">
-        {status ? <p className="status">{status}</p> : null}
-        <canvas ref={canvasRef} className="pdf-canvas" />
-      </section>
+      {documents.length > 0 ? (
+        <TabsBar
+          documents={documents}
+          activeDocumentId={activeDocumentId}
+          onSelectDocument={setActiveDocumentId}
+          onCloseDocument={closeDocument}
+        />
+      ) : null}
+
+      {activeDocument ? (
+        <PdfViewer
+          document={activeDocument}
+          onZoomChange={updateDocumentZoom}
+          onScrollTopChange={updateDocumentScrollTop}
+        />
+      ) : (
+        <EmptyState status={status} onFileChange={handleFileChange} />
+      )}
     </main>
   );
 }

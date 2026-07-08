@@ -26,6 +26,14 @@ npm run lint
 npm run build
 ```
 
+Run tests:
+
+```bash
+cd apps/web
+npm run test
+npm run test:run
+```
+
 ## Backend
 
 ```bash
