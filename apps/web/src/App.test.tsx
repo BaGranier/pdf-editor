@@ -40,6 +40,7 @@ describe("App", () => {
     render(<App />);
 
     const toolbar = screen.getByRole("region", { name: "Contrôles PDF" });
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
 
     expect(screen.getByRole("main")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "PDF Editor MVP" })).toBeInTheDocument();
@@ -47,27 +48,45 @@ describe("App", () => {
     expect(within(toolbar).getByLabelText("Ouvrir un PDF")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Réduire le zoom" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Augmenter le zoom" })).toBeInTheDocument();
+    expect(sidebar).toBeInTheDocument();
+    expect(within(sidebar).getByText("Aucun PDF ouvert.")).toBeInTheDocument();
   });
 
-  it("opens a PDF, shows the tabs area, and exposes the active document", async () => {
+  it("opens PDFs in the sidebar and marks the active document", async () => {
     render(<App />);
 
     const toolbar = screen.getByRole("region", { name: "Contrôles PDF" });
     const fileInput = within(toolbar).getByLabelText("Ouvrir un PDF");
     const pdfFile = new File(["%PDF-1.4"], "sample.pdf", { type: "application/pdf" });
+    const secondPdf = new File(["%PDF-1.4"], "second.pdf", { type: "application/pdf" });
 
     fireEvent.change(fileInput, { target: { files: [pdfFile] } });
 
     await waitFor(() => {
-      expect(screen.getByRole("tablist", { name: "Documents PDF" })).toBeInTheDocument();
+      expect(screen.getByRole("complementary", { name: "Documents ouverts" })).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("tab", { name: "sample.pdf" })).toBeInTheDocument();
+    let sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    expect(within(sidebar).getByRole("button", { name: "sample.pdf, document actif" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
     expect(screen.getByRole("button", { name: "Réduire le zoom" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Augmenter le zoom" })).toBeInTheDocument();
+
+    fireEvent.change(fileInput, { target: { files: [secondPdf] } });
+
+    await waitFor(() => {
+      sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+      expect(within(sidebar).getByRole("button", { name: "sample.pdf" })).toBeInTheDocument();
+      expect(within(sidebar).getByRole("button", { name: "second.pdf, document actif" })).toHaveAttribute(
+        "aria-current",
+        "true",
+      );
+    });
   });
 
-  it("restores the saved scroll position for each PDF tab", async () => {
+  it("restores the saved scroll position for each open document", async () => {
     render(<App />);
 
     const toolbar = screen.getByRole("region", { name: "Contrôles PDF" });
@@ -78,22 +97,24 @@ describe("App", () => {
     fireEvent.change(fileInput, { target: { files: [pdfA] } });
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: "alpha.pdf" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "alpha.pdf, document actif" })).toBeInTheDocument();
     });
 
     const alphaViewer = screen.getByRole("region", { name: "Aperçu PDF alpha.pdf" });
     alphaViewer.scrollTop = 240;
+    fireEvent.scroll(alphaViewer);
 
     fireEvent.change(fileInput, { target: { files: [pdfB] } });
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: "beta.pdf" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "beta.pdf, document actif" })).toBeInTheDocument();
     });
 
     const betaViewer = screen.getByRole("region", { name: "Aperçu PDF beta.pdf" });
     betaViewer.scrollTop = 80;
+    fireEvent.scroll(betaViewer);
 
-    fireEvent.click(screen.getByRole("tab", { name: "alpha.pdf" }));
+    fireEvent.click(screen.getByRole("button", { name: "alpha.pdf" }));
 
     await waitFor(() => {
       expect(screen.getByRole("region", { name: "Aperçu PDF alpha.pdf" })).toBeInTheDocument();
@@ -104,7 +125,7 @@ describe("App", () => {
       240,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "beta.pdf" }));
+    fireEvent.click(screen.getByRole("button", { name: "beta.pdf" }));
 
     await waitFor(() => {
       expect(screen.getByRole("region", { name: "Aperçu PDF beta.pdf" })).toBeInTheDocument();
@@ -116,20 +137,31 @@ describe("App", () => {
     );
   });
 
-  it("drops scroll state when a document is closed and reopened", async () => {
+  it("closes the active document and falls back to another open document", async () => {
     render(<App />);
 
     const toolbar = screen.getByRole("region", { name: "Contrôles PDF" });
     const fileInput = within(toolbar).getByLabelText("Ouvrir un PDF");
     const pdfFile = new File(["%PDF-1.4"], "gamma.pdf", { type: "application/pdf" });
+    const otherPdf = new File(["%PDF-1.4"], "delta.pdf", { type: "application/pdf" });
 
     fireEvent.change(fileInput, { target: { files: [pdfFile] } });
 
     await waitFor(() => {
-      expect(screen.getByRole("tab", { name: "gamma.pdf" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "gamma.pdf, document actif" })).toBeInTheDocument();
     });
 
-    screen.getByRole("region", { name: "Aperçu PDF gamma.pdf" }).scrollTop = 190;
+    fireEvent.change(fileInput, { target: { files: [otherPdf] } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "delta.pdf, document actif" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Fermer delta.pdf" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "gamma.pdf, document actif" })).toBeInTheDocument();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Fermer gamma.pdf" }));
 
@@ -137,19 +169,8 @@ describe("App", () => {
       expect(screen.getByRole("region", { name: "Aucun PDF ouvert" })).toBeInTheDocument();
     });
 
-    const emptyFileInput = within(screen.getByRole("region", { name: "Aucun PDF ouvert" })).getByLabelText(
-      "Ouvrir un PDF",
-    );
-
-    fireEvent.change(emptyFileInput, { target: { files: [pdfFile] } });
-
-    await waitFor(() => {
-      expect(screen.getByRole("region", { name: "Aperçu PDF gamma.pdf" })).toBeInTheDocument();
-    });
-
-    expect(screen.getByRole("region", { name: "Aperçu PDF gamma.pdf" })).toHaveProperty(
-      "scrollTop",
-      0,
+    expect(screen.getByRole("complementary", { name: "Documents ouverts" })).toHaveTextContent(
+      "Aucun document ouvert.",
     );
   });
 });

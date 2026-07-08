@@ -32,6 +32,14 @@ type OpenPdfDocument = {
   error: string | null;
 };
 
+type DocumentSidebarProps = {
+  documents: OpenPdfDocument[];
+  activeDocumentId: string | null;
+  onSelectDocument: (documentId: string) => void;
+  onCloseDocument: (documentId: string) => void;
+  status: string;
+};
+
 function clampZoom(value: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * 100) / 100));
 }
@@ -283,67 +291,78 @@ function PdfViewer({ document, onZoomChange, onScrollTopChange }: PdfViewerProps
   );
 }
 
-type TabsBarProps = {
-  documents: OpenPdfDocument[];
-  activeDocumentId: string | null;
-  onSelectDocument: (documentId: string) => void;
-  onCloseDocument: (documentId: string) => void;
-};
-
-function TabsBar({
+function DocumentSidebar({
   documents,
   activeDocumentId,
   onSelectDocument,
   onCloseDocument,
-}: TabsBarProps) {
+  status,
+}: DocumentSidebarProps) {
   return (
-    <nav className="tabs-bar" aria-label="Documents ouverts">
-      <div className="tabs-list" role="tablist" aria-label="Documents PDF">
-        {documents.map((document) => {
-          const isActive = document.id === activeDocumentId;
-
-          return (
-            <div key={document.id} className={isActive ? "tab is-active" : "tab"}>
-              <button
-                type="button"
-                className="tab-select"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => onSelectDocument(document.id)}
-                title={document.fileName}
-              >
-                <span className="tab-title">{document.fileName}</span>
-              </button>
-              <button
-                type="button"
-                className="tab-close"
-                onClick={() => onCloseDocument(document.id)}
-                aria-label={`Fermer ${document.fileName}`}
-                title="Fermer"
-              >
-                ×
-              </button>
-            </div>
-          );
-        })}
+    <aside className="document-sidebar" aria-label="Documents ouverts">
+      <div className="sidebar-header">
+        <div>
+          <h2>Documents ouverts</h2>
+          <p className="sidebar-hint">
+            {documents.length > 0 ? "Sélectionnez un PDF pour l'afficher." : "Aucun PDF ouvert."}
+          </p>
+        </div>
       </div>
-    </nav>
+
+      {status ? <p className="sidebar-status">{status}</p> : null}
+
+      {documents.length > 0 ? (
+        <ul className="document-list" aria-label="Liste des documents ouverts">
+          {documents.map((document) => {
+            const isActive = document.id === activeDocumentId;
+
+            return (
+              <li key={document.id} className={isActive ? "document-item is-active" : "document-item"}>
+                <button
+                  type="button"
+                  className="document-select"
+                  onClick={() => onSelectDocument(document.id)}
+                  aria-current={isActive ? "true" : undefined}
+                  aria-label={`${document.fileName}${isActive ? ", document actif" : ""}`}
+                  title={document.fileName}
+                >
+                  <span className="document-title">{document.fileName}</span>
+                  <span className="document-meta-line">
+                    {document.pageCount} page{document.pageCount > 1 ? "s" : ""}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="document-close"
+                  onClick={() => onCloseDocument(document.id)}
+                  aria-label={`Fermer ${document.fileName}`}
+                  title="Fermer"
+                >
+                  ×
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <div className="sidebar-empty-state">
+          <p>Aucun document ouvert.</p>
+          <p>Ouvrez un PDF avec le bouton du bandeau supérieur.</p>
+        </div>
+      )}
+    </aside>
   );
 }
 
 type EmptyStateProps = {
   status: string;
-  onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
 };
 
-function EmptyState({ status, onFileChange }: EmptyStateProps) {
+function EmptyState({ status }: EmptyStateProps) {
   return (
     <section className="empty-state" aria-label="Aucun PDF ouvert">
       <p className="status">{status}</p>
-      <label className="file-picker empty-file-picker">
-        <span>Ouvrir un PDF</span>
-        <input type="file" accept="application/pdf,.pdf" multiple onChange={onFileChange} />
-      </label>
+      <p>Le panneau de gauche listera vos documents ouverts.</p>
     </section>
   );
 }
@@ -544,24 +563,25 @@ export function App() {
         </div>
       </section>
 
-      {documents.length > 0 ? (
-        <TabsBar
+      <section className="content-area" aria-label="Espace de travail PDF">
+        <DocumentSidebar
           documents={documents}
           activeDocumentId={activeDocumentId}
           onSelectDocument={setActiveDocumentId}
           onCloseDocument={closeDocument}
+          status={status}
         />
-      ) : null}
 
-      {activeDocument ? (
-        <PdfViewer
-          document={activeDocument}
-          onZoomChange={updateDocumentZoom}
-          onScrollTopChange={updateDocumentScrollTop}
-        />
-      ) : (
-        <EmptyState status={status} onFileChange={handleFileChange} />
-      )}
+        {activeDocument ? (
+          <PdfViewer
+            document={activeDocument}
+            onZoomChange={updateDocumentZoom}
+            onScrollTopChange={updateDocumentScrollTop}
+          />
+        ) : (
+          <EmptyState status={status} />
+        )}
+      </section>
     </main>
   );
 }
