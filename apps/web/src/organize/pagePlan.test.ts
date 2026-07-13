@@ -7,7 +7,7 @@ import {
 
 describe("pagePlan", () => {
   it("moves a page and renumbers the resulting plan", () => {
-    const plan = createInitialPagePlan("pdf-1", 3);
+    const plan = createInitialPagePlan("pdf-1", "first.pdf", 3);
 
     const pages = moveOrganizedPageByIndex(plan.pages, 2, 0);
 
@@ -16,9 +16,13 @@ describe("pagePlan", () => {
   });
 
   it("rejects a plan that cannot be restored for its source document", () => {
-    const plan = createInitialPagePlan("pdf-1", 2);
+    const plan = createInitialPagePlan("pdf-1", "first.pdf", 2);
     plan.pages[0].sourcePageIndex = 3;
 
-    expect(isValidPagePlanForDocument(plan, "pdf-1", 2)).toBe(false);
+    expect(
+      isValidPagePlanForDocument(plan, "pdf-1", {
+        "pdf-1": { fileName: "first.pdf", pageCount: 2 },
+      }),
+    ).toBe(false);
   });
 });

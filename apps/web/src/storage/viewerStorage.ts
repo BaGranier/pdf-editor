@@ -194,6 +194,7 @@ function isOrganizedPage(value: unknown): value is OrganizedPage {
   return (
     typeof page.id === "string" &&
     typeof page.sourceDocumentId === "string" &&
+    (page.sourceDocumentName === undefined || typeof page.sourceDocumentName === "string") &&
     Number.isInteger(page.sourcePageIndex) &&
     Number.isInteger(page.displayPageNumber) &&
     isPageRotation(page.rotation)

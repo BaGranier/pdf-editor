@@ -101,7 +101,7 @@ describe("viewerStorage", () => {
   });
 
   it("persists and removes a local organization plan", () => {
-    const plan = createInitialPagePlan("pdf-plan", 2);
+    const plan = createInitialPagePlan("pdf-plan", "plan.pdf", 2);
     plan.pages[0].rotation = 90;
 
     saveOrganizationPlan("pdf-plan", {

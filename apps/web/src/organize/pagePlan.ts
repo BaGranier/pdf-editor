@@ -7,6 +7,7 @@ export type PageRotation = 0 | 90 | 180 | 270;
 export type OrganizedPage = {
   id: string;
   sourceDocumentId: string;
+  sourceDocumentName: string;
   sourcePageIndex: number;
   displayPageNumber: number;
   rotation: PageRotation;
@@ -17,12 +18,22 @@ export type OrganizePagePlan = {
   pages: OrganizedPage[];
 };
 
-export function createInitialPagePlan(sourceDocumentId: string, pageCount: number): OrganizePagePlan {
+export type SourceDocumentInfo = {
+  fileName: string;
+  pageCount: number;
+};
+
+export function createInitialPagePlan(
+  sourceDocumentId: string,
+  sourceDocumentName: string,
+  pageCount: number,
+): OrganizePagePlan {
   return {
     sourceDocumentId,
     pages: Array.from({ length: pageCount }, (_, sourcePageIndex) => ({
       id: `${sourceDocumentId}:page:${sourcePageIndex}`,
       sourceDocumentId,
+      sourceDocumentName,
       sourcePageIndex,
       displayPageNumber: sourcePageIndex + 1,
       rotation: 0,
@@ -75,7 +86,7 @@ export function isPlanModified(plan: OrganizePagePlan, originalPageCount: number
 export function isValidPagePlanForDocument(
   plan: OrganizePagePlan,
   documentId: string,
-  pageCount: number,
+  sourceDocuments: Record<string, SourceDocumentInfo>,
 ): boolean {
   if (plan.sourceDocumentId !== documentId) {
     return false;
@@ -84,12 +95,15 @@ export function isValidPagePlanForDocument(
   const pageIds = new Set<string>();
 
   return plan.pages.every((page, index) => {
+    const sourceDocument = sourceDocuments[page.sourceDocumentId];
+
     if (
       pageIds.has(page.id) ||
-      page.sourceDocumentId !== documentId ||
+      !sourceDocument ||
+      page.sourceDocumentName !== sourceDocument.fileName ||
       !Number.isInteger(page.sourcePageIndex) ||
       page.sourcePageIndex < 0 ||
-      page.sourcePageIndex >= pageCount ||
+      page.sourcePageIndex >= sourceDocument.pageCount ||
       page.displayPageNumber !== index + 1 ||
       !isPageRotation(page.rotation)
     ) {
@@ -99,6 +113,19 @@ export function isValidPagePlanForDocument(
     pageIds.add(page.id);
     return true;
   });
+}
+
+export function hydratePlanSourceNames(
+  plan: OrganizePagePlan,
+  sourceDocuments: Record<string, SourceDocumentInfo>,
+): OrganizePagePlan {
+  return {
+    ...plan,
+    pages: plan.pages.map((page) => ({
+      ...page,
+      sourceDocumentName: sourceDocuments[page.sourceDocumentId]?.fileName ?? page.sourceDocumentName ?? "",
+    })),
+  };
 }
 
 function isPageRotation(rotation: number): rotation is PageRotation {

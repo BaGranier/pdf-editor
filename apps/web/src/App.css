@@ -538,6 +538,109 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.organize-export-name,
+.organize-export-output-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.organize-export-name input {
+  width: min(13rem, 38vw);
+  min-height: 2.25rem;
+  padding: 0 0.5rem;
+  color: var(--text-primary);
+  border: 1px solid var(--button-border);
+  border-radius: 6px;
+  background: var(--button-bg);
+}
+
+.organize-export-output-option {
+  min-height: 2.25rem;
+  white-space: nowrap;
+}
+
+.organize-export-output-option input {
+  accent-color: var(--accent);
+}
+
+.organize-export-status {
+  max-width: 96rem;
+  margin: -0.75rem auto 1rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.organize-add-pages {
+  max-width: 96rem;
+  margin: -0.5rem auto 1rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--surface-alt);
+}
+
+.organize-add-pages > button {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.organize-add-pages__panel {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.65rem;
+}
+
+.organize-add-pages__source {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+}
+
+.organize-add-pages__source select {
+  min-height: 2rem;
+  padding-inline: 0.45rem;
+  color: var(--text-primary);
+  border: 1px solid var(--button-border);
+  border-radius: 6px;
+  background: var(--button-bg);
+}
+
+.organize-add-pages__choices,
+.organize-add-pages__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.organize-add-pages__choices label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2rem;
+  padding: 0.25rem 0.45rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--surface-bg);
+  font-size: 0.82rem;
+}
+
+.organize-add-pages__choices input {
+  accent-color: var(--accent);
+}
+
+.organize-add-pages__actions button {
+  min-height: 2rem;
+  padding-inline: 0.55rem;
+  font-size: 0.82rem;
+}
+
 .organize-changes {
   padding: 0.35rem 0.55rem;
   color: var(--text-muted);
@@ -625,6 +728,11 @@ button:disabled {
 
 .organize-thumbnail__error {
   color: #b45309;
+}
+
+.organize-thumbnail--missing {
+  color: #b45309;
+  font-size: 0.85rem;
 }
 
 .organize-page__meta {

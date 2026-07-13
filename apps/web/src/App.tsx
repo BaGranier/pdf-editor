@@ -31,6 +31,7 @@ import {
 } from "./storage/viewerStorage";
 import {
   createInitialPagePlan,
+  hydratePlanSourceNames,
   isPlanModified,
   isValidPagePlanForDocument,
   moveOrganizedPageByIndex,
@@ -47,6 +48,7 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.1;
 const VIEWER_PAN_STEP = 56;
+const PDF_ENGINE_URL = import.meta.env.VITE_PDF_ENGINE_URL ?? "http://localhost:8000";
 
 type RenderState = "idle" | "loading" | "ready" | "error";
 type WorkspaceMode = "read" | "organize";
@@ -86,6 +88,16 @@ type FocusTarget = SidebarKeyTarget | ViewerFocusTarget;
 
 function clampZoom(value: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * 100) / 100));
+}
+
+function getModifiedOutputName(fileName: string) {
+  const baseName = fileName.replace(/\.pdf$/i, "") || "document";
+  return `${baseName}-modifie.pdf`;
+}
+
+function getDownloadFileName(contentDisposition: string | null, fallbackName: string) {
+  const filenameMatch = /filename="?([^";]+)"?/i.exec(contentDisposition ?? "");
+  return filenameMatch?.[1] ?? fallbackName;
 }
 
 function clearCanvas(canvas: HTMLCanvasElement | null) {
@@ -731,14 +743,23 @@ function OrganizePageThumbnail({ pdfDocument, page }: OrganizePageThumbnailProps
 
 type OrganizePagesProps = {
   document: OpenPdfDocument;
+  documents: OpenPdfDocument[];
   plan: OrganizePagePlan;
   selectedPageId: string | null;
+  outputName: string;
+  saveToOutputDir: boolean;
+  isExporting: boolean;
+  exportStatus: string | null;
   onToggleSelection: (pageId: string) => void;
   onMovePageByIndex: (fromIndex: number, toIndex: number) => void;
   onDeletePage: (pageId: string) => void;
   onDuplicatePage: (pageId: string) => void;
   onRotatePage: (pageId: string) => void;
   onReset: () => void;
+  onOutputNameChange: (outputName: string) => void;
+  onSaveToOutputDirChange: (saveToOutputDir: boolean) => void;
+  onExport: () => void;
+  onAddExternalPages: (sourceDocumentId: string, sourcePageIndexes: number[]) => void;
 };
 
 type OrganizeIconName = "check" | "rotate" | "trash" | "left" | "right" | "duplicate";
@@ -786,19 +807,40 @@ function OrganizeIcon({ name }: { name: OrganizeIconName }) {
 
 function OrganizePages({
   document,
+  documents,
   plan,
   selectedPageId,
+  outputName,
+  saveToOutputDir,
+  isExporting,
+  exportStatus,
   onToggleSelection,
   onMovePageByIndex,
   onDeletePage,
   onDuplicatePage,
   onRotatePage,
   onReset,
+  onOutputNameChange,
+  onSaveToOutputDirChange,
+  onExport,
+  onAddExternalPages,
 }: OrganizePagesProps) {
   const hasPendingChanges = isPlanModified(plan, document.pageCount);
   const canReset = hasPendingChanges || selectedPageId !== null;
   const [draggedPageId, setDraggedPageId] = useState<string | null>(null);
   const [dropPageId, setDropPageId] = useState<string | null>(null);
+  const [isAddPagesOpen, setIsAddPagesOpen] = useState(false);
+  const [selectedExternalDocumentId, setSelectedExternalDocumentId] = useState("");
+  const [selectedExternalPageIndexes, setSelectedExternalPageIndexes] = useState<number[]>([]);
+  const additionalDocuments = documents.filter((openDocument) => openDocument.id !== document.id);
+  const selectedExternalDocument =
+    additionalDocuments.find((openDocument) => openDocument.id === selectedExternalDocumentId) ??
+    additionalDocuments[0] ??
+    null;
+
+  useEffect(() => {
+    setSelectedExternalPageIndexes([]);
+  }, [selectedExternalDocument?.id]);
 
   const handleDragStart = (event: DragEvent<HTMLElement>, pageId: string) => {
     event.dataTransfer.effectAllowed = "move";
@@ -825,9 +867,7 @@ function OrganizePages({
       <header className="organize-header">
         <div>
           <h2>Organiser les pages</h2>
-          <p>
-            Modifications locales uniquement — elles seront exportables dans une prochaine étape.
-          </p>
+          <p>Modifications locales uniquement — les PDF originaux restent inchangés.</p>
         </div>
         <div className="organize-header__actions">
           <span className={hasPendingChanges ? "organize-changes is-pending" : "organize-changes"}>
@@ -836,17 +876,137 @@ function OrganizePages({
           <button type="button" onClick={onReset} disabled={!canReset}>
             Réinitialiser l'organisation
           </button>
-          <button type="button" disabled title="L'export PDF sera disponible prochainement.">
-            Exporter — bientôt disponible
+          <label className="organize-export-name">
+            <span>Nom de sortie</span>
+            <input
+              type="text"
+              value={outputName}
+              onChange={(event) => onOutputNameChange(event.target.value)}
+              aria-label="Nom du PDF exporté"
+              placeholder="document-modifie.pdf"
+            />
+          </label>
+          <label className="organize-export-output-option">
+            <input
+              type="checkbox"
+              checked={saveToOutputDir}
+              onChange={(event) => onSaveToOutputDirChange(event.target.checked)}
+            />
+            Copier dans data/output
+          </label>
+          <button type="button" onClick={onExport} disabled={plan.pages.length === 0 || isExporting}>
+            {isExporting ? "Export en cours…" : "Exporter le PDF"}
           </button>
         </div>
       </header>
+
+      <section className="organize-add-pages" aria-label="Ajout de pages externes">
+        {additionalDocuments.length > 0 ? (
+          <>
+          <button
+            type="button"
+            onClick={() => setIsAddPagesOpen((isOpen) => !isOpen)}
+            aria-expanded={isAddPagesOpen}
+          >
+            Ajouter depuis un PDF ouvert
+          </button>
+          {isAddPagesOpen ? (
+            <div className="organize-add-pages__panel">
+              <label className="organize-add-pages__source">
+                <span>PDF source</span>
+                <select
+                  value={selectedExternalDocument?.id ?? ""}
+                  aria-label="PDF source externe"
+                  onChange={(event) => {
+                    setSelectedExternalDocumentId(event.target.value);
+                    setSelectedExternalPageIndexes([]);
+                  }}
+                >
+                  {additionalDocuments.map((sourceDocument) => (
+                    <option key={sourceDocument.id} value={sourceDocument.id}>
+                      {sourceDocument.fileName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedExternalDocument ? (
+                <div className="organize-add-pages__choices" aria-label="Pages externes disponibles">
+                  {Array.from({ length: selectedExternalDocument.pageCount }, (_, sourcePageIndex) => {
+                    const isSelected = selectedExternalPageIndexes.includes(sourcePageIndex);
+
+                    return (
+                      <label key={sourcePageIndex}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          aria-label={`Ajouter ${selectedExternalDocument.fileName}, page ${sourcePageIndex + 1}`}
+                          onChange={() => {
+                            setSelectedExternalPageIndexes((currentIndexes) =>
+                              isSelected
+                                ? currentIndexes.filter((index) => index !== sourcePageIndex)
+                                : [...currentIndexes, sourcePageIndex],
+                            );
+                          }}
+                        />
+                        Page {sourcePageIndex + 1}
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <div className="organize-add-pages__actions">
+                <button
+                  type="button"
+                  disabled={!selectedExternalDocument || selectedExternalPageIndexes.length === 0}
+                  onClick={() => {
+                    if (!selectedExternalDocument) {
+                      return;
+                    }
+
+                    onAddExternalPages(selectedExternalDocument.id, selectedExternalPageIndexes);
+                    setSelectedExternalPageIndexes([]);
+                  }}
+                >
+                  Ajouter les pages sélectionnées
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedExternalDocument}
+                  onClick={() => {
+                    if (!selectedExternalDocument) {
+                      return;
+                    }
+
+                    onAddExternalPages(
+                      selectedExternalDocument.id,
+                      Array.from({ length: selectedExternalDocument.pageCount }, (_, pageIndex) => pageIndex),
+                    );
+                    setSelectedExternalPageIndexes([]);
+                  }}
+                >
+                  Tout ajouter
+                </button>
+              </div>
+            </div>
+          ) : null}
+          </>
+        ) : (
+          <p>Ouvrez un autre PDF pour ajouter ses pages à la fin du plan.</p>
+        )}
+      </section>
+
+      {exportStatus ? (
+        <p className="organize-export-status" role="status">
+          {exportStatus}
+        </p>
+      ) : null}
 
       {plan.pages.length > 0 ? (
         <div className="organize-grid" aria-label="Grille des pages organisées">
           {plan.pages.map((page, index) => {
             const selected = page.id === selectedPageId;
             const pageLabel = `Page ${page.displayPageNumber}`;
+            const sourceDocument = documents.find((openDocument) => openDocument.id === page.sourceDocumentId);
 
             return (
               <article
@@ -875,7 +1035,13 @@ function OrganizePages({
                 onDragLeave={() => setDropPageId((currentPageId) => (currentPageId === page.id ? null : currentPageId))}
                 onDrop={(event) => handleDrop(event, page.id)}
               >
-                <OrganizePageThumbnail pdfDocument={document.pdfDocument} page={page} />
+                {sourceDocument ? (
+                  <OrganizePageThumbnail pdfDocument={sourceDocument.pdfDocument} page={page} />
+                ) : (
+                  <div className="organize-thumbnail organize-thumbnail--missing">
+                    Source indisponible
+                  </div>
+                )}
                 <button
                   type="button"
                   className="organize-page__icon-button organize-page__select"
@@ -937,7 +1103,9 @@ function OrganizePages({
                 </div>
                 <div className="organize-page__meta">
                   <strong>{pageLabel}</strong>
-                  <span>Source : page {page.sourcePageIndex + 1}</span>
+                  <span>
+                    {page.sourceDocumentName} — p. {page.sourcePageIndex + 1}
+                  </span>
                   {page.rotation !== 0 ? <span>Rotation : {page.rotation}°</span> : null}
                 </div>
               </article>
@@ -1128,6 +1296,11 @@ function EmptyState({ status, mode }: EmptyStateProps) {
           ? "Ouvrez un PDF pour organiser ses pages."
           : "Le panneau de gauche listera vos documents ouverts."}
       </p>
+      {mode === "organize" ? (
+        <button type="button" disabled>
+          Exporter le PDF
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -1147,6 +1320,10 @@ export function App() {
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("read");
   const [organizationPlans, setOrganizationPlans] = useState<Record<string, OrganizePagePlan>>({});
   const [selectedPageIdsByDocument, setSelectedPageIdsByDocument] = useState<Record<string, string | null>>({});
+  const [outputName, setOutputName] = useState("");
+  const [saveToOutputDir, setSaveToOutputDir] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [status, setStatus] = useState("Sélectionnez un PDF local.");
   const [viewerFocusRequest, setViewerFocusRequest] = useState(0);
   const nextOrganizedPageId = useRef(1);
@@ -1168,12 +1345,18 @@ export function App() {
 
     return (
       organizationPlans[activeDocument.id] ??
-      createInitialPagePlan(activeDocument.id, activeDocument.pageCount)
+      createInitialPagePlan(activeDocument.id, activeDocument.fileName, activeDocument.pageCount)
     );
   }, [activeDocument, organizationPlans]);
   const selectedOrganizedPageId = activeDocument
     ? (selectedPageIdsByDocument[activeDocument.id] ?? null)
     : null;
+
+  useEffect(() => {
+    setOutputName(activeDocument ? getModifiedOutputName(activeDocument.fileName) : "");
+    setSaveToOutputDir(false);
+    setExportStatus(null);
+  }, [activeDocumentId, activeDocument]);
 
   useEffect(() => {
     if (documents.length === 0) {
@@ -1250,6 +1433,13 @@ export function App() {
 
       const restoredPlans: Record<string, OrganizePagePlan> = {};
       const restoredSelectedPageIds: Record<string, string | null> = {};
+      let invalidPlanCount = 0;
+      const restoredSourceDocuments = Object.fromEntries(
+        restoredDocuments.map((document) => [
+          document.id,
+          { fileName: document.fileName, pageCount: document.pageCount },
+        ]),
+      );
 
       restoredDocuments.forEach((restoredDocument) => {
         const storedPlan = loadOrganizationPlan(restoredDocument.id);
@@ -1258,13 +1448,16 @@ export function App() {
           return;
         }
 
-        if (!isValidPagePlanForDocument(storedPlan.plan, restoredDocument.id, restoredDocument.pageCount)) {
+        const hydratedPlan = hydratePlanSourceNames(storedPlan.plan, restoredSourceDocuments);
+
+        if (!isValidPagePlanForDocument(hydratedPlan, restoredDocument.id, restoredSourceDocuments)) {
           removeOrganizationPlan(restoredDocument.id);
+          invalidPlanCount += 1;
           return;
         }
 
-        restoredPlans[restoredDocument.id] = storedPlan.plan;
-        restoredSelectedPageIds[restoredDocument.id] = storedPlan.plan.pages.some(
+        restoredPlans[restoredDocument.id] = hydratedPlan;
+        restoredSelectedPageIds[restoredDocument.id] = hydratedPlan.pages.some(
           (page) => page.id === storedPlan.selectedPageId,
         )
           ? storedPlan.selectedPageId
@@ -1283,13 +1476,22 @@ export function App() {
       if (restoredDocuments.length > 0) {
         pendingFocusTargetRef.current = "viewer";
       }
-      setStatus(
-        failedCount > 0
-          ? failedCount === 1
+      const restorationMessages: string[] = [];
+      if (failedCount > 0) {
+        restorationMessages.push(
+          failedCount === 1
             ? "1 document n'a pas pu être restauré."
-            : `${failedCount} documents n'ont pas pu être restaurés.`
-          : "",
-      );
+            : `${failedCount} documents n'ont pas pu être restaurés.`,
+        );
+      }
+      if (invalidPlanCount > 0) {
+        restorationMessages.push(
+          invalidPlanCount === 1
+            ? "1 plan d'organisation a été réinitialisé car une source est indisponible ou invalide."
+            : `${invalidPlanCount} plans d'organisation ont été réinitialisés car une source est indisponible ou invalide.`,
+        );
+      }
+      setStatus(restorationMessages.join(" "));
       setIsRestoringDocuments(false);
     }
 
@@ -1482,6 +1684,10 @@ export function App() {
     setActiveDocumentId(null);
     setOrganizationPlans({});
     setSelectedPageIdsByDocument({});
+    setOutputName("");
+    setSaveToOutputDir(false);
+    setIsExporting(false);
+    setExportStatus(null);
     setWorkspaceMode("read");
     setStatus("Sélectionnez un PDF local.");
     setIsSidebarVisible(true);
@@ -1580,7 +1786,7 @@ export function App() {
       setOrganizationPlans((currentPlans) => {
         const currentPlan =
           currentPlans[activeDocument.id] ??
-          createInitialPagePlan(activeDocument.id, activeDocument.pageCount);
+          createInitialPagePlan(activeDocument.id, activeDocument.fileName, activeDocument.pageCount);
 
         return {
           ...currentPlans,
@@ -1680,6 +1886,129 @@ export function App() {
     });
     removeOrganizationPlan(activeDocument.id);
   }, [activeDocument]);
+
+  const addExternalPagesFromOpenDocument = useCallback(
+    (sourceDocumentId: string, sourcePageIndexes: number[]) => {
+      const sourceDocument = documents.find((document) => document.id === sourceDocumentId);
+
+      if (!sourceDocument || sourcePageIndexes.length === 0) {
+        setExportStatus("Le PDF source n'est plus disponible.");
+        return;
+      }
+
+      setExportStatus(null);
+      updateActiveOrganizationPlan((plan) => {
+        const addedPages = [...sourcePageIndexes]
+          .sort((left, right) => left - right)
+          .filter((sourcePageIndex) => sourcePageIndex >= 0 && sourcePageIndex < sourceDocument.pageCount)
+          .map((sourcePageIndex) => ({
+          id: `${sourceDocument.id}:page:${sourcePageIndex}:insert:${Date.now()}-${nextOrganizedPageId.current++}`,
+          sourceDocumentId: sourceDocument.id,
+          sourceDocumentName: sourceDocument.fileName,
+          sourcePageIndex,
+          displayPageNumber: 0,
+          rotation: 0 as const,
+          }));
+
+        return { ...plan, pages: renumberOrganizedPages([...plan.pages, ...addedPages]) };
+      });
+    },
+    [documents, updateActiveOrganizationPlan],
+  );
+
+  const exportActiveOrganizationPlan = useCallback(async () => {
+    if (!activeDocument || !activeOrganizationPlan || activeOrganizationPlan.pages.length === 0) {
+      setExportStatus("Aucune page n'est disponible pour l'export.");
+      return;
+    }
+
+    const requiredDocumentIds = [...new Set(activeOrganizationPlan.pages.map((page) => page.sourceDocumentId))];
+    const sourceFiles = requiredDocumentIds.map((documentId) =>
+      documents.find((document) => document.id === documentId),
+    );
+
+    if (sourceFiles.some((document) => !document)) {
+      setExportStatus("Un PDF source requis par le plan n'est plus disponible.");
+      return;
+    }
+
+    const sourceDocumentInfo = Object.fromEntries(
+      documents.map((document) => [
+        document.id,
+        { fileName: document.fileName, pageCount: document.pageCount },
+      ]),
+    );
+    if (!isValidPagePlanForDocument(activeOrganizationPlan, activeDocument.id, sourceDocumentInfo)) {
+      setExportStatus("Le plan d'organisation est invalide. Réinitialisez-le avant d'exporter.");
+      return;
+    }
+
+    const resolvedOutputName = outputName.trim() || getModifiedOutputName(activeDocument.fileName);
+    const formData = new FormData();
+    sourceFiles.forEach((sourceDocument) => {
+      if (sourceDocument) {
+        formData.append("files", sourceDocument.file, sourceDocument.fileName);
+      }
+    });
+    formData.append("documentIds", JSON.stringify(requiredDocumentIds));
+    formData.append(
+      "plan",
+      JSON.stringify({
+        outputName: resolvedOutputName,
+        saveToOutputDir,
+        pages: activeOrganizationPlan.pages.map((page) => ({
+          sourceDocumentId: page.sourceDocumentId,
+          sourcePageIndex: page.sourcePageIndex,
+          rotation: page.rotation,
+        })),
+      }),
+    );
+
+    setIsExporting(true);
+    setExportStatus(null);
+
+    try {
+      const response = await fetch(`${PDF_ENGINE_URL}/pdf/export/organize`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        let detail = "Le PDF modifié n'a pas pu être exporté.";
+
+        try {
+          const errorBody = (await response.json()) as { detail?: string };
+          detail = errorBody.detail ?? detail;
+        } catch {
+          // The backend may return an empty or non-JSON error response.
+        }
+
+        throw new Error(detail);
+      }
+
+      const pdfBlob = await response.blob();
+      const downloadedName = getDownloadFileName(
+        response.headers.get("content-disposition"),
+        resolvedOutputName,
+      );
+      const outputWarning = response.headers.get("x-pdf-output-warning");
+      const downloadUrl = URL.createObjectURL(pdfBlob);
+      const downloadLink = document.createElement("a");
+      downloadLink.href = downloadUrl;
+      downloadLink.download = downloadedName;
+      document.body.append(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+      setExportStatus(
+        outputWarning ? `PDF exporté : ${downloadedName}. ${outputWarning}` : `PDF exporté : ${downloadedName}`,
+      );
+    } catch (error) {
+      setExportStatus(error instanceof Error ? `Erreur d'export : ${error.message}` : "Erreur d'export.");
+    } finally {
+      setIsExporting(false);
+    }
+  }, [activeDocument, activeOrganizationPlan, documents, outputName, saveToOutputDir]);
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     if (isRestoringDocuments) {
@@ -1861,14 +2190,23 @@ export function App() {
         ) : activeDocument && activeOrganizationPlan ? (
           <OrganizePages
             document={activeDocument}
+            documents={documents}
             plan={activeOrganizationPlan}
             selectedPageId={selectedOrganizedPageId}
+            outputName={outputName}
+            saveToOutputDir={saveToOutputDir}
+            isExporting={isExporting}
+            exportStatus={exportStatus}
             onToggleSelection={toggleOrganizedPageSelection}
             onMovePageByIndex={moveOrganizedPage}
             onDeletePage={deleteOrganizedPage}
             onDuplicatePage={duplicateOrganizedPage}
             onRotatePage={rotateOrganizedPage}
             onReset={resetActiveOrganizationPlan}
+            onOutputNameChange={setOutputName}
+            onSaveToOutputDirChange={setSaveToOutputDir}
+            onExport={exportActiveOrganizationPlan}
+            onAddExternalPages={addExternalPagesFromOpenDocument}
           />
         ) : (
           <EmptyState status={status} mode={workspaceMode} />
