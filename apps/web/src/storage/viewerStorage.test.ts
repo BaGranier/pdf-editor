@@ -1,15 +1,19 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearViewerStorage,
+  loadOrganizationPlan,
   loadStoredDocument,
   loadViewerPreferences,
   parseViewerPreferences,
+  removeOrganizationPlan,
+  saveOrganizationPlan,
   saveStoredDocument,
   saveViewerPreferences,
   serializeViewerPreferences,
   toStoredPdfDocument,
   type ViewerDocumentSnapshot,
 } from "./viewerStorage";
+import { createInitialPagePlan } from "../organize/pagePlan";
 
 describe("viewerStorage", () => {
   beforeEach(async () => {
@@ -94,6 +98,24 @@ describe("viewerStorage", () => {
       scrollLeft: 12,
       scrollTop: 24,
     });
+  });
+
+  it("persists and removes a local organization plan", () => {
+    const plan = createInitialPagePlan("pdf-plan", 2);
+    plan.pages[0].rotation = 90;
+
+    saveOrganizationPlan("pdf-plan", {
+      plan,
+      selectedPageId: plan.pages[0].id,
+    });
+
+    expect(loadOrganizationPlan("pdf-plan")).toEqual({
+      plan,
+      selectedPageId: plan.pages[0].id,
+    });
+
+    removeOrganizationPlan("pdf-plan");
+    expect(loadOrganizationPlan("pdf-plan")).toBeNull();
   });
 
   it("clears viewer storage across preferences and stored documents", async () => {

@@ -332,6 +332,184 @@ describe("App", () => {
     expect(viewer).toHaveProperty("scrollTop", 0);
   });
 
+  it("switches to organize mode and shows a grid for the active PDF", async () => {
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.resolve(createPdfDocumentMock(3)),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+
+    render(<App />);
+
+    expect(screen.getByRole("button", { name: "Organiser" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+
+    expect(screen.getByText("Ouvrez un PDF pour organiser ses pages.")).toBeInTheDocument();
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    const fileInput = within(sidebar).getByLabelText("Ouvrir un PDF");
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["%PDF-1.4"], "organize.pdf", { type: "application/pdf" })] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Organiser les pages de organize.pdf" })).toBeInTheDocument();
+    });
+
+    const grid = screen.getByLabelText("Grille des pages organisées");
+    expect(within(grid).getAllByLabelText(/Miniature de la page source/)).toHaveLength(3);
+    expect(screen.getByRole("button", { name: "Revenir à la lecture" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("updates the local organization plan, resets it, and returns to reading mode", async () => {
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.resolve(createPdfDocumentMock(3)),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: { files: [new File(["%PDF-1.4"], "plan.pdf", { type: "application/pdf" })] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Aperçu PDF plan.pdf" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Grille des pages organisées")).toBeInTheDocument();
+    });
+
+    let grid = screen.getByLabelText("Grille des pages organisées");
+    expect(within(screen.getByLabelText("Page 1")).getByRole("button", {
+      name: "Sélectionner la page 1",
+    })).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Page 1")).getByRole("button", {
+      name: "Tourner la page 1 vers la droite",
+    })).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Page 1")).getByRole("button", {
+      name: "Déplacer la page 1 vers la gauche",
+    })).toBeDisabled();
+    expect(within(screen.getByLabelText("Page 1")).getByRole("button", {
+      name: "Déplacer la page 1 vers la droite",
+    })).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Page 1")).getByRole("button", {
+      name: "Supprimer la page 1",
+    })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Début" })).not.toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByLabelText("Page 2")).getByRole("button", {
+      name: "Déplacer la page 2 vers la gauche",
+    }));
+
+    await waitFor(() => {
+      const thumbnails = Array.from(grid.querySelectorAll(".organize-thumbnail"));
+      expect(thumbnails.map((thumbnail) => thumbnail.getAttribute("aria-label"))).toEqual([
+        "Miniature de la page source 2",
+        "Miniature de la page source 1",
+        "Miniature de la page source 3",
+      ]);
+    });
+
+    fireEvent.click(within(screen.getByLabelText("Page 1")).getByRole("button", {
+      name: "Tourner la page 1 vers la droite",
+    }));
+    expect(screen.getByText("Rotation : 90°")).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByLabelText("Page 1")).getByRole("button", {
+      name: "Sélectionner la page 1",
+    }));
+    expect(within(screen.getByLabelText("Page 1")).getByRole("button", {
+      name: "Sélectionner la page 1",
+    })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(within(screen.getByLabelText("Page 2")).getByRole("button", {
+      name: "Supprimer la page 2",
+    }));
+
+    await waitFor(() => {
+      expect(within(grid).queryByLabelText("Miniature de la page source 1")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Modifications en attente")).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByLabelText("Page 1")).getByRole("button", {
+      name: "Dupliquer la page 1",
+    }));
+
+    await waitFor(() => {
+      grid = screen.getByLabelText("Grille des pages organisées");
+      expect(within(grid).getAllByLabelText("Miniature de la page source 2")).toHaveLength(2);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Réinitialiser l'organisation" }));
+
+    await waitFor(() => {
+      expect(within(grid).getAllByLabelText(/Miniature de la page source/)).toHaveLength(3);
+      expect(within(grid).getAllByLabelText("Miniature de la page source 1")).toHaveLength(1);
+    });
+    expect(screen.getByText("Ordre d'origine")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Revenir à la lecture" }));
+    expect(screen.getByRole("region", { name: "Aperçu PDF plan.pdf" })).toBeInTheDocument();
+  });
+
+  it("restores a persisted organization plan with its rotation and selection", async () => {
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.resolve(createPdfDocumentMock(3)),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+
+    const { unmount } = render(<App />);
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: { files: [new File(["%PDF-1.4"], "saved-plan.pdf", { type: "application/pdf" })] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Aperçu PDF saved-plan.pdf" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Grille des pages organisées")).toBeInTheDocument();
+    });
+
+    fireEvent.click(within(screen.getByLabelText("Page 2")).getByRole("button", {
+      name: "Tourner la page 2 vers la droite",
+    }));
+    fireEvent.click(within(screen.getByLabelText("Page 1")).getByRole("button", {
+      name: "Supprimer la page 1",
+    }));
+    fireEvent.click(within(screen.getByLabelText("Page 1")).getByRole("button", {
+      name: "Sélectionner la page 1",
+    }));
+
+    await new Promise((resolve) => window.setTimeout(resolve, 350));
+    unmount();
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Aperçu PDF saved-plan.pdf" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Miniature de la page source 1")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Rotation : 90°")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Page 1")).getByRole("button", {
+      name: "Sélectionner la page 1",
+    })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("restores persisted viewer preferences and documents after a remount", async () => {
     const { unmount } = render(<App />);
 

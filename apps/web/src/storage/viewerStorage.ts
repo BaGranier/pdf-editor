@@ -1,3 +1,5 @@
+import type { OrganizePagePlan, OrganizedPage, PageRotation } from "../organize/pagePlan";
+
 export type ThemeMode = "light" | "dark";
 
 export type ViewerPreferences = {
@@ -30,7 +32,13 @@ export type ViewerDocumentSnapshot = {
   scrollTop: number;
 };
 
+export type StoredOrganizationPlan = {
+  plan: OrganizePagePlan;
+  selectedPageId: string | null;
+};
+
 const PREF_KEY = "pdf-editor-mvp:viewer-preferences";
+const ORGANIZATION_PLANS_KEY = "pdf-editor-mvp:organization-plans";
 const DB_NAME = "pdf-editor-mvp-db";
 const DB_VERSION = 1;
 const DOCUMENT_STORE = "documents";
@@ -42,6 +50,11 @@ type RawViewerPreferences = {
   sidebarVisible?: unknown;
   activeDocumentId?: unknown;
   documentOrder?: unknown;
+};
+
+type RawStoredOrganizationPlan = {
+  plan?: unknown;
+  selectedPageId?: unknown;
 };
 
 function isThemeMode(value: unknown): value is ThemeMode {
@@ -164,7 +177,120 @@ export function clearViewerPreferences() {
 
 export async function clearViewerStorage() {
   clearViewerPreferences();
+  clearOrganizationPlans();
   await clearStoredDocuments();
+}
+
+function isPageRotation(value: unknown): value is PageRotation {
+  return value === 0 || value === 90 || value === 180 || value === 270;
+}
+
+function isOrganizedPage(value: unknown): value is OrganizedPage {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const page = value as Partial<OrganizedPage>;
+  return (
+    typeof page.id === "string" &&
+    typeof page.sourceDocumentId === "string" &&
+    Number.isInteger(page.sourcePageIndex) &&
+    Number.isInteger(page.displayPageNumber) &&
+    isPageRotation(page.rotation)
+  );
+}
+
+function isOrganizePagePlan(value: unknown): value is OrganizePagePlan {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const plan = value as Partial<OrganizePagePlan>;
+  return typeof plan.sourceDocumentId === "string" && Array.isArray(plan.pages) && plan.pages.every(isOrganizedPage);
+}
+
+function parseOrganizationPlans(serialized: string | null): Record<string, StoredOrganizationPlan> {
+  if (!serialized) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(serialized) as Record<string, RawStoredOrganizationPlan>;
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(parsed).flatMap(([documentId, value]) => {
+        if (
+          !value ||
+          typeof value !== "object" ||
+          !isOrganizePagePlan(value.plan) ||
+          (value.selectedPageId !== null && typeof value.selectedPageId !== "string")
+        ) {
+          return [];
+        }
+
+        return [[documentId, { plan: value.plan, selectedPageId: value.selectedPageId ?? null }]];
+      }),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveOrganizationPlanCollection(plans: Record<string, StoredOrganizationPlan>) {
+  const storage = getSafeLocalStorage();
+
+  if (!storage) {
+    return;
+  }
+
+  storage.setItem(ORGANIZATION_PLANS_KEY, JSON.stringify(plans));
+}
+
+export function saveOrganizationPlan(documentId: string, storedPlan: StoredOrganizationPlan) {
+  const storage = getSafeLocalStorage();
+
+  if (!storage) {
+    return;
+  }
+
+  const plans = parseOrganizationPlans(storage.getItem(ORGANIZATION_PLANS_KEY));
+  saveOrganizationPlanCollection({ ...plans, [documentId]: storedPlan });
+}
+
+export function loadOrganizationPlan(documentId: string): StoredOrganizationPlan | null {
+  const storage = getSafeLocalStorage();
+
+  if (!storage) {
+    return null;
+  }
+
+  return parseOrganizationPlans(storage.getItem(ORGANIZATION_PLANS_KEY))[documentId] ?? null;
+}
+
+export function removeOrganizationPlan(documentId: string) {
+  const storage = getSafeLocalStorage();
+
+  if (!storage) {
+    return;
+  }
+
+  const plans = parseOrganizationPlans(storage.getItem(ORGANIZATION_PLANS_KEY));
+  const { [documentId]: _removedPlan, ...remainingPlans } = plans;
+  saveOrganizationPlanCollection(remainingPlans);
+}
+
+export function clearOrganizationPlans() {
+  const storage = getSafeLocalStorage();
+
+  if (!storage) {
+    return;
+  }
+
+  storage.removeItem(ORGANIZATION_PLANS_KEY);
 }
 
 export function toStoredPdfDocument(snapshot: ViewerDocumentSnapshot): StoredPdfDocument {

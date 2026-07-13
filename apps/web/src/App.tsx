@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
   type RefObject,
@@ -15,9 +16,12 @@ import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import {
   clearStoredDocuments,
   clearViewerStorage,
+  loadOrganizationPlan,
   loadStoredDocuments,
   loadViewerPreferences,
+  removeOrganizationPlan,
   removeStoredDocument,
+  saveOrganizationPlan,
   saveStoredDocument,
   saveViewerPreferences,
   type StoredPdfDocument,
@@ -25,6 +29,16 @@ import {
   type ViewerDocumentSnapshot,
   type ViewerPreferences,
 } from "./storage/viewerStorage";
+import {
+  createInitialPagePlan,
+  isPlanModified,
+  isValidPagePlanForDocument,
+  moveOrganizedPageByIndex,
+  renumberOrganizedPages,
+  rotatePage,
+  type OrganizePagePlan,
+  type OrganizedPage,
+} from "./organize/pagePlan";
 import "./App.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -35,6 +49,7 @@ const ZOOM_STEP = 0.1;
 const VIEWER_PAN_STEP = 56;
 
 type RenderState = "idle" | "loading" | "ready" | "error";
+type WorkspaceMode = "read" | "organize";
 
 type OpenPdfDocument = {
   id: string;
@@ -635,6 +650,312 @@ function PdfViewer({ document, onZoomChange, onScrollPositionChange, focusReques
   );
 }
 
+type OrganizePageThumbnailProps = {
+  pdfDocument: PDFDocumentProxy;
+  page: OrganizedPage;
+};
+
+function OrganizePageThumbnail({ pdfDocument, page }: OrganizePageThumbnailProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [renderState, setRenderState] = useState<RenderState>("idle");
+
+  useEffect(() => {
+    let isCancelled = false;
+    let renderTask: RenderTask | null = null;
+    const canvas = canvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    async function renderThumbnail() {
+      setRenderState("loading");
+
+      try {
+        const pdfPage = await pdfDocument.getPage(page.sourcePageIndex + 1);
+        const renderCanvas = canvasRef.current;
+
+        if (isCancelled || !renderCanvas) {
+          return;
+        }
+
+        const viewport = pdfPage.getViewport({ scale: 0.24, rotation: page.rotation });
+        const context = renderCanvas.getContext("2d");
+
+        if (!context) {
+          throw new Error("Le canvas n'est pas disponible.");
+        }
+
+        const outputScale = window.devicePixelRatio || 1;
+        renderCanvas.width = Math.floor(viewport.width * outputScale);
+        renderCanvas.height = Math.floor(viewport.height * outputScale);
+        renderCanvas.style.width = `${Math.floor(viewport.width)}px`;
+        renderCanvas.style.height = `${Math.floor(viewport.height)}px`;
+        context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+        context.clearRect(0, 0, viewport.width, viewport.height);
+
+        renderTask = pdfPage.render({ canvas: renderCanvas, canvasContext: context, viewport });
+        await renderTask.promise;
+
+        if (!isCancelled) {
+          setRenderState("ready");
+        }
+      } catch (error) {
+        if (!isCancelled && (error as Error).name !== "RenderingCancelledException") {
+          setRenderState("error");
+        }
+      }
+    }
+
+    void renderThumbnail();
+
+    return () => {
+      isCancelled = true;
+      renderTask?.cancel();
+      clearCanvas(canvas);
+    };
+  }, [page.rotation, page.sourcePageIndex, pdfDocument]);
+
+  return (
+    <div className="organize-thumbnail" aria-label={`Miniature de la page source ${page.sourcePageIndex + 1}`}>
+      {renderState !== "ready" && renderState !== "error" ? (
+        <span className="organize-thumbnail__placeholder" aria-hidden="true">
+          {renderState === "loading" ? "Chargement…" : ""}
+        </span>
+      ) : null}
+      {renderState === "error" ? <span className="organize-thumbnail__error">Aperçu indisponible</span> : null}
+      <canvas ref={canvasRef} className="organize-thumbnail__canvas" />
+    </div>
+  );
+}
+
+type OrganizePagesProps = {
+  document: OpenPdfDocument;
+  plan: OrganizePagePlan;
+  selectedPageId: string | null;
+  onToggleSelection: (pageId: string) => void;
+  onMovePageByIndex: (fromIndex: number, toIndex: number) => void;
+  onDeletePage: (pageId: string) => void;
+  onDuplicatePage: (pageId: string) => void;
+  onRotatePage: (pageId: string) => void;
+  onReset: () => void;
+};
+
+type OrganizeIconName = "check" | "rotate" | "trash" | "left" | "right" | "duplicate";
+
+function OrganizeIcon({ name }: { name: OrganizeIconName }) {
+  const commonProps = {
+    "aria-hidden": true,
+    viewBox: "0 0 20 20",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+
+  return (
+    <svg className="organize-icon" focusable="false" {...commonProps}>
+      {name === "check" ? <path d="m4 10 3.5 3.5L16 5.5" /> : null}
+      {name === "rotate" ? (
+        <>
+          <path d="M15.5 8A6 6 0 1 0 16 12" />
+          <path d="M15.5 4.5V8H12" />
+        </>
+      ) : null}
+      {name === "trash" ? (
+        <>
+          <path d="M4.5 6h11" />
+          <path d="M8 3.5h4" />
+          <path d="m6.5 6 .7 10h5.6l.7-10" />
+          <path d="M9 9v4" />
+          <path d="M11 9v4" />
+        </>
+      ) : null}
+      {name === "left" ? <path d="m11.5 4-6 6 6 6" /> : null}
+      {name === "right" ? <path d="m8.5 4 6 6-6 6" /> : null}
+      {name === "duplicate" ? (
+        <>
+          <rect x="7" y="7" width="9" height="9" rx="1" />
+          <path d="M13 7V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h2" />
+        </>
+      ) : null}
+    </svg>
+  );
+}
+
+function OrganizePages({
+  document,
+  plan,
+  selectedPageId,
+  onToggleSelection,
+  onMovePageByIndex,
+  onDeletePage,
+  onDuplicatePage,
+  onRotatePage,
+  onReset,
+}: OrganizePagesProps) {
+  const hasPendingChanges = isPlanModified(plan, document.pageCount);
+  const canReset = hasPendingChanges || selectedPageId !== null;
+  const [draggedPageId, setDraggedPageId] = useState<string | null>(null);
+  const [dropPageId, setDropPageId] = useState<string | null>(null);
+
+  const handleDragStart = (event: DragEvent<HTMLElement>, pageId: string) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", pageId);
+    setDraggedPageId(pageId);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLElement>, targetPageId: string) => {
+    event.preventDefault();
+    const sourcePageId = event.dataTransfer.getData("text/plain") || draggedPageId;
+    const sourceIndex = plan.pages.findIndex((page) => page.id === sourcePageId);
+    const targetIndex = plan.pages.findIndex((page) => page.id === targetPageId);
+
+    if (sourceIndex >= 0 && targetIndex >= 0) {
+      onMovePageByIndex(sourceIndex, targetIndex);
+    }
+
+    setDraggedPageId(null);
+    setDropPageId(null);
+  };
+
+  return (
+    <section className="organize-workspace" aria-label={`Organiser les pages de ${document.fileName}`}>
+      <header className="organize-header">
+        <div>
+          <h2>Organiser les pages</h2>
+          <p>
+            Modifications locales uniquement — elles seront exportables dans une prochaine étape.
+          </p>
+        </div>
+        <div className="organize-header__actions">
+          <span className={hasPendingChanges ? "organize-changes is-pending" : "organize-changes"}>
+            {hasPendingChanges ? "Modifications en attente" : "Ordre d'origine"}
+          </span>
+          <button type="button" onClick={onReset} disabled={!canReset}>
+            Réinitialiser l'organisation
+          </button>
+          <button type="button" disabled title="L'export PDF sera disponible prochainement.">
+            Exporter — bientôt disponible
+          </button>
+        </div>
+      </header>
+
+      {plan.pages.length > 0 ? (
+        <div className="organize-grid" aria-label="Grille des pages organisées">
+          {plan.pages.map((page, index) => {
+            const selected = page.id === selectedPageId;
+            const pageLabel = `Page ${page.displayPageNumber}`;
+
+            return (
+              <article
+                key={page.id}
+                draggable
+                className={[
+                  "organize-page",
+                  selected ? "is-selected" : "",
+                  draggedPageId === page.id ? "is-dragging" : "",
+                  dropPageId === page.id && draggedPageId !== page.id ? "is-drop-target" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                aria-label={pageLabel}
+                aria-selected={selected}
+                onDragStart={(event) => handleDragStart(event, page.id)}
+                onDragEnd={() => {
+                  setDraggedPageId(null);
+                  setDropPageId(null);
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  setDropPageId(page.id);
+                }}
+                onDragLeave={() => setDropPageId((currentPageId) => (currentPageId === page.id ? null : currentPageId))}
+                onDrop={(event) => handleDrop(event, page.id)}
+              >
+                <OrganizePageThumbnail pdfDocument={document.pdfDocument} page={page} />
+                <button
+                  type="button"
+                  className="organize-page__icon-button organize-page__select"
+                  onClick={() => onToggleSelection(page.id)}
+                  aria-label={`Sélectionner la page ${page.displayPageNumber}`}
+                  aria-pressed={selected}
+                  title={selected ? "Désélectionner la page" : "Sélectionner la page"}
+                >
+                  <OrganizeIcon name="check" />
+                </button>
+                <button
+                  type="button"
+                  className="organize-page__icon-button organize-page__rotate"
+                  onClick={() => onRotatePage(page.id)}
+                  aria-label={`Tourner la page ${page.displayPageNumber} vers la droite`}
+                  title="Tourner de 90° vers la droite"
+                >
+                  <OrganizeIcon name="rotate" />
+                </button>
+                <button
+                  type="button"
+                  className="organize-page__icon-button organize-page__move organize-page__move--left"
+                  onClick={() => onMovePageByIndex(index, index - 1)}
+                  disabled={index === 0}
+                  aria-label={`Déplacer la page ${page.displayPageNumber} vers la gauche`}
+                  title="Déplacer d'un cran vers la gauche"
+                >
+                  <OrganizeIcon name="left" />
+                </button>
+                <button
+                  type="button"
+                  className="organize-page__icon-button organize-page__move organize-page__move--right"
+                  onClick={() => onMovePageByIndex(index, index + 1)}
+                  disabled={index === plan.pages.length - 1}
+                  aria-label={`Déplacer la page ${page.displayPageNumber} vers la droite`}
+                  title="Déplacer d'un cran vers la droite"
+                >
+                  <OrganizeIcon name="right" />
+                </button>
+                <div className="organize-page__bottom-actions">
+                  <button
+                    type="button"
+                    className="organize-page__icon-button"
+                    onClick={() => onDuplicatePage(page.id)}
+                    aria-label={`Dupliquer la page ${page.displayPageNumber}`}
+                    title="Dupliquer la page"
+                  >
+                    <OrganizeIcon name="duplicate" />
+                  </button>
+                  <button
+                    type="button"
+                    className="organize-page__icon-button organize-page__delete"
+                    onClick={() => onDeletePage(page.id)}
+                    aria-label={`Supprimer la page ${page.displayPageNumber}`}
+                    title="Retirer du plan d'organisation"
+                  >
+                    <OrganizeIcon name="trash" />
+                  </button>
+                </div>
+                <div className="organize-page__meta">
+                  <strong>{pageLabel}</strong>
+                  <span>Source : page {page.sourcePageIndex + 1}</span>
+                  {page.rotation !== 0 ? <span>Rotation : {page.rotation}°</span> : null}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="organize-empty-state">
+          <p>Toutes les pages ont été retirées du plan.</p>
+          <button type="button" onClick={onReset}>
+            Réinitialiser l'organisation
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DocumentSidebar({
   documents,
   activeDocumentId,
@@ -795,13 +1116,18 @@ function ResetIcon() {
 
 type EmptyStateProps = {
   status: string;
+  mode: WorkspaceMode;
 };
 
-function EmptyState({ status }: EmptyStateProps) {
+function EmptyState({ status, mode }: EmptyStateProps) {
   return (
     <section className="empty-state" aria-label="Aucun PDF ouvert">
       <p className="status">{status}</p>
-      <p>Le panneau de gauche listera vos documents ouverts.</p>
+      <p>
+        {mode === "organize"
+          ? "Ouvrez un PDF pour organiser ses pages."
+          : "Le panneau de gauche listera vos documents ouverts."}
+      </p>
     </section>
   );
 }
@@ -818,8 +1144,12 @@ export function App() {
   const [isSidebarVisible, setIsSidebarVisible] = useState(() => storedPreferences?.sidebarVisible ?? true);
   const [documents, setDocuments] = useState<OpenPdfDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("read");
+  const [organizationPlans, setOrganizationPlans] = useState<Record<string, OrganizePagePlan>>({});
+  const [selectedPageIdsByDocument, setSelectedPageIdsByDocument] = useState<Record<string, string | null>>({});
   const [status, setStatus] = useState("Sélectionnez un PDF local.");
   const [viewerFocusRequest, setViewerFocusRequest] = useState(0);
+  const nextOrganizedPageId = useRef(1);
   const [isRestoringDocuments, setIsRestoringDocuments] = useState(
     () => (storedPreferences?.documentOrder.length ?? 0) > 0,
   );
@@ -831,6 +1161,25 @@ export function App() {
     () => documents.findIndex((document) => document.id === activeDocumentId),
     [activeDocumentId, documents],
   );
+  const activeOrganizationPlan = useMemo(() => {
+    if (!activeDocument) {
+      return null;
+    }
+
+    return (
+      organizationPlans[activeDocument.id] ??
+      createInitialPagePlan(activeDocument.id, activeDocument.pageCount)
+    );
+  }, [activeDocument, organizationPlans]);
+  const selectedOrganizedPageId = activeDocument
+    ? (selectedPageIdsByDocument[activeDocument.id] ?? null)
+    : null;
+
+  useEffect(() => {
+    if (documents.length === 0) {
+      setWorkspaceMode("read");
+    }
+  }, [documents.length]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -899,7 +1248,32 @@ export function App() {
         return;
       }
 
+      const restoredPlans: Record<string, OrganizePagePlan> = {};
+      const restoredSelectedPageIds: Record<string, string | null> = {};
+
+      restoredDocuments.forEach((restoredDocument) => {
+        const storedPlan = loadOrganizationPlan(restoredDocument.id);
+
+        if (!storedPlan) {
+          return;
+        }
+
+        if (!isValidPagePlanForDocument(storedPlan.plan, restoredDocument.id, restoredDocument.pageCount)) {
+          removeOrganizationPlan(restoredDocument.id);
+          return;
+        }
+
+        restoredPlans[restoredDocument.id] = storedPlan.plan;
+        restoredSelectedPageIds[restoredDocument.id] = storedPlan.plan.pages.some(
+          (page) => page.id === storedPlan.selectedPageId,
+        )
+          ? storedPlan.selectedPageId
+          : null;
+      });
+
       setDocuments(restoredDocuments);
+      setOrganizationPlans(restoredPlans);
+      setSelectedPageIdsByDocument(restoredSelectedPageIds);
       setActiveDocumentId(
         storedPreferences?.activeDocumentId &&
           restoredDocuments.some((document) => document.id === storedPreferences.activeDocumentId)
@@ -958,6 +1332,23 @@ export function App() {
     };
   }, [documents, isRestoringDocuments]);
 
+  useEffect(() => {
+    if (isRestoringDocuments) {
+      return;
+    }
+
+    Object.entries(organizationPlans).forEach(([documentId, plan]) => {
+      if (!documents.some((document) => document.id === documentId)) {
+        return;
+      }
+
+      saveOrganizationPlan(documentId, {
+        plan,
+        selectedPageId: selectedPageIdsByDocument[documentId] ?? null,
+      });
+    });
+  }, [documents, isRestoringDocuments, organizationPlans, selectedPageIdsByDocument]);
+
   const updateDocumentZoom = useCallback((documentId: string, delta: number) => {
     setDocuments((currentDocuments) =>
       currentDocuments.map((document) => {
@@ -1004,6 +1395,15 @@ export function App() {
       pendingFocusTargetRef.current = fallbackDocument?.id ?? "file-input";
 
       setDocuments(nextDocuments);
+      setOrganizationPlans((currentPlans) => {
+        const { [documentId]: _closedPlan, ...remainingPlans } = currentPlans;
+        return remainingPlans;
+      });
+      setSelectedPageIdsByDocument((currentSelection) => {
+        const { [documentId]: _closedSelection, ...remainingSelection } = currentSelection;
+        return remainingSelection;
+      });
+      removeOrganizationPlan(documentId);
       setActiveDocumentId((currentActiveId) => {
         if (currentActiveId !== documentId) {
           return nextDocuments.some((document) => document.id === currentActiveId)
@@ -1080,6 +1480,9 @@ export function App() {
       return [];
     });
     setActiveDocumentId(null);
+    setOrganizationPlans({});
+    setSelectedPageIdsByDocument({});
+    setWorkspaceMode("read");
     setStatus("Sélectionnez un PDF local.");
     setIsSidebarVisible(true);
     setIsRestoringDocuments(false);
@@ -1167,6 +1570,116 @@ export function App() {
       selectDocumentByKeyboard,
     ],
   );
+
+  const updateActiveOrganizationPlan = useCallback(
+    (updatePlan: (plan: OrganizePagePlan) => OrganizePagePlan) => {
+      if (!activeDocument) {
+        return;
+      }
+
+      setOrganizationPlans((currentPlans) => {
+        const currentPlan =
+          currentPlans[activeDocument.id] ??
+          createInitialPagePlan(activeDocument.id, activeDocument.pageCount);
+
+        return {
+          ...currentPlans,
+          [activeDocument.id]: updatePlan(currentPlan),
+        };
+      });
+    },
+    [activeDocument],
+  );
+
+  const moveOrganizedPage = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      updateActiveOrganizationPlan((plan) => {
+        return { ...plan, pages: moveOrganizedPageByIndex(plan.pages, fromIndex, toIndex) };
+      });
+    },
+    [updateActiveOrganizationPlan],
+  );
+
+  const toggleOrganizedPageSelection = useCallback(
+    (pageId: string) => {
+      if (!activeDocument) {
+        return;
+      }
+
+      updateActiveOrganizationPlan((plan) => plan);
+      setSelectedPageIdsByDocument((currentSelection) => ({
+        ...currentSelection,
+        [activeDocument.id]: currentSelection[activeDocument.id] === pageId ? null : pageId,
+      }));
+    },
+    [activeDocument, updateActiveOrganizationPlan],
+  );
+
+  const deleteOrganizedPage = useCallback(
+    (pageId: string) => {
+      updateActiveOrganizationPlan((plan) => ({
+        ...plan,
+        pages: renumberOrganizedPages(plan.pages.filter((page) => page.id !== pageId)),
+      }));
+      if (activeDocument) {
+        setSelectedPageIdsByDocument((currentSelection) => ({
+          ...currentSelection,
+          [activeDocument.id]: currentSelection[activeDocument.id] === pageId ? null : currentSelection[activeDocument.id],
+        }));
+      }
+    },
+    [activeDocument, updateActiveOrganizationPlan],
+  );
+
+  const duplicateOrganizedPage = useCallback(
+    (pageId: string) => {
+      updateActiveOrganizationPlan((plan) => {
+        const currentIndex = plan.pages.findIndex((page) => page.id === pageId);
+
+        if (currentIndex < 0) {
+          return plan;
+        }
+
+        const pages = [...plan.pages];
+        const pageToDuplicate = pages[currentIndex];
+        pages.splice(currentIndex + 1, 0, {
+          ...pageToDuplicate,
+          id: `${pageToDuplicate.id}:copy:${Date.now()}-${nextOrganizedPageId.current}`,
+        });
+        nextOrganizedPageId.current += 1;
+        return { ...plan, pages: renumberOrganizedPages(pages) };
+      });
+    },
+    [updateActiveOrganizationPlan],
+  );
+
+  const rotateOrganizedPage = useCallback(
+    (pageId: string) => {
+      updateActiveOrganizationPlan((plan) => ({
+        ...plan,
+        pages: plan.pages.map((page) =>
+          page.id === pageId ? { ...page, rotation: rotatePage(page.rotation, 90) } : page,
+        ),
+      }));
+    },
+    [updateActiveOrganizationPlan],
+  );
+
+  const resetActiveOrganizationPlan = useCallback(() => {
+    if (!activeDocument) {
+      return;
+    }
+
+    setOrganizationPlans((currentPlans) => {
+      const { [activeDocument.id]: _resetPlan, ...remainingPlans } = currentPlans;
+      return remainingPlans;
+    });
+    setSelectedPageIdsByDocument((currentSelection) => {
+      const { [activeDocument.id]: _resetSelection, ...remainingSelection } = currentSelection;
+      return remainingSelection;
+    });
+    removeOrganizationPlan(activeDocument.id);
+  }, [activeDocument]);
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     if (isRestoringDocuments) {
@@ -1262,6 +1775,16 @@ export function App() {
           )}
         </div>
 
+        <div className="toolbar-actions" aria-label="Mode d'affichage">
+          <button
+            type="button"
+            onClick={() => setWorkspaceMode((currentMode) => (currentMode === "read" ? "organize" : "read"))}
+            aria-pressed={workspaceMode === "organize"}
+          >
+            {workspaceMode === "organize" ? "Revenir à la lecture" : "Organiser"}
+          </button>
+        </div>
+
         <div className="page-controls">
           <button
             type="button"
@@ -1270,7 +1793,7 @@ export function App() {
                 updateDocumentZoom(activeDocument.id, -ZOOM_STEP);
               }
             }}
-            disabled={!activeDocument || activeDocument.zoom <= MIN_ZOOM}
+            disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom <= MIN_ZOOM}
             aria-label="Réduire le zoom"
           >
             -
@@ -1285,7 +1808,7 @@ export function App() {
                 updateDocumentZoom(activeDocument.id, ZOOM_STEP);
               }
             }}
-            disabled={!activeDocument || activeDocument.zoom >= MAX_ZOOM}
+            disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom >= MAX_ZOOM}
             aria-label="Augmenter le zoom"
           >
             +
@@ -1328,15 +1851,27 @@ export function App() {
           />
         ) : null}
 
-        {activeDocument ? (
+        {activeDocument && workspaceMode === "read" ? (
           <PdfViewer
             document={activeDocument}
             onZoomChange={updateDocumentZoom}
             onScrollPositionChange={updateDocumentScrollPosition}
             focusRequest={viewerFocusRequest}
           />
+        ) : activeDocument && activeOrganizationPlan ? (
+          <OrganizePages
+            document={activeDocument}
+            plan={activeOrganizationPlan}
+            selectedPageId={selectedOrganizedPageId}
+            onToggleSelection={toggleOrganizedPageSelection}
+            onMovePageByIndex={moveOrganizedPage}
+            onDeletePage={deleteOrganizedPage}
+            onDuplicatePage={duplicateOrganizedPage}
+            onRotatePage={rotateOrganizedPage}
+            onReset={resetActiveOrganizationPlan}
+          />
         ) : (
-          <EmptyState status={status} />
+          <EmptyState status={status} mode={workspaceMode} />
         )}
       </section>
     </main>
