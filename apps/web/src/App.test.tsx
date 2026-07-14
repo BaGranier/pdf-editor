@@ -6,6 +6,8 @@ import {
   clearViewerStorage,
   loadOrganizationPlan,
   loadViewerPreferences,
+  saveStoredDocument,
+  saveViewerPreferences,
 } from "./storage/viewerStorage";
 
 vi.mock("pdfjs-dist", () => ({
@@ -102,6 +104,47 @@ describe("App", () => {
         "true",
       );
     });
+  });
+
+  it("warns without blocking when an opened PDF exceeds the recommended page limit", async () => {
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.resolve(createPdfDocumentMock(251)),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: { files: [new File(["%PDF-1.4"], "long.pdf", { type: "application/pdf" })] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "long.pdf, document actif" })).toBeInTheDocument();
+      expect(screen.getByText(/long\.pdf contient 251 pages, au-delà des 250 recommandées/)).toBeInTheDocument();
+    });
+  });
+
+  it("keeps local reset available after a persistence warning", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: { files: [new File(["%PDF-1.4"], "session-only.pdf", { type: "application/pdf" })] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Les PDF ne peuvent pas être conservés durablement");
+    });
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Réinitialiser les données locales" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Aucun PDF ouvert" })).toBeInTheDocument();
+    });
+    expect(confirm).toHaveBeenCalledOnce();
   });
 
   it("navigates the sidebar with the keyboard and closes the focused document", async () => {
@@ -265,6 +308,66 @@ describe("App", () => {
     expect(screen.getByRole("region", { name: "Aperçu PDF scroll.pdf" })).toHaveProperty("scrollTop", 424);
   });
 
+  it("supports Ctrl/Cmd wheel zoom and Home/End navigation in the viewer", async () => {
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: { files: [new File(["%PDF-1.4"], "shortcuts.pdf", { type: "application/pdf" })] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Aperçu PDF shortcuts.pdf" })).toBeInTheDocument();
+    });
+
+    const viewer = screen.getByRole("region", { name: "Aperçu PDF shortcuts.pdf" });
+    Object.defineProperty(viewer, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(viewer, "scrollHeight", { configurable: true, value: 1600 });
+    viewer.scrollTop = 500;
+    viewer.focus();
+
+    fireEvent.wheel(viewer, { ctrlKey: true, deltaY: -20 });
+    expect(screen.getByText("110%")).toBeInTheDocument();
+
+    fireEvent.keyDown(viewer, { key: "Home" });
+    expect(viewer).toHaveProperty("scrollTop", 0);
+
+    fireEvent.keyDown(viewer, { key: "End" });
+    expect(viewer).toHaveProperty("scrollTop", 1200);
+  });
+
+  it("discards a failed restored document and releases its PDF loading task", async () => {
+    const destroy = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.reject(new Error("PDF corrompu")),
+      destroy,
+    } as never);
+    saveViewerPreferences({
+      theme: "light",
+      sidebarVisible: true,
+      activeDocumentId: "broken-document",
+      documentOrder: ["broken-document"],
+    });
+    await saveStoredDocument({
+      id: "broken-document",
+      fileName: "broken.pdf",
+      mimeType: "application/pdf",
+      content: new Blob(["broken"], { type: "application/pdf" }),
+      pageCount: 1,
+      zoom: 1,
+      scrollLeft: 0,
+      scrollTop: 0,
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("1 document n'a pas pu être restauré.")).toHaveLength(2);
+    });
+    expect(screen.getByRole("region", { name: "Aucun PDF ouvert" })).toBeInTheDocument();
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
   it("moves between PDF pages with PageUp and PageDown", async () => {
     vi.mocked(pdfjsLib.getDocument).mockReturnValue({
       promise: Promise.resolve(createPdfDocumentMock(3)),
@@ -359,6 +462,8 @@ describe("App", () => {
 
     const grid = screen.getByLabelText("Grille des pages organisées");
     expect(within(grid).getAllByLabelText(/Miniature de la page source/)).toHaveLength(3);
+    expect(screen.getByLabelText("Plan d'export")).toBeInTheDocument();
+    expect(screen.getByLabelText("3 pages seront exportées")).toHaveTextContent("3 pages");
     expect(screen.getByRole("button", { name: "Revenir à la lecture" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -372,11 +477,18 @@ describe("App", () => {
       promise: Promise.resolve(createPdfDocumentMock(2)),
       destroy: vi.fn().mockResolvedValue(undefined),
     } as never);
-    const fetchMock = vi.fn().mockResolvedValue({
+    let resolveExport: (response: Response) => void = () => undefined;
+    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveExport = resolve;
+        }),
+    );
+    const exportResponse = {
       ok: true,
       blob: vi.fn().mockResolvedValue(new Blob(["exported"], { type: "application/pdf" })),
       headers: new Headers({ "content-disposition": 'attachment; filename="edited.pdf"' }),
-    });
+    } as unknown as Response;
     const createObjectUrl = vi.fn(() => "blob:exported-pdf");
     const revokeObjectUrl = vi.fn();
     const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
@@ -398,11 +510,15 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
     fireEvent.click(screen.getByRole("button", { name: "Exporter le PDF" }));
 
+    expect(screen.getByRole("button", { name: "Export en cours…" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Export en cours…");
+    resolveExport(exportResponse);
+
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    const [, request] = fetchMock.mock.calls[0] as [string, { body: FormData; method: string }];
+    const [, request] = fetchMock.mock.calls[0] as unknown as [string, { body: FormData; method: string }];
     const plan = JSON.parse(String(request.body.get("plan"))) as {
       outputName: string;
       saveToOutputDir: boolean;
@@ -426,9 +542,17 @@ describe("App", () => {
         { sourceDocumentId: documentIds[0], sourcePageIndex: 1, rotation: 0 },
       ],
     });
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Aperçu PDF edited.pdf" })).toBeInTheDocument();
+    });
     expect(createObjectUrl).toHaveBeenCalledTimes(1);
     expect(anchorClick).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("status")).toHaveTextContent("PDF exporté : edited.pdf");
+    expect(screen.getByRole("button", { name: "edited.pdf, document actif" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Organiser" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("status")).toHaveTextContent("PDF exporté avec succès : edited.pdf");
 
     anchorClick.mockRestore();
     vi.unstubAllGlobals();
@@ -468,7 +592,10 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Tout ajouter" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Insérer avant la page sélectionnée" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Insérer après la page sélectionnée" })).not.toBeInTheDocument();
+    const externalThumbnails = screen.getByLabelText("Miniatures des pages externes");
+    expect(within(externalThumbnails).getAllByLabelText(/Miniature externe de la page/)).toHaveLength(2);
     fireEvent.click(screen.getByLabelText("Ajouter beta.pdf, page 2"));
+    expect(screen.getByLabelText("Ajouter beta.pdf, page 2")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Ajouter les pages sélectionnées" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Ajouter les pages sélectionnées" }));
 
@@ -476,6 +603,8 @@ describe("App", () => {
       expect(screen.getByText("beta.pdf — p. 2")).toBeInTheDocument();
       expect(screen.getByLabelText("Grille des pages organisées").querySelectorAll(".organize-page")).toHaveLength(3);
     });
+    expect(within(screen.getByLabelText("Sources du plan d'export")).getByText("alpha.pdf : 2 pages")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Sources du plan d'export")).getByText("beta.pdf : 1 page")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Tout ajouter" }));
 
@@ -509,9 +638,59 @@ describe("App", () => {
       { sourceDocumentId: documentIds[1], sourcePageIndex: 1, rotation: 0 },
     ]);
     expect(new Set(plan.pages.map((page) => page.sourceDocumentId))).toEqual(new Set(documentIds));
-    expect(screen.getByRole("status")).toHaveTextContent("Erreur d'export : Backend indisponible");
+    expect(screen.getByRole("alert")).toHaveTextContent("Erreur du backend : Backend indisponible");
 
     vi.unstubAllGlobals();
+  });
+
+  it("confirms before closing a source used by an organization plan and removes its pages", async () => {
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.resolve(createPdfDocumentMock(2)),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [
+          new File(["%PDF-alpha"], "alpha-close.pdf", { type: "application/pdf" }),
+          new File(["%PDF-beta"], "beta-close.pdf", { type: "application/pdf" }),
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "alpha-close.pdf" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "alpha-close.pdf" }));
+    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ajouter depuis un PDF ouvert" }));
+    fireEvent.click(screen.getByLabelText("Ajouter beta-close.pdf, page 1"));
+    fireEvent.click(screen.getByRole("button", { name: "Ajouter les pages sélectionnées" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("beta-close.pdf — p. 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Fermer beta-close.pdf" }));
+    expect(confirmSpy).toHaveBeenCalledWith(
+      "Ce document est utilisé dans le plan d'organisation. Le fermer retirera ses pages du document final.",
+    );
+    expect(screen.getByRole("button", { name: "beta-close.pdf" })).toBeInTheDocument();
+
+    confirmSpy.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Fermer beta-close.pdf" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "beta-close.pdf" })).not.toBeInTheDocument();
+      expect(screen.queryByText("beta-close.pdf — p. 1")).not.toBeInTheDocument();
+    });
+    expect(screen.getByLabelText("2 pages seront exportées")).toBeInTheDocument();
+
+    confirmSpy.mockRestore();
   });
 
   it("exports a persisted multi-document plan with files restored after a remount", async () => {
@@ -588,7 +767,7 @@ describe("App", () => {
     expect(documentIds).toHaveLength(2);
     expect(plan.pages.map((page) => page.sourcePageIndex)).toEqual([0, 1, 1]);
     expect(new Set(plan.pages.map((page) => page.sourceDocumentId))).toEqual(new Set(documentIds));
-    expect(screen.getByRole("status")).toHaveTextContent("PDF exporté : restored.pdf");
+    expect(screen.getByRole("status")).toHaveTextContent("PDF exporté avec succès : restored.pdf");
 
     anchorClick.mockRestore();
     vi.unstubAllGlobals();
@@ -667,7 +846,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(within(grid).queryByLabelText("Miniature de la page source 1")).not.toBeInTheDocument();
     });
-    expect(screen.getByText("Modifications en attente")).toBeInTheDocument();
+    expect(screen.getByText("Modifié")).toBeInTheDocument();
 
     fireEvent.click(within(screen.getByLabelText("Page 1")).getByRole("button", {
       name: "Dupliquer la page 1",

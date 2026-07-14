@@ -25,4 +25,22 @@ describe("pagePlan", () => {
       }),
     ).toBe(false);
   });
+
+  it("rejects a plan that references an unavailable source document", () => {
+    const plan = createInitialPagePlan("pdf-1", "first.pdf", 1);
+    plan.pages.push({
+      id: "pdf-2:page:0",
+      sourceDocumentId: "pdf-2",
+      sourceDocumentName: "missing.pdf",
+      sourcePageIndex: 0,
+      displayPageNumber: 2,
+      rotation: 0,
+    });
+
+    expect(
+      isValidPagePlanForDocument(plan, "pdf-1", {
+        "pdf-1": { fileName: "first.pdf", pageCount: 1 },
+      }),
+    ).toBe(false);
+  });
 });

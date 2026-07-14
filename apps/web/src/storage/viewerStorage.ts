@@ -152,33 +152,48 @@ export function loadViewerPreferences(): ViewerPreferences | null {
     return null;
   }
 
-  return parseViewerPreferences(storage.getItem(PREF_KEY));
+  try {
+    return parseViewerPreferences(storage.getItem(PREF_KEY));
+  } catch {
+    return null;
+  }
 }
 
 export function saveViewerPreferences(preferences: ViewerPreferences) {
   const storage = getSafeLocalStorage();
 
   if (!storage) {
-    return;
+    return false;
   }
 
-  storage.setItem(PREF_KEY, serializeViewerPreferences(preferences));
+  try {
+    storage.setItem(PREF_KEY, serializeViewerPreferences(preferences));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function clearViewerPreferences() {
   const storage = getSafeLocalStorage();
 
   if (!storage) {
-    return;
+    return false;
   }
 
-  storage.removeItem(PREF_KEY);
+  try {
+    storage.removeItem(PREF_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function clearViewerStorage() {
-  clearViewerPreferences();
-  clearOrganizationPlans();
-  await clearStoredDocuments();
+  const preferencesCleared = clearViewerPreferences();
+  const plansCleared = clearOrganizationPlans();
+  const documentsCleared = await clearStoredDocuments();
+  return preferencesCleared && plansCleared && documentsCleared;
 }
 
 function isPageRotation(value: unknown): value is PageRotation {
@@ -245,21 +260,30 @@ function saveOrganizationPlanCollection(plans: Record<string, StoredOrganization
   const storage = getSafeLocalStorage();
 
   if (!storage) {
-    return;
+    return false;
   }
 
-  storage.setItem(ORGANIZATION_PLANS_KEY, JSON.stringify(plans));
+  try {
+    storage.setItem(ORGANIZATION_PLANS_KEY, JSON.stringify(plans));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function saveOrganizationPlan(documentId: string, storedPlan: StoredOrganizationPlan) {
   const storage = getSafeLocalStorage();
 
   if (!storage) {
-    return;
+    return false;
   }
 
-  const plans = parseOrganizationPlans(storage.getItem(ORGANIZATION_PLANS_KEY));
-  saveOrganizationPlanCollection({ ...plans, [documentId]: storedPlan });
+  try {
+    const plans = parseOrganizationPlans(storage.getItem(ORGANIZATION_PLANS_KEY));
+    return saveOrganizationPlanCollection({ ...plans, [documentId]: storedPlan });
+  } catch {
+    return false;
+  }
 }
 
 export function loadOrganizationPlan(documentId: string): StoredOrganizationPlan | null {
@@ -269,29 +293,42 @@ export function loadOrganizationPlan(documentId: string): StoredOrganizationPlan
     return null;
   }
 
-  return parseOrganizationPlans(storage.getItem(ORGANIZATION_PLANS_KEY))[documentId] ?? null;
+  try {
+    return parseOrganizationPlans(storage.getItem(ORGANIZATION_PLANS_KEY))[documentId] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function removeOrganizationPlan(documentId: string) {
   const storage = getSafeLocalStorage();
 
   if (!storage) {
-    return;
+    return false;
   }
 
-  const plans = parseOrganizationPlans(storage.getItem(ORGANIZATION_PLANS_KEY));
-  const { [documentId]: _removedPlan, ...remainingPlans } = plans;
-  saveOrganizationPlanCollection(remainingPlans);
+  try {
+    const plans = parseOrganizationPlans(storage.getItem(ORGANIZATION_PLANS_KEY));
+    const { [documentId]: _removedPlan, ...remainingPlans } = plans;
+    return saveOrganizationPlanCollection(remainingPlans);
+  } catch {
+    return false;
+  }
 }
 
 export function clearOrganizationPlans() {
   const storage = getSafeLocalStorage();
 
   if (!storage) {
-    return;
+    return false;
   }
 
-  storage.removeItem(ORGANIZATION_PLANS_KEY);
+  try {
+    storage.removeItem(ORGANIZATION_PLANS_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function toStoredPdfDocument(snapshot: ViewerDocumentSnapshot): StoredPdfDocument {
@@ -313,14 +350,14 @@ async function putStoredDocument(snapshot: ViewerDocumentSnapshot) {
 
   if (!hasIndexedDb()) {
     memoryDocuments.set(storedDocument.id, storedDocument);
-    return;
+    return false;
   }
 
   const database = await openDatabase();
 
   if (!database) {
     memoryDocuments.set(storedDocument.id, storedDocument);
-    return;
+    return false;
   }
 
   try {
@@ -333,6 +370,7 @@ async function putStoredDocument(snapshot: ViewerDocumentSnapshot) {
       transaction.addEventListener("error", () => reject(transaction.error ?? new Error("Unable to save document.")));
       transaction.addEventListener("abort", () => reject(transaction.error ?? new Error("Unable to save document.")));
     });
+    return true;
   } finally {
     database.close();
   }
@@ -340,9 +378,10 @@ async function putStoredDocument(snapshot: ViewerDocumentSnapshot) {
 
 export async function saveStoredDocument(snapshot: ViewerDocumentSnapshot) {
   try {
-    await putStoredDocument(snapshot);
+    return await putStoredDocument(snapshot);
   } catch {
     memoryDocuments.set(snapshot.id, toStoredPdfDocument(snapshot));
+    return false;
   }
 }
 
@@ -368,6 +407,8 @@ export async function loadStoredDocument(documentId: string) {
     const store = transaction.objectStore(DOCUMENT_STORE);
     const result = await requestToPromise<StoredPdfDocument | undefined>(store.get(documentId));
     return result ?? null;
+  } catch {
+    return memoryDocuments.get(documentId) ?? null;
   } finally {
     database.close();
   }
@@ -381,7 +422,7 @@ export async function loadStoredDocuments(documentIds: string[]) {
 export async function removeStoredDocument(documentId: string) {
   if (!hasIndexedDb()) {
     memoryDocuments.delete(documentId);
-    return;
+    return false;
   }
 
   let database: IDBDatabase | null = null;
@@ -390,12 +431,12 @@ export async function removeStoredDocument(documentId: string) {
     database = await openDatabase();
   } catch {
     memoryDocuments.delete(documentId);
-    return;
+    return false;
   }
 
   if (!database) {
     memoryDocuments.delete(documentId);
-    return;
+    return false;
   }
 
   try {
@@ -411,6 +452,10 @@ export async function removeStoredDocument(documentId: string) {
         reject(transaction.error ?? new Error("Unable to delete document.")),
       );
     });
+    return true;
+  } catch {
+    memoryDocuments.delete(documentId);
+    return false;
   } finally {
     database.close();
   }
@@ -419,7 +464,7 @@ export async function removeStoredDocument(documentId: string) {
 export async function clearStoredDocuments() {
   if (!hasIndexedDb()) {
     memoryDocuments.clear();
-    return;
+    return true;
   }
 
   let database: IDBDatabase | null = null;
@@ -428,12 +473,12 @@ export async function clearStoredDocuments() {
     database = await openDatabase();
   } catch {
     memoryDocuments.clear();
-    return;
+    return false;
   }
 
   if (!database) {
     memoryDocuments.clear();
-    return;
+    return false;
   }
 
   try {
@@ -449,6 +494,11 @@ export async function clearStoredDocuments() {
         reject(transaction.error ?? new Error("Unable to clear documents.")),
       );
     });
+    memoryDocuments.clear();
+    return true;
+  } catch {
+    memoryDocuments.clear();
+    return false;
   } finally {
     database.close();
   }

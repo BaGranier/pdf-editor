@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearViewerStorage,
   loadOrganizationPlan,
@@ -88,7 +88,7 @@ describe("viewerStorage", () => {
       scrollTop: 24,
     };
 
-    await saveStoredDocument(snapshot);
+    await expect(saveStoredDocument(snapshot)).resolves.toBe(false);
 
     await expect(loadStoredDocument("pdf-restore")).resolves.toMatchObject({
       id: "pdf-restore",
@@ -98,6 +98,29 @@ describe("viewerStorage", () => {
       scrollLeft: 12,
       scrollTop: 24,
     });
+  });
+
+  it("reports localStorage write failures without throwing", () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Quota exceeded", "QuotaExceededError");
+    });
+
+    expect(
+      saveViewerPreferences({
+        theme: "light",
+        sidebarVisible: true,
+        activeDocumentId: null,
+        documentOrder: [],
+      }),
+    ).toBe(false);
+    expect(
+      saveOrganizationPlan("pdf-plan", {
+        plan: createInitialPagePlan("pdf-plan", "plan.pdf", 1),
+        selectedPageId: null,
+      }),
+    ).toBe(false);
+
+    setItem.mockRestore();
   });
 
   it("persists and removes a local organization plan", () => {

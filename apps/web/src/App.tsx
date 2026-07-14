@@ -49,9 +49,16 @@ const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.1;
 const VIEWER_PAN_STEP = 56;
 const PDF_ENGINE_URL = import.meta.env.VITE_PDF_ENGINE_URL ?? "http://localhost:8000";
+const DEFAULT_RECOMMENDED_MAX_FILE_SIZE_MB = 50;
+const DEFAULT_RECOMMENDED_MAX_PAGE_COUNT = 250;
+const DEFAULT_RECOMMENDED_MAX_OPEN_DOCUMENTS = 8;
 
 type RenderState = "idle" | "loading" | "ready" | "error";
 type WorkspaceMode = "read" | "organize";
+type ExportFeedback = {
+  kind: "success" | "warning" | "error";
+  message: string;
+};
 
 type OpenPdfDocument = {
   id: string;
@@ -77,6 +84,7 @@ type DocumentSidebarProps = {
   onClearLocalData: () => void;
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>;
   status: string;
+  storageWarning: string | null;
   sidebarId: string;
   onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
   getDocumentButtonRef: (documentId: string) => (node: HTMLButtonElement | null) => void;
@@ -90,9 +98,71 @@ function clampZoom(value: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * 100) / 100));
 }
 
+function getRecommendedLimit(value: string | undefined, fallback: number) {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : fallback;
+}
+
+const RECOMMENDED_MAX_FILE_SIZE_MB = getRecommendedLimit(
+  import.meta.env.VITE_PDF_RECOMMENDED_MAX_SIZE_MB,
+  DEFAULT_RECOMMENDED_MAX_FILE_SIZE_MB,
+);
+const RECOMMENDED_MAX_FILE_SIZE_BYTES = RECOMMENDED_MAX_FILE_SIZE_MB * 1024 * 1024;
+const RECOMMENDED_MAX_PAGE_COUNT = getRecommendedLimit(
+  import.meta.env.VITE_PDF_RECOMMENDED_MAX_PAGE_COUNT,
+  DEFAULT_RECOMMENDED_MAX_PAGE_COUNT,
+);
+const RECOMMENDED_MAX_OPEN_DOCUMENTS = getRecommendedLimit(
+  import.meta.env.VITE_PDF_RECOMMENDED_MAX_OPEN_DOCUMENTS,
+  DEFAULT_RECOMMENDED_MAX_OPEN_DOCUMENTS,
+);
+
+function getDocumentUsageWarnings(file: File, pageCount: number, openDocumentCount: number) {
+  const warnings: string[] = [];
+
+  if (file.size > RECOMMENDED_MAX_FILE_SIZE_BYTES) {
+    warnings.push(
+      `${file.name} dépasse la taille recommandée de ${RECOMMENDED_MAX_FILE_SIZE_MB} Mo.`,
+    );
+  }
+
+  if (pageCount > RECOMMENDED_MAX_PAGE_COUNT) {
+    warnings.push(
+      `${file.name} contient ${pageCount} pages, au-delà des ${RECOMMENDED_MAX_PAGE_COUNT} recommandées.`,
+    );
+  }
+
+  if (openDocumentCount > RECOMMENDED_MAX_OPEN_DOCUMENTS) {
+    warnings.push(
+      `${openDocumentCount} documents sont ouverts, au-delà des ${RECOMMENDED_MAX_OPEN_DOCUMENTS} recommandés.`,
+    );
+  }
+
+  return warnings;
+}
+
 function getModifiedOutputName(fileName: string) {
   const baseName = fileName.replace(/\.pdf$/i, "") || "document";
   return `${baseName}-modifie.pdf`;
+}
+
+function getUniqueFileName(fileName: string, existingFileNames: string[]) {
+  if (!existingFileNames.includes(fileName)) {
+    return fileName;
+  }
+
+  const extensionMatch = /\.pdf$/i.exec(fileName);
+  const extension = extensionMatch ? extensionMatch[0] : ".pdf";
+  const baseName = fileName.slice(0, -extension.length) || "document";
+  let suffix = 2;
+  let candidate = `${baseName}-${suffix}${extension}`;
+
+  while (existingFileNames.includes(candidate)) {
+    suffix += 1;
+    candidate = `${baseName}-${suffix}${extension}`;
+  }
+
+  return candidate;
 }
 
 function getDownloadFileName(contentDisposition: string | null, fallbackName: string) {
@@ -149,20 +219,26 @@ async function restoreOpenDocument(storedDocument: StoredPdfDocument): Promise<O
   });
   const data = new Uint8Array(await file.arrayBuffer());
   const loadingTask = pdfjsLib.getDocument({ data });
-  const pdfDocument = await loadingTask.promise;
 
-  return {
-    id: storedDocument.id,
-    fileName: storedDocument.fileName,
-    file,
-    pdfDocument,
-    loadingTask,
-    pageCount: storedDocument.pageCount ?? pdfDocument.numPages,
-    zoom: storedDocument.zoom,
-    scrollLeft: storedDocument.scrollLeft,
-    scrollTop: storedDocument.scrollTop,
-    error: null,
-  };
+  try {
+    const pdfDocument = await loadingTask.promise;
+
+    return {
+      id: storedDocument.id,
+      fileName: storedDocument.fileName,
+      file,
+      pdfDocument,
+      loadingTask,
+      pageCount: pdfDocument.numPages,
+      zoom: storedDocument.zoom,
+      scrollLeft: storedDocument.scrollLeft,
+      scrollTop: storedDocument.scrollTop,
+      error: null,
+    };
+  } catch (error) {
+    await loadingTask.destroy().catch(() => undefined);
+    throw error;
+  }
 }
 
 function isEditableKeyboardTarget(target: EventTarget | null) {
@@ -741,6 +817,109 @@ function OrganizePageThumbnail({ pdfDocument, page }: OrganizePageThumbnailProps
   );
 }
 
+type ExternalPageThumbnailProps = {
+  pdfDocument: PDFDocumentProxy;
+  pageNumber: number;
+};
+
+function ExternalPageThumbnail({ pdfDocument, pageNumber }: ExternalPageThumbnailProps) {
+  const thumbnailRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [shouldRender, setShouldRender] = useState(false);
+  const [renderState, setRenderState] = useState<RenderState>("idle");
+
+  useEffect(() => {
+    const thumbnail = thumbnailRef.current;
+
+    if (!thumbnail || !("IntersectionObserver" in window)) {
+      setShouldRender(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setShouldRender(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "360px 0px", threshold: 0.01 },
+    );
+    observer.observe(thumbnail);
+
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+    let renderTask: RenderTask | null = null;
+    const canvas = canvasRef.current;
+
+    if (!shouldRender || !canvas) {
+      return;
+    }
+
+    async function renderThumbnail() {
+      setRenderState("loading");
+
+      try {
+        const pdfPage = await pdfDocument.getPage(pageNumber);
+        const renderCanvas = canvasRef.current;
+
+        if (isCancelled || !renderCanvas) {
+          return;
+        }
+
+        const viewport = pdfPage.getViewport({ scale: 0.12 });
+        const context = renderCanvas.getContext("2d");
+
+        if (!context) {
+          throw new Error("Le canvas n'est pas disponible.");
+        }
+
+        const outputScale = window.devicePixelRatio || 1;
+        renderCanvas.width = Math.floor(viewport.width * outputScale);
+        renderCanvas.height = Math.floor(viewport.height * outputScale);
+        renderCanvas.style.width = `${Math.floor(viewport.width)}px`;
+        renderCanvas.style.height = `${Math.floor(viewport.height)}px`;
+        context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
+        context.clearRect(0, 0, viewport.width, viewport.height);
+
+        renderTask = pdfPage.render({ canvas: renderCanvas, canvasContext: context, viewport });
+        await renderTask.promise;
+
+        if (!isCancelled) {
+          setRenderState("ready");
+        }
+      } catch (error) {
+        if (!isCancelled && (error as Error).name !== "RenderingCancelledException") {
+          setRenderState("error");
+        }
+      }
+    }
+
+    void renderThumbnail();
+
+    return () => {
+      isCancelled = true;
+      renderTask?.cancel();
+      clearCanvas(canvas);
+    };
+  }, [pageNumber, pdfDocument, shouldRender]);
+
+  return (
+    <div ref={thumbnailRef} className="external-page-thumbnail" aria-label={`Miniature externe de la page ${pageNumber}`}>
+      {renderState !== "ready" && renderState !== "error" ? (
+        <span className="external-page-thumbnail__placeholder" aria-hidden="true">
+          {renderState === "loading" ? "Chargement…" : ""}
+        </span>
+      ) : null}
+      {renderState === "error" ? <span className="external-page-thumbnail__fallback">Page {pageNumber}</span> : null}
+      <canvas ref={canvasRef} className="external-page-thumbnail__canvas" />
+    </div>
+  );
+}
+
 type OrganizePagesProps = {
   document: OpenPdfDocument;
   documents: OpenPdfDocument[];
@@ -749,7 +928,7 @@ type OrganizePagesProps = {
   outputName: string;
   saveToOutputDir: boolean;
   isExporting: boolean;
-  exportStatus: string | null;
+  exportFeedback: ExportFeedback | null;
   onToggleSelection: (pageId: string) => void;
   onMovePageByIndex: (fromIndex: number, toIndex: number) => void;
   onDeletePage: (pageId: string) => void;
@@ -760,6 +939,8 @@ type OrganizePagesProps = {
   onSaveToOutputDirChange: (saveToOutputDir: boolean) => void;
   onExport: () => void;
   onAddExternalPages: (sourceDocumentId: string, sourcePageIndexes: number[]) => void;
+  onDismissExportFeedback: () => void;
+  onRemoveMissingSourcePages: () => void;
 };
 
 type OrganizeIconName = "check" | "rotate" | "trash" | "left" | "right" | "duplicate";
@@ -813,7 +994,7 @@ function OrganizePages({
   outputName,
   saveToOutputDir,
   isExporting,
-  exportStatus,
+  exportFeedback,
   onToggleSelection,
   onMovePageByIndex,
   onDeletePage,
@@ -824,6 +1005,8 @@ function OrganizePages({
   onSaveToOutputDirChange,
   onExport,
   onAddExternalPages,
+  onDismissExportFeedback,
+  onRemoveMissingSourcePages,
 }: OrganizePagesProps) {
   const hasPendingChanges = isPlanModified(plan, document.pageCount);
   const canReset = hasPendingChanges || selectedPageId !== null;
@@ -837,6 +1020,23 @@ function OrganizePages({
     additionalDocuments.find((openDocument) => openDocument.id === selectedExternalDocumentId) ??
     additionalDocuments[0] ??
     null;
+  const missingSourceDocuments = [...new Map(
+    plan.pages
+      .filter((page) => !documents.some((openDocument) => openDocument.id === page.sourceDocumentId))
+      .map((page) => [page.sourceDocumentId, page.sourceDocumentName || "PDF sans nom"]),
+  ).values()];
+  const hasMissingSources = missingSourceDocuments.length > 0;
+  const sourceSummaryByDocument = new Map<string, { fileName: string; pageCount: number }>();
+
+  plan.pages.forEach((page) => {
+    const source = sourceSummaryByDocument.get(page.sourceDocumentId);
+
+    sourceSummaryByDocument.set(page.sourceDocumentId, {
+      fileName: page.sourceDocumentName,
+      pageCount: (source?.pageCount ?? 0) + 1,
+    });
+  });
+  const sourceSummary = [...sourceSummaryByDocument.entries()];
 
   useEffect(() => {
     setSelectedExternalPageIndexes([]);
@@ -869,15 +1069,9 @@ function OrganizePages({
           <h2>Organiser les pages</h2>
           <p>Modifications locales uniquement — les PDF originaux restent inchangés.</p>
         </div>
-        <div className="organize-header__actions">
-          <span className={hasPendingChanges ? "organize-changes is-pending" : "organize-changes"}>
-            {hasPendingChanges ? "Modifications en attente" : "Ordre d'origine"}
-          </span>
-          <button type="button" onClick={onReset} disabled={!canReset}>
-            Réinitialiser l'organisation
-          </button>
+        <div className="organize-export-bar" aria-label="Plan d'export">
           <label className="organize-export-name">
-            <span>Nom de sortie</span>
+            <span>Nom final</span>
             <input
               type="text"
               value={outputName}
@@ -886,6 +1080,12 @@ function OrganizePages({
               placeholder="document-modifie.pdf"
             />
           </label>
+          <span className="organize-page-count" aria-label={`${plan.pages.length} pages seront exportées`}>
+            <strong>{plan.pages.length}</strong> {plan.pages.length > 1 ? "pages" : "page"}
+          </span>
+          <span className={hasPendingChanges ? "organize-changes is-pending" : "organize-changes"}>
+            {hasPendingChanges ? "Modifié" : "Ordre d'origine"}
+          </span>
           <label className="organize-export-output-option">
             <input
               type="checkbox"
@@ -894,11 +1094,54 @@ function OrganizePages({
             />
             Copier dans data/output
           </label>
-          <button type="button" onClick={onExport} disabled={plan.pages.length === 0 || isExporting}>
+          <button
+            type="button"
+            className="organize-reset-button"
+            onClick={onReset}
+            disabled={!canReset}
+            aria-label="Réinitialiser l'organisation"
+          >
+            Réinitialiser
+          </button>
+          <button
+            type="button"
+            className="organize-export-button"
+            onClick={onExport}
+            disabled={plan.pages.length === 0 || isExporting || hasMissingSources}
+          >
+            {isExporting ? <span className="organize-spinner" aria-hidden="true" /> : null}
             {isExporting ? "Export en cours…" : "Exporter le PDF"}
           </button>
         </div>
       </header>
+
+      <section className="organize-source-summary" aria-label="Sources du plan d'export">
+        <span className="organize-source-summary__label">Sources</span>
+        {sourceSummary.map(([sourceDocumentId, source]) => (
+          <span key={sourceDocumentId} className="organize-source-summary__item" title={source.fileName}>
+            {source.fileName} : {source.pageCount} {source.pageCount > 1 ? "pages" : "page"}
+          </span>
+        ))}
+      </section>
+
+      {hasMissingSources ? (
+        <div className="organize-feedback organize-feedback--error" role="alert">
+          <div>
+            <strong>Des documents sources sont indisponibles.</strong>
+            <span title={missingSourceDocuments.join(", ")}>
+              Export impossible tant que ces pages sont présentes : {missingSourceDocuments.join(", ")}.
+            </span>
+          </div>
+          <div className="organize-feedback__actions">
+            <button type="button" onClick={onRemoveMissingSourcePages}>
+              Retirer les pages indisponibles
+            </button>
+            <button type="button" onClick={onReset}>
+              Réinitialiser le plan
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <section className="organize-add-pages" aria-label="Ajout de pages externes">
         {additionalDocuments.length > 0 ? (
@@ -929,30 +1172,41 @@ function OrganizePages({
                   ))}
                 </select>
               </label>
-              {selectedExternalDocument ? (
-                <div className="organize-add-pages__choices" aria-label="Pages externes disponibles">
+              {selectedExternalDocument && selectedExternalDocument.pageCount > 0 ? (
+                <div className="external-page-grid" aria-label="Miniatures des pages externes">
                   {Array.from({ length: selectedExternalDocument.pageCount }, (_, sourcePageIndex) => {
                     const isSelected = selectedExternalPageIndexes.includes(sourcePageIndex);
 
                     return (
-                      <label key={sourcePageIndex}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          aria-label={`Ajouter ${selectedExternalDocument.fileName}, page ${sourcePageIndex + 1}`}
-                          onChange={() => {
-                            setSelectedExternalPageIndexes((currentIndexes) =>
-                              isSelected
-                                ? currentIndexes.filter((index) => index !== sourcePageIndex)
-                                : [...currentIndexes, sourcePageIndex],
-                            );
-                          }}
+                      <button
+                        key={sourcePageIndex}
+                        type="button"
+                        className={isSelected ? "external-page is-selected" : "external-page"}
+                        aria-label={`Ajouter ${selectedExternalDocument.fileName}, page ${sourcePageIndex + 1}`}
+                        aria-pressed={isSelected}
+                        title={`${selectedExternalDocument.fileName} — page ${sourcePageIndex + 1}`}
+                        onClick={() => {
+                          setSelectedExternalPageIndexes((currentIndexes) =>
+                            isSelected
+                              ? currentIndexes.filter((index) => index !== sourcePageIndex)
+                              : [...currentIndexes, sourcePageIndex],
+                          );
+                        }}
+                      >
+                        <ExternalPageThumbnail
+                          pdfDocument={selectedExternalDocument.pdfDocument}
+                          pageNumber={sourcePageIndex + 1}
                         />
-                        Page {sourcePageIndex + 1}
-                      </label>
+                        <span className="external-page__footer">
+                          <span>Page {sourcePageIndex + 1}</span>
+                          <span className="external-page__check" aria-hidden="true">✓</span>
+                        </span>
+                      </button>
                     );
                   })}
                 </div>
+              ) : selectedExternalDocument ? (
+                <p className="organize-add-pages__empty">Ce PDF ne contient aucune page disponible.</p>
               ) : null}
               <div className="organize-add-pages__actions">
                 <button
@@ -995,10 +1249,23 @@ function OrganizePages({
         )}
       </section>
 
-      {exportStatus ? (
-        <p className="organize-export-status" role="status">
-          {exportStatus}
-        </p>
+      {isExporting ? (
+        <div className="organize-feedback organize-feedback--progress" role="status">
+          <span className="organize-spinner" aria-hidden="true" />
+          Export en cours…
+        </div>
+      ) : null}
+
+      {exportFeedback ? (
+        <div
+          className={`organize-feedback organize-feedback--${exportFeedback.kind}`}
+          role={exportFeedback.kind === "error" ? "alert" : "status"}
+        >
+          <span>{exportFeedback.message}</span>
+          <button type="button" onClick={onDismissExportFeedback} aria-label="Fermer le message d'export">
+            Fermer
+          </button>
+        </div>
       ) : null}
 
       {plan.pages.length > 0 ? (
@@ -1103,7 +1370,7 @@ function OrganizePages({
                 </div>
                 <div className="organize-page__meta">
                   <strong>{pageLabel}</strong>
-                  <span>
+                  <span className="organize-page__source" title={`${page.sourceDocumentName} — p. ${page.sourcePageIndex + 1}`}>
                     {page.sourceDocumentName} — p. {page.sourcePageIndex + 1}
                   </span>
                   {page.rotation !== 0 ? <span>Rotation : {page.rotation}°</span> : null}
@@ -1135,6 +1402,7 @@ function DocumentSidebar({
   onClearLocalData,
   onFileChange,
   status,
+  storageWarning,
   sidebarId,
   onKeyDown,
   getDocumentButtonRef,
@@ -1159,6 +1427,11 @@ function DocumentSidebar({
       <div className="document-sidebar__content">
         <div className="document-sidebar__scroll-area">
           {status ? <p className="sidebar-status">{status}</p> : null}
+          {storageWarning ? (
+            <p className="sidebar-status" role="alert">
+              {storageWarning}
+            </p>
+          ) : null}
 
           {documents.length > 0 ? (
             <ul className="document-list" aria-label="Liste des documents ouverts">
@@ -1323,8 +1596,9 @@ export function App() {
   const [outputName, setOutputName] = useState("");
   const [saveToOutputDir, setSaveToOutputDir] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [exportFeedback, setExportFeedback] = useState<ExportFeedback | null>(null);
   const [status, setStatus] = useState("Sélectionnez un PDF local.");
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [viewerFocusRequest, setViewerFocusRequest] = useState(0);
   const nextOrganizedPageId = useRef(1);
   const [isRestoringDocuments, setIsRestoringDocuments] = useState(
@@ -1355,7 +1629,6 @@ export function App() {
   useEffect(() => {
     setOutputName(activeDocument ? getModifiedOutputName(activeDocument.fileName) : "");
     setSaveToOutputDir(false);
-    setExportStatus(null);
   }, [activeDocumentId, activeDocument]);
 
   useEffect(() => {
@@ -1507,12 +1780,16 @@ export function App() {
       return;
     }
 
-    saveViewerPreferences({
+    const preferencesSaved = saveViewerPreferences({
       theme,
       sidebarVisible: isSidebarVisible,
       activeDocumentId,
       documentOrder: documents.map((document) => document.id),
     });
+
+    if (!preferencesSaved) {
+      setStorageWarning("Les préférences locales n'ont pas pu être enregistrées. Vérifiez l'espace de stockage du navigateur.");
+    }
   }, [activeDocumentId, documents, isRestoringDocuments, isSidebarVisible, theme]);
 
   useEffect(() => {
@@ -1526,7 +1803,13 @@ export function App() {
         return;
       }
 
-      void Promise.all(documents.map((document) => saveStoredDocument(buildViewerSnapshot(document))));
+      void Promise.all(documents.map((document) => saveStoredDocument(buildViewerSnapshot(document)))).then((results) => {
+        if (results.some((saved) => !saved)) {
+          setStorageWarning(
+            "Les PDF ne peuvent pas être conservés durablement dans ce navigateur. Ils resteront ouverts jusqu'à la fermeture de l'onglet.",
+          );
+        }
+      });
     }, 250);
 
     return () => {
@@ -1539,16 +1822,22 @@ export function App() {
       return;
     }
 
-    Object.entries(organizationPlans).forEach(([documentId, plan]) => {
+    const plansSaved = Object.entries(organizationPlans).flatMap(([documentId, plan]) => {
       if (!documents.some((document) => document.id === documentId)) {
-        return;
+        return [];
       }
 
-      saveOrganizationPlan(documentId, {
-        plan,
-        selectedPageId: selectedPageIdsByDocument[documentId] ?? null,
-      });
+      return [
+        saveOrganizationPlan(documentId, {
+          plan,
+          selectedPageId: selectedPageIdsByDocument[documentId] ?? null,
+        }),
+      ];
     });
+
+    if (plansSaved.some((saved) => !saved)) {
+      setStorageWarning("Le plan d'organisation n'a pas pu être enregistré localement. Vérifiez l'espace de stockage du navigateur.");
+    }
   }, [documents, isRestoringDocuments, organizationPlans, selectedPageIdsByDocument]);
 
   const updateDocumentZoom = useCallback((documentId: string, delta: number) => {
@@ -1590,20 +1879,63 @@ export function App() {
         return;
       }
 
+      const plansUsingDocument = Object.entries(organizationPlans).filter(
+        ([planDocumentId, plan]) =>
+          planDocumentId !== documentId &&
+          plan.pages.some((page) => page.sourceDocumentId === documentId),
+      );
+
+      if (
+        plansUsingDocument.length > 0 &&
+        !window.confirm(
+          "Ce document est utilisé dans le plan d'organisation. Le fermer retirera ses pages du document final.",
+        )
+      ) {
+        return;
+      }
+
       const closingDocument = documents[closingIndex];
       const nextDocuments = documents.filter((document) => document.id !== documentId);
       const fallbackIndex = Math.min(closingIndex, nextDocuments.length - 1);
       const fallbackDocument = fallbackIndex >= 0 ? nextDocuments[fallbackIndex] : null;
       pendingFocusTargetRef.current = fallbackDocument?.id ?? "file-input";
 
+      setExportFeedback(null);
       setDocuments(nextDocuments);
       setOrganizationPlans((currentPlans) => {
-        const { [documentId]: _closedPlan, ...remainingPlans } = currentPlans;
-        return remainingPlans;
+        return Object.fromEntries(
+          Object.entries(currentPlans).flatMap(([planDocumentId, plan]) => {
+            if (planDocumentId === documentId) {
+              return [];
+            }
+
+            return [[
+              planDocumentId,
+              {
+                ...plan,
+                pages: renumberOrganizedPages(
+                  plan.pages.filter((page) => page.sourceDocumentId !== documentId),
+                ),
+              },
+            ]];
+          }),
+        );
       });
       setSelectedPageIdsByDocument((currentSelection) => {
-        const { [documentId]: _closedSelection, ...remainingSelection } = currentSelection;
-        return remainingSelection;
+        return Object.fromEntries(
+          Object.entries(currentSelection).flatMap(([planDocumentId, selectedPageId]) => {
+            if (planDocumentId === documentId) {
+              return [];
+            }
+
+            const plan = organizationPlans[planDocumentId];
+            const selectedPage = plan?.pages.find((page) => page.id === selectedPageId);
+            return [[
+              planDocumentId,
+              selectedPage?.sourceDocumentId === documentId ? null : selectedPageId,
+            ]];
+          }),
+        );
       });
       removeOrganizationPlan(documentId);
       setActiveDocumentId((currentActiveId) => {
@@ -1623,7 +1955,7 @@ export function App() {
         void removeStoredDocument(documentId);
       }
     },
-    [documents],
+    [documents, organizationPlans],
   );
 
   const selectDocumentByKeyboard = useCallback(
@@ -1687,7 +2019,8 @@ export function App() {
     setOutputName("");
     setSaveToOutputDir(false);
     setIsExporting(false);
-    setExportStatus(null);
+    setExportFeedback(null);
+    setStorageWarning(null);
     setWorkspaceMode("read");
     setStatus("Sélectionnez un PDF local.");
     setIsSidebarVisible(true);
@@ -1695,7 +2028,11 @@ export function App() {
     setTheme(getSystemTheme());
     nextDocumentId.current = 1;
     documentButtonRefs.current.clear();
-    void clearViewerStorage();
+    void clearViewerStorage().then((cleared) => {
+      if (!cleared) {
+        setStorageWarning("Certaines données locales n'ont pas pu être effacées. Fermez puis rouvrez l'application avant de réessayer.");
+      }
+    });
   }, []);
 
   const handleSidebarKeyDown = useCallback(
@@ -1783,6 +2120,7 @@ export function App() {
         return;
       }
 
+      setExportFeedback(null);
       setOrganizationPlans((currentPlans) => {
         const currentPlan =
           currentPlans[activeDocument.id] ??
@@ -1876,6 +2214,7 @@ export function App() {
       return;
     }
 
+    setExportFeedback(null);
     setOrganizationPlans((currentPlans) => {
       const { [activeDocument.id]: _resetPlan, ...remainingPlans } = currentPlans;
       return remainingPlans;
@@ -1887,16 +2226,46 @@ export function App() {
     removeOrganizationPlan(activeDocument.id);
   }, [activeDocument]);
 
+  const loadOpenPdfDocument = useCallback(async (file: File): Promise<OpenPdfDocument> => {
+    const data = new Uint8Array(await file.arrayBuffer());
+    const loadingTask = pdfjsLib.getDocument({ data });
+
+    try {
+      const pdfDocument = await loadingTask.promise;
+      const documentId = `pdf-${Date.now()}-${nextDocumentId.current}`;
+
+      nextDocumentId.current += 1;
+      return {
+        id: documentId,
+        fileName: file.name,
+        file,
+        pdfDocument,
+        loadingTask,
+        pageCount: pdfDocument.numPages,
+        zoom: 1,
+        scrollLeft: 0,
+        scrollTop: 0,
+        error: null,
+      };
+    } catch (error) {
+      void loadingTask.destroy().catch(() => undefined);
+      throw error;
+    }
+  }, []);
+
   const addExternalPagesFromOpenDocument = useCallback(
     (sourceDocumentId: string, sourcePageIndexes: number[]) => {
       const sourceDocument = documents.find((document) => document.id === sourceDocumentId);
 
       if (!sourceDocument || sourcePageIndexes.length === 0) {
-        setExportStatus("Le PDF source n'est plus disponible.");
+        setExportFeedback({
+          kind: "error",
+          message: "Le PDF source n'est plus disponible. Ouvrez-le à nouveau avant de l'ajouter.",
+        });
         return;
       }
 
-      setExportStatus(null);
+      setExportFeedback(null);
       updateActiveOrganizationPlan((plan) => {
         const addedPages = [...sourcePageIndexes]
           .sort((left, right) => left - right)
@@ -1918,7 +2287,7 @@ export function App() {
 
   const exportActiveOrganizationPlan = useCallback(async () => {
     if (!activeDocument || !activeOrganizationPlan || activeOrganizationPlan.pages.length === 0) {
-      setExportStatus("Aucune page n'est disponible pour l'export.");
+      setExportFeedback({ kind: "error", message: "Aucune page n'est disponible pour l'export." });
       return;
     }
 
@@ -1928,7 +2297,10 @@ export function App() {
     );
 
     if (sourceFiles.some((document) => !document)) {
-      setExportStatus("Un PDF source requis par le plan n'est plus disponible.");
+      setExportFeedback({
+        kind: "error",
+        message: "Un PDF source requis par le plan n'est plus disponible. Retirez ses pages ou réinitialisez le plan.",
+      });
       return;
     }
 
@@ -1939,7 +2311,10 @@ export function App() {
       ]),
     );
     if (!isValidPagePlanForDocument(activeOrganizationPlan, activeDocument.id, sourceDocumentInfo)) {
-      setExportStatus("Le plan d'organisation est invalide. Réinitialisez-le avant d'exporter.");
+      setExportFeedback({
+        kind: "error",
+        message: "Le plan d'organisation est invalide. Réinitialisez-le avant d'exporter.",
+      });
       return;
     }
 
@@ -1965,7 +2340,7 @@ export function App() {
     );
 
     setIsExporting(true);
-    setExportStatus(null);
+    setExportFeedback(null);
 
     try {
       const response = await fetch(`${PDF_ENGINE_URL}/pdf/export/organize`, {
@@ -2000,15 +2375,81 @@ export function App() {
       downloadLink.click();
       downloadLink.remove();
       window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
-      setExportStatus(
-        outputWarning ? `PDF exporté : ${downloadedName}. ${outputWarning}` : `PDF exporté : ${downloadedName}`,
-      );
+      const outputStatus = response.headers.get("x-pdf-output-status");
+      const exportedFileName = getUniqueFileName(downloadedName, documents.map((document) => document.fileName));
+      const exportedFile = new File([pdfBlob], exportedFileName, {
+        type: pdfBlob.type || "application/pdf",
+      });
+      const exportMessage = outputWarning
+        ? `PDF exporté avec succès : ${downloadedName}. ${outputWarning}`
+        : outputStatus === "saved"
+          ? `PDF exporté avec succès : ${downloadedName}. Copie enregistrée dans data/output.`
+          : `PDF exporté avec succès : ${downloadedName}.`;
+
+      try {
+        const exportedDocument = await loadOpenPdfDocument(exportedFile);
+        const exportUsageWarnings = getDocumentUsageWarnings(
+          exportedFile,
+          exportedDocument.pageCount,
+          documents.length + 1,
+        );
+
+        pendingFocusTargetRef.current = "viewer";
+        setDocuments((currentDocuments) => [...currentDocuments, exportedDocument]);
+        setActiveDocumentId(exportedDocument.id);
+        setWorkspaceMode("read");
+        setExportFeedback({
+          kind:
+            outputWarning || exportUsageWarnings.length > 0
+              ? "warning"
+              : "success",
+          message: `${exportMessage} Ouvert dans l'application en mode lecture.${exportUsageWarnings
+            .map((warning) => ` Avertissement: ${warning}`)
+            .join("")}`,
+        });
+      } catch {
+        setExportFeedback({
+          kind: "warning",
+          message: `${exportMessage} Le téléchargement est disponible, mais l'ouverture dans l'application a échoué.`,
+        });
+      }
     } catch (error) {
-      setExportStatus(error instanceof Error ? `Erreur d'export : ${error.message}` : "Erreur d'export.");
+      const message =
+        error instanceof TypeError
+          ? "Backend indisponible ou erreur réseau. Vérifiez que le service PDF est démarré."
+          : error instanceof Error
+            ? `Erreur du backend : ${error.message}`
+            : "Le PDF n'a pas pu être exporté.";
+      setExportFeedback({ kind: "error", message });
     } finally {
       setIsExporting(false);
     }
-  }, [activeDocument, activeOrganizationPlan, documents, outputName, saveToOutputDir]);
+  }, [activeDocument, activeOrganizationPlan, documents, loadOpenPdfDocument, outputName, saveToOutputDir]);
+
+  const removeMissingSourcePages = useCallback(() => {
+    if (!activeDocument) {
+      return;
+    }
+
+    const availableDocumentIds = new Set(documents.map((document) => document.id));
+    updateActiveOrganizationPlan((plan) => ({
+      ...plan,
+      pages: renumberOrganizedPages(
+        plan.pages.filter((page) => availableDocumentIds.has(page.sourceDocumentId)),
+      ),
+    }));
+    setSelectedPageIdsByDocument((currentSelection) => {
+      const selectedPageId = currentSelection[activeDocument.id];
+      const selectedPage = activeOrganizationPlan?.pages.find((page) => page.id === selectedPageId);
+
+      return {
+        ...currentSelection,
+        [activeDocument.id]: selectedPage && !availableDocumentIds.has(selectedPage.sourceDocumentId)
+          ? null
+          : selectedPageId ?? null,
+      };
+    });
+  }, [activeDocument, activeOrganizationPlan, documents, updateActiveOrganizationPlan]);
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     if (isRestoringDocuments) {
@@ -2033,6 +2474,7 @@ export function App() {
       return;
     }
 
+    setExportFeedback(null);
     setStatus(
       pdfFiles.length === 1 ? "Ouverture du PDF..." : `Ouverture de ${pdfFiles.length} PDF...`,
     );
@@ -2042,24 +2484,7 @@ export function App() {
 
     for (const file of pdfFiles) {
       try {
-        const data = new Uint8Array(await file.arrayBuffer());
-        const loadingTask = pdfjsLib.getDocument({ data });
-        const pdfDocument = await loadingTask.promise;
-        const documentId = `pdf-${Date.now()}-${nextDocumentId.current}`;
-
-        nextDocumentId.current += 1;
-        openedDocuments.push({
-          id: documentId,
-          fileName: file.name,
-          file,
-          pdfDocument,
-          loadingTask,
-          pageCount: pdfDocument.numPages,
-          zoom: 1,
-          scrollLeft: 0,
-          scrollTop: 0,
-          error: null,
-        });
+        openedDocuments.push(await loadOpenPdfDocument(file));
       } catch {
         failedFileNames.push(file.name);
       }
@@ -2071,17 +2496,22 @@ export function App() {
       pendingFocusTargetRef.current = "viewer";
     }
 
+    const usageWarnings = openedDocuments.flatMap((openedDocument, index) =>
+      getDocumentUsageWarnings(openedDocument.file, openedDocument.pageCount, documents.length + index + 1),
+    );
+
     if (failedFileNames.length > 0) {
-      setStatus(
+      const failureMessage =
         failedFileNames.length === 1
           ? `Impossible d'ouvrir ${failedFileNames[0]}.`
-          : `${failedFileNames.length} PDF n'ont pas pu être ouverts.`,
-      );
+          : `${failedFileNames.length} PDF n'ont pas pu être ouverts.`;
+      setStatus([failureMessage, ...usageWarnings.map((warning) => `Avertissement: ${warning}`)].join(" "));
       return;
     }
 
     const ignoredFiles = selectedFiles.length - pdfFiles.length;
-    setStatus(ignoredFiles > 0 ? `${ignoredFiles} fichier non PDF ignoré.` : "");
+    const ignoredFilesMessage = ignoredFiles > 0 ? `${ignoredFiles} fichier non PDF ignoré.` : "";
+    setStatus([ignoredFilesMessage, ...usageWarnings.map((warning) => `Avertissement: ${warning}`)].filter(Boolean).join(" "));
   }
 
   return (
@@ -2172,12 +2602,25 @@ export function App() {
             onClearLocalData={clearLocalData}
             onFileChange={handleFileChange}
             status={status}
+            storageWarning={storageWarning}
             sidebarId={sidebarId}
             onKeyDown={handleSidebarKeyDown}
             getDocumentButtonRef={(documentId) => (node) => {
               documentButtonRefs.current.set(documentId, node);
             }}
           />
+        ) : null}
+
+        {workspaceMode === "read" && exportFeedback ? (
+          <div
+            className={`export-read-feedback organize-feedback organize-feedback--${exportFeedback.kind}`}
+            role={exportFeedback.kind === "error" ? "alert" : "status"}
+          >
+            <span>{exportFeedback.message}</span>
+            <button type="button" onClick={() => setExportFeedback(null)} aria-label="Fermer le message d'export">
+              Fermer
+            </button>
+          </div>
         ) : null}
 
         {activeDocument && workspaceMode === "read" ? (
@@ -2196,17 +2639,25 @@ export function App() {
             outputName={outputName}
             saveToOutputDir={saveToOutputDir}
             isExporting={isExporting}
-            exportStatus={exportStatus}
+            exportFeedback={exportFeedback}
             onToggleSelection={toggleOrganizedPageSelection}
             onMovePageByIndex={moveOrganizedPage}
             onDeletePage={deleteOrganizedPage}
             onDuplicatePage={duplicateOrganizedPage}
             onRotatePage={rotateOrganizedPage}
             onReset={resetActiveOrganizationPlan}
-            onOutputNameChange={setOutputName}
-            onSaveToOutputDirChange={setSaveToOutputDir}
+            onOutputNameChange={(nextOutputName) => {
+              setExportFeedback(null);
+              setOutputName(nextOutputName);
+            }}
+            onSaveToOutputDirChange={(shouldSaveToOutputDir) => {
+              setExportFeedback(null);
+              setSaveToOutputDir(shouldSaveToOutputDir);
+            }}
             onExport={exportActiveOrganizationPlan}
             onAddExternalPages={addExternalPagesFromOpenDocument}
+            onDismissExportFeedback={() => setExportFeedback(null)}
+            onRemoveMissingSourcePages={removeMissingSourcePages}
           />
         ) : (
           <EmptyState status={status} mode={workspaceMode} />
