@@ -42,6 +42,10 @@ def make_plan(pages: list[dict[str, object]], **extra: object) -> str:
     return json.dumps({"pages": pages, **extra})
 
 
+def test_health_is_still_available() -> None:
+    assert main.health().status == "ok"
+
+
 def test_build_output_name_rejects_empty_and_path_values() -> None:
     for value in ("", "../document.pdf", "/tmp/document.pdf", r"C:\\document.pdf"):
         with pytest.raises(HTTPException, match="nom de sortie"):

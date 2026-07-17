@@ -7,12 +7,14 @@ import re
 from pathlib import Path
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, ValidationError, field_validator
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
+
+from app.ocr import OcrError, router as ocr_router
 
 
 class HealthResponse(BaseModel):
@@ -58,6 +60,15 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Content-Disposition", "X-Pdf-Output-Status", "X-Pdf-Output-Warning"],
 )
+app.include_router(ocr_router)
+
+
+@app.exception_handler(OcrError)
+async def handle_ocr_error(_: Request, error: OcrError) -> JSONResponse:
+    return JSONResponse(
+        status_code=error.status_code,
+        content={"code": error.code, "message": error.message},
+    )
 
 
 @app.get("/health", response_model=HealthResponse)
