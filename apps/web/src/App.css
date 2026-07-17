@@ -93,7 +93,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -718,6 +719,143 @@ button:disabled {
   }
 }
 
+.ocr-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(15 23 42 / 58%);
+}
+
+.ocr-dialog {
+  width: min(34rem, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-bg);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 28%);
+}
+
+.ocr-dialog__header {
+  padding: 1.25rem 1.25rem 0;
+}
+
+.ocr-dialog__header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.ocr-dialog__header p {
+  margin: 0.4rem 0 0;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.ocr-dialog__form {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.ocr-field {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.ocr-field select {
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0 0.65rem;
+  color: var(--text-primary);
+  border: 1px solid var(--button-border);
+  border-radius: 6px;
+  background: var(--button-bg);
+}
+
+.ocr-mode-fieldset {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.ocr-mode-fieldset legend {
+  padding: 0 0.25rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.ocr-mode-fieldset label,
+.ocr-checkbox-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.ocr-mode-fieldset input,
+.ocr-checkbox-field input {
+  margin-top: 0.2rem;
+  accent-color: var(--accent);
+}
+
+.ocr-mode-fieldset span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.ocr-mode-fieldset small {
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.ocr-dialog__warning {
+  margin: 0;
+  padding: 0.75rem;
+  color: #a16207;
+  border: 1px solid rgb(161 98 7 / 34%);
+  border-radius: 8px;
+  background: rgb(161 98 7 / 9%);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+:root[data-theme="dark"] .ocr-dialog__warning {
+  color: #fcd34d;
+  border-color: rgb(252 211 77 / 34%);
+  background: rgb(161 98 7 / 22%);
+}
+
+.ocr-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  padding-top: 0.25rem;
+}
+
+.ocr-dialog__submit {
+  color: #ffffff;
+  border-color: var(--accent);
+  background: var(--accent);
+  font-weight: 700;
+}
+
+.ocr-dialog__submit:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+
 .organize-add-pages {
   max-width: 96rem;
   margin: -0.5rem auto 1rem;
@@ -1254,6 +1392,11 @@ button:disabled {
   .organize-feedback {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .ocr-dialog__actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
   }
 
   .export-read-feedback {

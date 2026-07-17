@@ -40,6 +40,12 @@ import {
   type OrganizePagePlan,
   type OrganizedPage,
 } from "./organize/pagePlan";
+import { OcrDialog } from "./components/OcrDialog";
+import {
+  getDownloadFileName,
+  requestOcrPdf,
+  type OcrOptions,
+} from "./ocr/ocr";
 import "./App.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -163,11 +169,6 @@ function getUniqueFileName(fileName: string, existingFileNames: string[]) {
   }
 
   return candidate;
-}
-
-function getDownloadFileName(contentDisposition: string | null, fallbackName: string) {
-  const filenameMatch = /filename="?([^";]+)"?/i.exec(contentDisposition ?? "");
-  return filenameMatch?.[1] ?? fallbackName;
 }
 
 function clearCanvas(canvas: HTMLCanvasElement | null) {
@@ -1597,6 +1598,8 @@ export function App() {
   const [saveToOutputDir, setSaveToOutputDir] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportFeedback, setExportFeedback] = useState<ExportFeedback | null>(null);
+  const [isOcrDialogOpen, setIsOcrDialogOpen] = useState(false);
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [status, setStatus] = useState("Sélectionnez un PDF local.");
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [viewerFocusRequest, setViewerFocusRequest] = useState(0);
@@ -1625,6 +1628,10 @@ export function App() {
   const selectedOrganizedPageId = activeDocument
     ? (selectedPageIdsByDocument[activeDocument.id] ?? null)
     : null;
+  const hasPendingOrganizationChanges =
+    activeDocument !== null &&
+    activeOrganizationPlan !== null &&
+    isPlanModified(activeOrganizationPlan, activeDocument.pageCount);
 
   useEffect(() => {
     setOutputName(activeDocument ? getModifiedOutputName(activeDocument.fileName) : "");
@@ -2020,6 +2027,8 @@ export function App() {
     setSaveToOutputDir(false);
     setIsExporting(false);
     setExportFeedback(null);
+    setIsOcrDialogOpen(false);
+    setIsOcrProcessing(false);
     setStorageWarning(null);
     setWorkspaceMode("read");
     setStatus("Sélectionnez un PDF local.");
@@ -2253,6 +2262,35 @@ export function App() {
     }
   }, []);
 
+  const openGeneratedPdfDocument = useCallback(
+    async (file: File) => {
+      const fileName = getUniqueFileName(
+        file.name,
+        documents.map((document) => document.fileName),
+      );
+      const uniqueFile =
+        fileName === file.name
+          ? file
+          : new File([file], fileName, {
+              type: file.type || "application/pdf",
+            });
+      const openedDocument = await loadOpenPdfDocument(uniqueFile);
+      const usageWarnings = getDocumentUsageWarnings(
+        uniqueFile,
+        openedDocument.pageCount,
+        documents.length + 1,
+      );
+
+      pendingFocusTargetRef.current = "viewer";
+      setDocuments((currentDocuments) => [...currentDocuments, openedDocument]);
+      setActiveDocumentId(openedDocument.id);
+      setWorkspaceMode("read");
+
+      return { openedDocument, usageWarnings };
+    },
+    [documents, loadOpenPdfDocument],
+  );
+
   const addExternalPagesFromOpenDocument = useCallback(
     (sourceDocumentId: string, sourcePageIndexes: number[]) => {
       const sourceDocument = documents.find((document) => document.id === sourceDocumentId);
@@ -2376,8 +2414,7 @@ export function App() {
       downloadLink.remove();
       window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
       const outputStatus = response.headers.get("x-pdf-output-status");
-      const exportedFileName = getUniqueFileName(downloadedName, documents.map((document) => document.fileName));
-      const exportedFile = new File([pdfBlob], exportedFileName, {
+      const exportedFile = new File([pdfBlob], downloadedName, {
         type: pdfBlob.type || "application/pdf",
       });
       const exportMessage = outputWarning
@@ -2387,17 +2424,8 @@ export function App() {
           : `PDF exporté avec succès : ${downloadedName}.`;
 
       try {
-        const exportedDocument = await loadOpenPdfDocument(exportedFile);
-        const exportUsageWarnings = getDocumentUsageWarnings(
-          exportedFile,
-          exportedDocument.pageCount,
-          documents.length + 1,
-        );
-
-        pendingFocusTargetRef.current = "viewer";
-        setDocuments((currentDocuments) => [...currentDocuments, exportedDocument]);
-        setActiveDocumentId(exportedDocument.id);
-        setWorkspaceMode("read");
+        const { usageWarnings: exportUsageWarnings } =
+          await openGeneratedPdfDocument(exportedFile);
         setExportFeedback({
           kind:
             outputWarning || exportUsageWarnings.length > 0
@@ -2424,7 +2452,54 @@ export function App() {
     } finally {
       setIsExporting(false);
     }
-  }, [activeDocument, activeOrganizationPlan, documents, loadOpenPdfDocument, outputName, saveToOutputDir]);
+  }, [activeDocument, activeOrganizationPlan, documents, openGeneratedPdfDocument, outputName, saveToOutputDir]);
+
+  const runOcrOnActiveDocument = useCallback(
+    async (options: OcrOptions) => {
+      if (!activeDocument || isOcrProcessing) {
+        return;
+      }
+
+      const sourceDocument = activeDocument;
+      const sourceFile = sourceDocument.file;
+
+      setIsOcrDialogOpen(false);
+      setIsOcrProcessing(true);
+      setExportFeedback(null);
+
+      try {
+        const returnedFile = await requestOcrPdf(
+          PDF_ENGINE_URL,
+          sourceFile,
+          options,
+        );
+        let usageWarnings: string[];
+        try {
+          ({ usageWarnings } = await openGeneratedPdfDocument(returnedFile));
+        } catch {
+          throw new Error("Le serveur n'a pas produit un PDF valide.");
+        }
+
+        setExportFeedback({
+          kind: usageWarnings.length > 0 ? "warning" : "success",
+          message: `OCR terminé. Le document OCR a été ouvert.${usageWarnings
+            .map((warning) => ` Avertissement: ${warning}`)
+            .join("")}`,
+        });
+      } catch (error) {
+        setExportFeedback({
+          kind: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Le traitement OCR a échoué.",
+        });
+      } finally {
+        setIsOcrProcessing(false);
+      }
+    },
+    [activeDocument, isOcrProcessing, openGeneratedPdfDocument],
+  );
 
   const removeMissingSourcePages = useCallback(() => {
     if (!activeDocument) {
@@ -2537,6 +2612,19 @@ export function App() {
         <div className="toolbar-actions" aria-label="Mode d'affichage">
           <button
             type="button"
+            onClick={() => {
+              setExportFeedback(null);
+              setIsOcrDialogOpen(true);
+            }}
+            disabled={!activeDocument || isOcrProcessing || isExporting}
+            aria-label="OCR"
+            aria-busy={isOcrProcessing}
+            title="Reconnaissance de texte (OCR)"
+          >
+            OCR
+          </button>
+          <button
+            type="button"
             onClick={() => setWorkspaceMode((currentMode) => (currentMode === "read" ? "organize" : "read"))}
             aria-pressed={workspaceMode === "organize"}
           >
@@ -2575,6 +2663,16 @@ export function App() {
         </div>
       </section>
 
+      {isOcrDialogOpen && activeDocument ? (
+        <OcrDialog
+          sourceFileName={activeDocument.fileName}
+          hasPendingOrganizationChanges={hasPendingOrganizationChanges}
+          isProcessing={isOcrProcessing}
+          onCancel={() => setIsOcrDialogOpen(false)}
+          onSubmit={(options) => void runOcrOnActiveDocument(options)}
+        />
+      ) : null}
+
       <section
         className={isSidebarVisible ? "content-area" : "content-area content-area--sidebar-hidden"}
         aria-label="Espace de travail PDF"
@@ -2611,13 +2709,21 @@ export function App() {
           />
         ) : null}
 
-        {workspaceMode === "read" && exportFeedback ? (
+        {isOcrProcessing ? (
+          <div
+            className="export-read-feedback organize-feedback organize-feedback--progress"
+            role="status"
+          >
+            <span className="organize-spinner" aria-hidden="true" />
+            <span>OCR en cours…</span>
+          </div>
+        ) : workspaceMode === "read" && exportFeedback ? (
           <div
             className={`export-read-feedback organize-feedback organize-feedback--${exportFeedback.kind}`}
             role={exportFeedback.kind === "error" ? "alert" : "status"}
           >
             <span>{exportFeedback.message}</span>
-            <button type="button" onClick={() => setExportFeedback(null)} aria-label="Fermer le message d'export">
+            <button type="button" onClick={() => setExportFeedback(null)} aria-label="Fermer le message">
               Fermer
             </button>
           </div>
