@@ -46,6 +46,10 @@ import {
   requestOcrPdf,
   type OcrOptions,
 } from "./ocr/ocr";
+import {
+  renderPdfTextLayer,
+  type PdfTextLayerRenderTask,
+} from "./pdf/textLayer";
 import "./App.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -264,7 +268,9 @@ function isInteractiveElement(target: EventTarget | null) {
   }
 
   return (
-    target.closest("button, input, textarea, select, a[href], [contenteditable='true']") !== null
+    target.closest(
+      "button, input, textarea, select, a[href], [contenteditable='true'], .textLayer",
+    ) !== null
   );
 }
 
@@ -308,7 +314,9 @@ type PdfPageCanvasProps = {
 
 function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef, registerPageRef }: PdfPageCanvasProps) {
   const pageRef = useRef<HTMLElement | null>(null);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const textLayerRef = useRef<HTMLDivElement | null>(null);
   const [shouldRender, setShouldRender] = useState(false);
   const [renderState, setRenderState] = useState<RenderState>("idle");
 
@@ -348,9 +356,12 @@ function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef, registerP
   useEffect(() => {
     let isCancelled = false;
     let renderTask: RenderTask | null = null;
+    let textLayerTask: PdfTextLayerRenderTask | null = null;
     const canvas = canvasRef.current;
+    const surface = surfaceRef.current;
+    const textLayerContainer = textLayerRef.current;
 
-    if (!shouldRender || !canvas) {
+    if (!shouldRender || !canvas || !surface || !textLayerContainer) {
       return;
     }
 
@@ -360,7 +371,12 @@ function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef, registerP
       try {
         const page = await pdfDocument.getPage(pageNumber);
 
-        if (isCancelled || !canvas) {
+        if (
+          isCancelled ||
+          !canvas ||
+          !surface ||
+          !textLayerContainer
+        ) {
           return;
         }
 
@@ -374,11 +390,32 @@ function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef, registerP
         const outputScale = window.devicePixelRatio || 1;
         canvas.width = Math.floor(viewport.width * outputScale);
         canvas.height = Math.floor(viewport.height * outputScale);
-        canvas.style.width = `${Math.floor(viewport.width)}px`;
-        canvas.style.height = `${Math.floor(viewport.height)}px`;
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        surface.style.width = `${viewport.width}px`;
+        surface.style.height = `${viewport.height}px`;
+        surface.style.minWidth = "0";
+        surface.style.minHeight = "0";
 
         context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
         context.clearRect(0, 0, viewport.width, viewport.height);
+
+        try {
+          textLayerTask = renderPdfTextLayer({
+            page,
+            viewport,
+            container: textLayerContainer,
+          });
+          void textLayerTask.promise.catch((error: unknown) => {
+            if (!isCancelled) {
+              console.warn("Impossible de rendre la couche texte PDF.", error);
+            }
+          });
+        } catch (error) {
+          textLayerContainer.replaceChildren();
+          textLayerContainer.hidden = true;
+          console.warn("Impossible de démarrer la couche texte PDF.", error);
+        }
 
         renderTask = page.render({
           canvas,
@@ -403,6 +440,9 @@ function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef, registerP
     return () => {
       isCancelled = true;
       renderTask?.cancel();
+      textLayerTask?.cancel();
+      textLayerContainer.replaceChildren();
+      textLayerContainer.hidden = true;
     };
   }, [pageNumber, pdfDocument, shouldRender, zoom]);
 
@@ -423,7 +463,7 @@ function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef, registerP
       aria-label={`Page ${pageNumber}`}
     >
       <div className="page-number">Page {pageNumber}</div>
-      <div className="page-surface">
+      <div ref={surfaceRef} className="page-surface">
         {renderState === "error" ? (
           <p className="page-error">Impossible d'afficher cette page.</p>
         ) : null}
@@ -433,6 +473,11 @@ function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef, registerP
           </div>
         ) : null}
         <canvas ref={canvasRef} className="pdf-canvas" />
+        <div
+          ref={textLayerRef}
+          className="textLayer pdf-text-layer"
+          hidden
+        />
       </div>
     </article>
   );

@@ -18,6 +18,11 @@ import {
 vi.mock("pdfjs-dist", () => ({
   GlobalWorkerOptions: {},
   getDocument: vi.fn(),
+  TextLayer: class TextLayerMock {
+    textContentItemsStr: string[] = [];
+    render = vi.fn().mockResolvedValue(undefined);
+    cancel = vi.fn();
+  },
 }));
 
 vi.mock("pdfjs-dist/build/pdf.worker.mjs?url", () => ({
@@ -26,7 +31,14 @@ vi.mock("pdfjs-dist/build/pdf.worker.mjs?url", () => ({
 
 function createPdfDocumentMock(pageCount = 1) {
   const page = {
-    getViewport: vi.fn(() => ({ width: 800, height: 1000 })),
+    getViewport: vi.fn(() => ({
+      width: 800,
+      height: 1000,
+      scale: 1,
+      userUnit: 1,
+      rotation: 0,
+    })),
+    streamTextContent: vi.fn(() => new ReadableStream()),
     render: vi.fn(() => ({
       promise: Promise.resolve(),
       cancel: vi.fn(),
