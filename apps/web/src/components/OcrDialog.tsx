@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
-import type { OcrLanguages, OcrMode, OcrOptions } from "../ocr/ocr";
+import type { OcrLanguages, OcrOptions } from "../ocr/ocr";
 
 type OcrDialogProps = {
   sourceFileName: string;
@@ -20,7 +20,6 @@ export function OcrDialog({
   const descriptionId = useId();
   const firstControlRef = useRef<HTMLSelectElement | null>(null);
   const [languages, setLanguages] = useState<OcrLanguages>("fra");
-  const [mode, setMode] = useState<OcrMode>("skip-text");
   const [deskew, setDeskew] = useState(true);
 
   useEffect(() => {
@@ -40,7 +39,7 @@ export function OcrDialog({
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!isProcessing) {
-      onSubmit({ languages, mode, deskew });
+      onSubmit({ languages, deskew });
     }
   }
 
@@ -78,32 +77,10 @@ export function OcrDialog({
             </select>
           </label>
 
-          <fieldset className="ocr-mode-fieldset" disabled={isProcessing}>
-            <legend>Mode OCR</legend>
-            <label>
-              <input
-                type="radio"
-                name="ocr-mode"
-                value="skip-text"
-                checked={mode === "skip-text"}
-                onChange={() => setMode("skip-text")}
-              />
-              <span>
-                Ignorer les pages qui contiennent déjà du texte
-                <small>Recommandé</small>
-              </span>
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="ocr-mode"
-                value="force-ocr"
-                checked={mode === "force-ocr"}
-                onChange={() => setMode("force-ocr")}
-              />
-              <span>Forcer l’OCR sur toutes les pages</span>
-            </label>
-          </fieldset>
+          <div className="ocr-dialog__info">
+            <p>L’OCR sera appliqué à toutes les pages du document.</p>
+            <p>Le traitement de toutes les pages peut prendre plusieurs minutes.</p>
+          </div>
 
           <label className="ocr-checkbox-field">
             <input

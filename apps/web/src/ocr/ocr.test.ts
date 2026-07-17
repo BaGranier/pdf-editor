@@ -8,7 +8,6 @@ import {
 
 const DEFAULT_OPTIONS: OcrOptions = {
   languages: "fra",
-  mode: "skip-text",
   deskew: true,
 };
 
@@ -84,7 +83,8 @@ describe("OCR API client", () => {
       type: "application/pdf",
     });
     expect(body.get("languages")).toBe("fra");
-    expect(body.get("mode")).toBe("skip-text");
+    expect(body.get("mode")).toBe("force-ocr");
+    expect(Array.from(body.values())).not.toContain("skip-text");
     expect(body.get("deskew")).toBe("true");
     expect(result).toMatchObject({
       name: "source_OCR.pdf",
@@ -92,25 +92,29 @@ describe("OCR API client", () => {
     });
   });
 
-  it("sends bilingual forced OCR with deskew disabled", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(createResponse());
-    vi.stubGlobal("fetch", fetchMock);
+  it.each(["eng", "fra+eng"] as const)(
+    "sends %s with forced OCR and deskew disabled",
+    async (languages) => {
+      const fetchMock = vi.fn().mockResolvedValue(createResponse());
+      vi.stubGlobal("fetch", fetchMock);
 
-    await requestOcrPdf(
-      "http://localhost:8000",
-      new File(["%PDF"], "scan.pdf", { type: "application/pdf" }),
-      {
-        languages: "fra+eng",
-        mode: "force-ocr",
-        deskew: false,
-      },
-    );
+      await requestOcrPdf(
+        "http://localhost:8000",
+        new File(["%PDF"], "scan.pdf", { type: "application/pdf" }),
+        {
+          languages,
+          deskew: false,
+        },
+      );
 
-    const body = (fetchMock.mock.calls[0][1] as RequestInit).body as FormData;
-    expect(body.get("languages")).toBe("fra+eng");
-    expect(body.get("mode")).toBe("force-ocr");
-    expect(body.get("deskew")).toBe("false");
-  });
+      const body = (fetchMock.mock.calls[0][1] as RequestInit)
+        .body as FormData;
+      expect(body.get("languages")).toBe(languages);
+      expect(body.get("mode")).toBe("force-ocr");
+      expect(Array.from(body.values())).not.toContain("skip-text");
+      expect(body.get("deskew")).toBe("false");
+    },
+  );
 
   it.each([
     [

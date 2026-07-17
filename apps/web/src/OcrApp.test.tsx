@@ -128,7 +128,7 @@ describe("OCR in App", () => {
     expect(screen.getByRole("button", { name: "OCR" })).toBeEnabled();
   });
 
-  it("opens the OCR form with defaults and cancels without a request", async () => {
+  it("opens the simplified OCR form with defaults and cancels without a request", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
@@ -144,11 +144,26 @@ describe("OCR in App", () => {
     expect(
       within(dialog).getByRole("option", { name: "Français et anglais" }),
     ).toHaveValue("fra+eng");
+    expect(within(dialog).queryByRole("radio")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Mode OCR")).not.toBeInTheDocument();
     expect(
-      within(dialog).getByRole("radio", {
-        name: /Ignorer les pages qui contiennent déjà du texte/,
-      }),
-    ).toBeChecked();
+      within(dialog).queryByText(
+        /Ignorer les pages qui contiennent déjà du texte/,
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("Forcer l’OCR sur toutes les pages"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        "L’OCR sera appliqué à toutes les pages du document.",
+      ),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText(
+        "Le traitement de toutes les pages peut prendre plusieurs minutes.",
+      ),
+    ).toBeVisible();
     expect(
       within(dialog).getByRole("checkbox", {
         name: "Redresser automatiquement les pages inclinées",
@@ -176,11 +191,6 @@ describe("OCR in App", () => {
     fireEvent.change(
       within(dialog).getByRole("combobox", { name: "Langue du document" }),
       { target: { value: "fra+eng" } },
-    );
-    fireEvent.click(
-      within(dialog).getByRole("radio", {
-        name: "Forcer l’OCR sur toutes les pages",
-      }),
     );
     fireEvent.click(
       within(dialog).getByRole("checkbox", {

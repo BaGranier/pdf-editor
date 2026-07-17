@@ -1,9 +1,7 @@
 export type OcrLanguages = "fra" | "eng" | "fra+eng";
-export type OcrMode = "skip-text" | "force-ocr";
 
 export type OcrOptions = {
   languages: OcrLanguages;
-  mode: OcrMode;
   deskew: boolean;
 };
 
@@ -149,7 +147,7 @@ export async function requestOcrPdf(
   const formData = new FormData();
   formData.append("file", sourceFile, sourceFile.name);
   formData.append("languages", options.languages);
-  formData.append("mode", options.mode);
+  formData.append("mode", "force-ocr");
   formData.append("deskew", String(options.deskew));
 
   let response: Response;

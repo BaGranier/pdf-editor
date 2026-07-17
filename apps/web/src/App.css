@@ -779,23 +779,6 @@ button:disabled {
   background: var(--button-bg);
 }
 
-.ocr-mode-fieldset {
-  display: grid;
-  gap: 0.65rem;
-  margin: 0;
-  padding: 0.85rem;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-}
-
-.ocr-mode-fieldset legend {
-  padding: 0 0.25rem;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.ocr-mode-fieldset label,
 .ocr-checkbox-field {
   display: flex;
   align-items: flex-start;
@@ -804,21 +787,25 @@ button:disabled {
   line-height: 1.4;
 }
 
-.ocr-mode-fieldset input,
 .ocr-checkbox-field input {
   margin-top: 0.2rem;
   accent-color: var(--accent);
 }
 
-.ocr-mode-fieldset span {
+.ocr-dialog__info {
   display: grid;
-  gap: 0.15rem;
+  gap: 0.35rem;
+  padding: 0.75rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--surface-alt);
+  font-size: 0.88rem;
+  line-height: 1.45;
 }
 
-.ocr-mode-fieldset small {
-  color: var(--accent);
-  font-size: 0.78rem;
-  font-weight: 700;
+.ocr-dialog__info p {
+  margin: 0;
 }
 
 .ocr-dialog__warning {
