@@ -178,9 +178,13 @@ describe("PDF.js text layer in App", () => {
     expect(layer).toHaveClass("textLayer", "pdf-text-layer");
     expect(layer).toHaveStyle({ width: "800px", height: "600px" });
     expect(span).not.toHaveAttribute("style");
+    expect(layer.querySelector(".endOfContent")).toBe(layer.lastElementChild);
 
     fireEvent.mouseDown(span, { button: 0, clientX: 20, clientY: 20 });
     expect(viewer).not.toHaveClass("is-panning");
+    expect(layer).toHaveClass("selecting");
+    fireEvent.pointerUp(document);
+    expect(layer).not.toHaveClass("selecting");
 
     fireEvent.mouseDown(document.querySelector(".pdf-canvas") as Element, {
       button: 0,
@@ -208,6 +212,7 @@ describe("PDF.js text layer in App", () => {
       expect(
         document.querySelectorAll(".pdf-text-layer span"),
       ).toHaveLength(1);
+      expect(document.querySelectorAll(".endOfContent")).toHaveLength(1);
       const layer = document.querySelector<HTMLElement>(".pdf-text-layer");
       expect(layer?.style.width).toBe("660px");
       expect(Number.parseFloat(layer?.style.height ?? "")).toBeCloseTo(880);
@@ -234,6 +239,7 @@ describe("PDF.js text layer in App", () => {
       expect(screen.getByText("Second document")).toBeInTheDocument();
       expect(screen.queryByText("Premier document")).not.toBeInTheDocument();
       expect(document.querySelectorAll(".pdf-text-layer")).toHaveLength(1);
+      expect(document.querySelectorAll(".endOfContent")).toHaveLength(1);
     });
   });
 
@@ -249,6 +255,7 @@ describe("PDF.js text layer in App", () => {
 
     await waitFor(() => {
       expect(document.querySelector(".pdf-text-layer")).not.toBeInTheDocument();
+      expect(document.querySelector(".endOfContent")).not.toBeInTheDocument();
       expect(
         screen.getByRole("region", {
           name: "Organiser les pages de organize.pdf",
@@ -263,6 +270,7 @@ describe("PDF.js text layer in App", () => {
     await waitFor(() => {
       expect(pdfMock.textLayers).toHaveLength(2);
       expect(document.querySelector(".pdf-text-layer")).toBeInTheDocument();
+      expect(document.querySelectorAll(".endOfContent")).toHaveLength(1);
     });
   });
 
@@ -278,6 +286,7 @@ describe("PDF.js text layer in App", () => {
       expect(document.querySelector(".pdf-text-layer")).toHaveAttribute(
         "hidden",
       );
+      expect(document.querySelector(".endOfContent")).not.toBeInTheDocument();
       expect(screen.queryByText("Impossible d'afficher cette page.")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "OCR" })).toBeEnabled();
     });
@@ -299,6 +308,7 @@ describe("PDF.js text layer in App", () => {
       expect(document.querySelector(".pdf-text-layer")).toHaveAttribute(
         "hidden",
       );
+      expect(document.querySelector(".endOfContent")).not.toBeInTheDocument();
       expect(screen.queryByText("Impossible d'afficher cette page.")).not.toBeInTheDocument();
       expect(consoleWarning).toHaveBeenCalledWith(
         "Impossible de rendre la couche texte PDF.",

@@ -3,6 +3,10 @@ import {
   type PDFPageProxy,
   type PageViewport,
 } from "pdfjs-dist";
+import {
+  registerTextLayerSelection,
+  type TextSelectionRegistration,
+} from "./textSelection";
 
 type RenderPdfTextLayerOptions = {
   page: PDFPageProxy;
@@ -15,7 +19,11 @@ export type PdfTextLayerRenderTask = {
   cancel: () => void;
 };
 
-const textLayerOwners = new WeakMap<HTMLDivElement, object>();
+type TextLayerOwner = {
+  selectionRegistration?: TextSelectionRegistration;
+};
+
+const textLayerOwners = new WeakMap<HTMLDivElement, TextLayerOwner>();
 
 const clearTextLayer = (container: HTMLDivElement) => {
   container.replaceChildren();
@@ -27,7 +35,10 @@ export const renderPdfTextLayer = ({
   viewport,
   container,
 }: RenderPdfTextLayerOptions): PdfTextLayerRenderTask => {
-  const owner = {};
+  const previousOwner = textLayerOwners.get(container);
+  previousOwner?.selectionRegistration?.unregister();
+
+  const owner: TextLayerOwner = {};
   const stagingContainer = document.createElement("div");
 
   textLayerOwners.set(container, owner);
@@ -75,12 +86,14 @@ export const renderPdfTextLayer = ({
       } else {
         container.replaceChildren(...stagingContainer.childNodes);
         container.hidden = false;
+        owner.selectionRegistration = registerTextLayerSelection(container);
       }
 
       return hasText;
     })
     .catch((error: unknown) => {
       if (textLayerOwners.get(container) === owner) {
+        owner.selectionRegistration?.unregister();
         clearTextLayer(container);
       }
 
@@ -101,6 +114,7 @@ export const renderPdfTextLayer = ({
     promise,
     cancel: () => {
       cancelled = true;
+      owner.selectionRegistration?.unregister();
       if (!settled) {
         textLayer.cancel();
       }

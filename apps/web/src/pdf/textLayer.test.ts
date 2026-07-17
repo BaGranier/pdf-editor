@@ -1,6 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PDFPageProxy, PageViewport } from "pdfjs-dist";
-import { renderPdfTextLayer } from "./textLayer";
+import {
+  renderPdfTextLayer as startPdfTextLayerRender,
+  type PdfTextLayerRenderTask,
+} from "./textLayer";
+
+const renderTasks: PdfTextLayerRenderTask[] = [];
+
+const renderPdfTextLayer = (
+  options: Parameters<typeof startPdfTextLayerRender>[0],
+) => {
+  const task = startPdfTextLayerRender(options);
+  renderTasks.push(task);
+  return task;
+};
 
 const textLayerMock = vi.hoisted(() => ({
   instances: [] as Array<{
@@ -80,6 +93,12 @@ describe("renderPdfTextLayer", () => {
     textLayerMock.renderPromise = null;
   });
 
+  afterEach(() => {
+    for (const task of renderTasks.splice(0).reverse()) {
+      task.cancel();
+    }
+  });
+
   it("uses the supplied viewport and PDF.js text stream", async () => {
     const { page, stream, streamTextContent } = createPage();
     const viewport = createViewport(90);
@@ -103,6 +122,15 @@ describe("renderPdfTextLayer", () => {
     expect(container.style.getPropertyValue("--total-scale-factor")).toBe(
       "1.5",
     );
+    const endOfContent =
+      container.querySelector<HTMLDivElement>(".endOfContent");
+    expect(endOfContent).not.toBeNull();
+    expect(container.lastElementChild).toBe(endOfContent);
+
+    task.cancel();
+    expect(endOfContent).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+    expect(container).toHaveAttribute("hidden");
   });
 
   it.each([0, 90, 180, 270])(
@@ -136,6 +164,7 @@ describe("renderPdfTextLayer", () => {
     await expect(task.promise).resolves.toBe(false);
     expect(container).toBeEmptyDOMElement();
     expect(container).toHaveAttribute("hidden");
+    expect(container.querySelector(".endOfContent")).not.toBeInTheDocument();
   });
 
   it("cancels an unfinished PDF.js render and blocks its late DOM result", async () => {
@@ -159,6 +188,7 @@ describe("renderPdfTextLayer", () => {
     expect(instance?.cancel).toHaveBeenCalledOnce();
     expect(container).toBeEmptyDOMElement();
     expect(container).toHaveAttribute("hidden");
+    expect(container.querySelector(".endOfContent")).not.toBeInTheDocument();
   });
 
   it("does not let an obsolete render overwrite a newer layer in the same container", async () => {
@@ -191,6 +221,7 @@ describe("renderPdfTextLayer", () => {
     expect(container).toHaveTextContent("Nouveau zoom");
     expect(container).not.toHaveTextContent("Ancien zoom");
     expect(container).not.toHaveAttribute("hidden");
+    expect(container.querySelectorAll(".endOfContent")).toHaveLength(1);
   });
 
   it("keeps the layer hidden when PDF.js rendering fails", async () => {
