@@ -83,7 +83,8 @@ def install_successful_ocr(
     ) -> None:
         assert temporary_directory == Path(command[-1]).parent
         commands.append(command)
-        Path(command[-1]).write_bytes(output or make_pdf())
+        input_page_count = len(PdfReader(command[-2]).pages)
+        Path(command[-1]).write_bytes(output or make_pdf(input_page_count))
 
     monkeypatch.setattr(ocr, "execute_ocr", execute)
     return commands
@@ -182,11 +183,27 @@ def test_pdf_page_limit_is_enforced(
     assert not temporary_directory.exists()
 
 
+def test_source_validation_returns_the_page_count(tmp_path: Path) -> None:
+    source = tmp_path / "source.pdf"
+    source.write_bytes(make_pdf(3))
+
+    assert ocr.validate_source_pdf(source) == 3
+
+
 def test_invalid_mode_is_rejected() -> None:
     with pytest.raises(ocr.OcrError) as error:
         ocr.validate_mode("redo-ocr")
 
     assert_ocr_error(error, "OCR_INVALID_MODE")
+
+
+def test_openapi_documents_force_ocr_as_the_default_mode() -> None:
+    schema = main.app.openapi()
+    request_schema = schema["components"]["schemas"]["Body_ocr_pdf_ocr_post"]
+    mode_schema = request_schema["properties"]["mode"]
+
+    assert mode_schema["default"] == "force-ocr"
+    assert "force-ocr par défaut" in mode_schema["description"]
 
 
 @pytest.mark.parametrize(
@@ -208,20 +225,56 @@ def test_unavailable_language_is_rejected() -> None:
     assert "deu" in error.value.message
 
 
-def test_command_contains_mode_deskew_language_and_single_job() -> None:
+@pytest.mark.parametrize(
+    ("page_count", "cpu_count", "expected_jobs"),
+    [
+        (0, 8, 1),
+        (1, 8, 1),
+        (2, 2, 2),
+        (3, 8, 3),
+        (10, 8, 4),
+        (100, 1, 1),
+        (100, None, 1),
+    ],
+)
+def test_ocr_jobs_are_bounded_by_pages_cpus_and_maximum(
+    page_count: int,
+    cpu_count: int | None,
+    expected_jobs: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ocr.os, "cpu_count", lambda: cpu_count)
+
+    assert ocr.calculate_ocr_jobs(page_count) == expected_jobs
+    assert 1 <= ocr.calculate_ocr_jobs(page_count) <= ocr.OCR_MAX_JOBS
+
+
+def test_explicit_skip_text_remains_supported() -> None:
     command = ocr.build_ocr_command(
         Path("input.pdf"),
         Path("output.pdf"),
         languages="fra+eng",
         mode="skip-text",
         deskew=True,
+        jobs=3,
     )
 
+    assert command[:7] == [
+        "ocrmypdf",
+        "--output-type",
+        "pdf",
+        "--optimize",
+        "0",
+        "--fast-web-view",
+        str(ocr.OCR_FAST_WEB_VIEW_THRESHOLD_MB),
+    ]
     assert "--skip-text" in command
     assert "--force-ocr" not in command
+    assert command.count("--skip-text") == 1
     assert "--deskew" in command
     assert command[command.index("--language") + 1] == "fra+eng"
-    assert command[command.index("--jobs") + 1] == "1"
+    assert command[command.index("--jobs") + 1] == "3"
+    assert "--pages" not in command
 
 
 def test_force_ocr_and_disabled_deskew_are_reflected_in_command() -> None:
@@ -231,10 +284,12 @@ def test_force_ocr_and_disabled_deskew_are_reflected_in_command() -> None:
         languages="eng",
         mode="force-ocr",
         deskew=False,
+        jobs=2,
     )
 
     assert "--force-ocr" in command
     assert "--skip-text" not in command
+    assert command.count("--force-ocr") == 1
     assert "--deskew" not in command
 
 
@@ -246,6 +301,7 @@ class FakeProcess:
     ) -> None:
         self.returncode = return_code
         self.killed = False
+        self.pid = 12345
 
     def poll(self) -> int | None:
         return self.returncode
@@ -270,6 +326,44 @@ def test_process_is_started_without_a_shell(monkeypatch: pytest.MonkeyPatch) -> 
     assert result[0] == 0
     assert captured["arguments"] == ["ocrmypdf", "--version"]
     assert captured["options"]["shell"] is False
+    assert captured["options"]["start_new_session"] is True
+
+
+def test_process_diagnostics_are_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    prefix = b"x" * ocr.PROCESS_OUTPUT_LIMIT_BYTES
+    stdout_tail = b"stdout-tail"
+    stderr_tail = b"stderr-tail"
+
+    def create_process(arguments: list[str], **options: object) -> FakeProcess:
+        options["stdout"].write(prefix + stdout_tail)  # type: ignore[union-attr]
+        options["stderr"].write(prefix + stderr_tail)  # type: ignore[union-attr]
+        return FakeProcess()
+
+    monkeypatch.setattr(ocr.subprocess, "Popen", create_process)
+
+    _, stdout, stderr = run(
+        ocr.capture_process(["ocrmypdf", "--version"], timeout_seconds=1)
+    )
+
+    assert len(stdout) == ocr.PROCESS_OUTPUT_LIMIT_BYTES
+    assert len(stderr) == ocr.PROCESS_OUTPUT_LIMIT_BYTES
+    assert stdout.endswith(stdout_tail)
+    assert stderr.endswith(stderr_tail)
+
+
+def test_safe_diagnostic_is_redacted_and_bounded(tmp_path: Path) -> None:
+    diagnostic = (
+        "x" * ocr.DIAGNOSTIC_STREAM_LOG_LIMIT_CHARS
+        + f" {tmp_path}/input.pdf"
+    ).encode()
+
+    sanitized = ocr._safe_diagnostic(diagnostic, tmp_path)
+
+    assert str(tmp_path) not in sanitized
+    assert "<temporary-directory>/input.pdf" in sanitized
+    assert len(sanitized) <= ocr.DIAGNOSTIC_STREAM_LOG_LIMIT_CHARS
 
 
 def test_tesseract_unavailable_is_reported(
@@ -332,6 +426,7 @@ def test_nonzero_ocr_exit_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
         *,
         timeout_seconds: int,
     ) -> tuple[int, bytes, bytes]:
+        assert timeout_seconds == 600
         return 2, b"stdout", b"processing failed"
 
     monkeypatch.setattr(ocr, "capture_process", failed_process)
@@ -345,6 +440,8 @@ def test_nonzero_ocr_exit_is_reported(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     assert_ocr_error(error, "OCR_FAILED")
+    assert error.value.return_code == 2
+    assert error.value.diagnostic == "stdout=stdout stderr=processing failed"
 
 
 def test_ocr_timeout_kills_process_and_is_reported(
@@ -355,7 +452,15 @@ def test_ocr_timeout_kills_process_and_is_reported(
     def create_process(arguments: list[str], **options: object) -> FakeProcess:
         return process
 
+    killed_groups: list[tuple[int, int]] = []
+
+    def kill_group(process_id: int, kill_signal: int) -> None:
+        killed_groups.append((process_id, kill_signal))
+        process.killed = True
+        process.returncode = -kill_signal
+
     monkeypatch.setattr(ocr.subprocess, "Popen", create_process)
+    monkeypatch.setattr(ocr.os, "killpg", kill_group)
     monkeypatch.setattr(ocr, "OCR_TIMEOUT_SECONDS", 0)
 
     with pytest.raises(ocr.OcrError) as error:
@@ -368,6 +473,7 @@ def test_ocr_timeout_kills_process_and_is_reported(
 
     assert_ocr_error(error, "OCR_TIMEOUT")
     assert process.killed
+    assert killed_groups == [(process.pid, ocr.signal.SIGKILL)]
 
 
 def test_absent_ocr_output_is_rejected(tmp_path: Path) -> None:
@@ -407,6 +513,16 @@ def test_corrupt_pdf_ocr_output_is_rejected(tmp_path: Path) -> None:
     assert_ocr_error(error, "OCR_OUTPUT_INVALID")
 
 
+def test_ocr_output_must_preserve_the_source_page_count(tmp_path: Path) -> None:
+    output = tmp_path / "output.pdf"
+    output.write_bytes(make_pdf(2))
+
+    with pytest.raises(ocr.OcrError) as error:
+        ocr.validate_output_pdf(output, expected_page_count=3)
+
+    assert_ocr_error(error, "OCR_OUTPUT_INVALID")
+
+
 def test_successful_response_has_pdf_type_name_and_deferred_cleanup(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -433,12 +549,136 @@ def test_successful_response_has_pdf_type_name_and_deferred_cleanup(
     assert Path(response.path).read_bytes().startswith(b"%PDF-")
     assert temporary_directory.exists()
     assert commands[0][commands[0].index("--language") + 1] == "fra+eng"
+    assert "--skip-text" in commands[0]
+    assert "--force-ocr" not in commands[0]
     upload.file.seek(0)
     assert upload.file.read() == source
 
     assert response.background is not None
     run(response.background())
     assert not temporary_directory.exists()
+
+
+def test_omitted_mode_uses_force_ocr_for_the_complete_pdf(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    temporary_directory = track_temporary_directory(monkeypatch, tmp_path)
+    install_languages(monkeypatch)
+    commands = install_successful_ocr(monkeypatch)
+    monkeypatch.setattr(ocr.os, "cpu_count", lambda: 8)
+
+    response = run(
+        ocr.ocr_pdf(
+            file=make_upload(make_pdf(2), "document-mixte.pdf"),
+            languages="fra",
+            deskew=True,
+        )
+    )
+
+    command = commands[0]
+    assert "--force-ocr" in command
+    assert "--skip-text" not in command
+    assert command.count("--force-ocr") == 1
+    assert "--deskew" in command
+    assert "--pages" not in command
+    assert command[command.index("--jobs") + 1] == "2"
+    assert command[command.index("--optimize") + 1] == "0"
+    assert command[command.index("--fast-web-view") + 1] == str(
+        ocr.OCR_FAST_WEB_VIEW_THRESHOLD_MB
+    )
+    assert command[-2:] == [
+        str(temporary_directory / "input.pdf"),
+        str(temporary_directory / "output.pdf"),
+    ]
+
+    assert response.background is not None
+    run(response.background())
+    assert not temporary_directory.exists()
+
+
+def test_success_log_contains_pages_jobs_and_stage_durations(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    temporary_directory = track_temporary_directory(monkeypatch, tmp_path)
+    install_languages(monkeypatch)
+    install_successful_ocr(monkeypatch)
+    monkeypatch.setattr(ocr.os, "cpu_count", lambda: 8)
+
+    with caplog.at_level("INFO", logger="app.ocr"):
+        response = run(
+            ocr.ocr_pdf(
+                file=make_upload(make_pdf(3)),
+                languages="fra",
+                deskew=True,
+            )
+        )
+
+    message = next(
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("OCR completed:")
+    )
+    assert "pages=3 jobs=3 deskew=true languages=fra" in message
+    assert "source_validation_seconds=" in message
+    assert "ocr_seconds=" in message
+    assert "output_validation_seconds=" in message
+    assert "total_seconds=" in message
+    assert str(temporary_directory) not in message
+    for field in (
+        "source_validation_seconds=",
+        "ocr_seconds=",
+        "output_validation_seconds=",
+        "total_seconds=",
+    ):
+        assert float(message.split(field, maxsplit=1)[1].split()[0]) >= 0
+
+    assert response.background is not None
+    run(response.background())
+
+
+def test_failure_log_is_bounded_and_does_not_expose_temporary_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    temporary_directory = track_temporary_directory(monkeypatch, tmp_path)
+    install_languages(monkeypatch)
+    monkeypatch.setattr(ocr.os, "cpu_count", lambda: 8)
+
+    async def fail_ocr(
+        command: list[str],
+        *,
+        temporary_directory: Path,
+    ) -> None:
+        raise ocr.OcrError(
+            502,
+            "OCR_FAILED",
+            "failure",
+            return_code=2,
+            diagnostic=(
+                f"{temporary_directory}/input.pdf " + "x" * 10_000
+            ),
+        )
+
+    monkeypatch.setattr(ocr, "execute_ocr", fail_ocr)
+
+    with caplog.at_level("WARNING", logger="app.ocr"):
+        with pytest.raises(ocr.OcrError):
+            run(ocr.ocr_pdf(file=make_upload(make_pdf(3))))
+
+    message = next(
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("OCR failed:")
+    )
+    assert "pages=3 jobs=3" in message
+    assert "return_code=2" in message
+    assert str(temporary_directory) not in message
+    assert "<temporary-directory>" not in message
+    assert len(message) < ocr.DIAGNOSTIC_LOG_LIMIT_CHARS + 1000
 
 
 @pytest.mark.parametrize("code", ["OCR_FAILED", "OCR_TIMEOUT"])
