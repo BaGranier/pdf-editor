@@ -41,6 +41,12 @@ import {
   type OrganizedPage,
 } from "./organize/pagePlan";
 import { OcrDialog } from "./components/OcrDialog";
+import { ConversionDialog } from "./components/ConversionDialog";
+import {
+  downloadConversionFile,
+  requestConversion,
+  type ConversionOptions,
+} from "./conversion/conversion";
 import {
   getDownloadFileName,
   requestOcrPdf,
@@ -760,6 +766,7 @@ function PdfViewer({ document, onZoomChange, onScrollPositionChange, focusReques
   return (
     <section
       ref={viewerRef}
+      data-testid="pdf-viewer"
       tabIndex={0}
       className={isDragging ? "viewer viewer--pan-enabled is-panning" : "viewer viewer--pan-enabled"}
       aria-label={`Aperçu PDF ${document.fileName}`}
@@ -1324,6 +1331,10 @@ function OrganizePages({
             return (
               <article
                 key={page.id}
+                data-testid="organized-page"
+                data-source-document-id={page.sourceDocumentId}
+                data-source-page-index={page.sourcePageIndex}
+                data-rotation={page.rotation}
                 draggable
                 className={[
                   "organize-page",
@@ -1645,6 +1656,8 @@ export function App() {
   const [exportFeedback, setExportFeedback] = useState<ExportFeedback | null>(null);
   const [isOcrDialogOpen, setIsOcrDialogOpen] = useState(false);
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+  const [isConversionDialogOpen, setIsConversionDialogOpen] = useState(false);
+  const [isConverting, setIsConverting] = useState(false);
   const [status, setStatus] = useState("Sélectionnez un PDF local.");
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [viewerFocusRequest, setViewerFocusRequest] = useState(0);
@@ -2074,6 +2087,8 @@ export function App() {
     setExportFeedback(null);
     setIsOcrDialogOpen(false);
     setIsOcrProcessing(false);
+    setIsConversionDialogOpen(false);
+    setIsConverting(false);
     setStorageWarning(null);
     setWorkspaceMode("read");
     setStatus("Sélectionnez un PDF local.");
@@ -2546,6 +2561,53 @@ export function App() {
     [activeDocument, isOcrProcessing, openGeneratedPdfDocument],
   );
 
+  const convertActiveDocument = useCallback(
+    async (options: ConversionOptions) => {
+      if (!activeDocument || isConverting) {
+        return;
+      }
+
+      const sourceDocument = activeDocument;
+      setIsConversionDialogOpen(false);
+      setIsConverting(true);
+      setExportFeedback(null);
+
+      try {
+        const conversion = await requestConversion(
+          PDF_ENGINE_URL,
+          sourceDocument.file,
+          options,
+        );
+        downloadConversionFile(conversion.file);
+        const pageSummary =
+          conversion.metadata.pages.length > 0
+            ? `${conversion.metadata.pages.length} page${conversion.metadata.pages.length > 1 ? "s" : ""}`
+            : "pages demandées";
+        const ocrSummary = conversion.metadata.ocrUsed
+          ? " OCR automatique utilisé."
+          : "";
+        const warnings = conversion.metadata.warnings
+          .map((warning) => ` Avertissement : ${warning}`)
+          .join("");
+        setExportFeedback({
+          kind: warnings ? "warning" : "success",
+          message: `Conversion réussie : ${conversion.file.name} (${pageSummary}).${ocrSummary}${warnings}`,
+        });
+      } catch (error) {
+        setExportFeedback({
+          kind: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "La conversion du document a échoué.",
+        });
+      } finally {
+        setIsConverting(false);
+      }
+    },
+    [activeDocument, isConverting],
+  );
+
   const removeMissingSourcePages = useCallback(() => {
     if (!activeDocument) {
       return;
@@ -2661,12 +2723,22 @@ export function App() {
               setExportFeedback(null);
               setIsOcrDialogOpen(true);
             }}
-            disabled={!activeDocument || isOcrProcessing || isExporting}
+            disabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
             aria-label="OCR"
             aria-busy={isOcrProcessing}
             title="Reconnaissance de texte (OCR)"
           >
             OCR
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setExportFeedback(null);
+              setIsConversionDialogOpen(true);
+            }}
+            disabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
+          >
+            Convertir
           </button>
           <button
             type="button"
@@ -2690,7 +2762,7 @@ export function App() {
           >
             -
           </button>
-          <span className="zoom-value">
+          <span className="zoom-value" data-testid="zoom-level" aria-live="polite">
             {activeDocument ? `${Math.round(activeDocument.zoom * 100)}%` : "-"}
           </span>
           <button
@@ -2715,6 +2787,16 @@ export function App() {
           isProcessing={isOcrProcessing}
           onCancel={() => setIsOcrDialogOpen(false)}
           onSubmit={(options) => void runOcrOnActiveDocument(options)}
+        />
+      ) : null}
+
+      {isConversionDialogOpen && activeDocument ? (
+        <ConversionDialog
+          sourceFileName={activeDocument.fileName}
+          hasPendingOrganizationChanges={hasPendingOrganizationChanges}
+          isProcessing={isConverting}
+          onCancel={() => setIsConversionDialogOpen(false)}
+          onSubmit={(options) => void convertActiveDocument(options)}
         />
       ) : null}
 
@@ -2761,6 +2843,14 @@ export function App() {
           >
             <span className="organize-spinner" aria-hidden="true" />
             <span>OCR en cours…</span>
+          </div>
+        ) : isConverting ? (
+          <div
+            className="export-read-feedback organize-feedback organize-feedback--progress"
+            role="status"
+          >
+            <span className="organize-spinner" aria-hidden="true" />
+            <span>Conversion en cours…</span>
           </div>
         ) : workspaceMode === "read" && exportFeedback ? (
           <div

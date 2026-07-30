@@ -9,7 +9,17 @@
     "lint": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "qa:e2e": "python3 ../../scripts/run-qa.py",
+    "qa:e2e:quick": "python3 ../../scripts/run-qa.py --grep-invert @slow",
+    "qa:e2e:chromium": "python3 ../../scripts/run-qa.py --project=chromium",
+    "qa:e2e:firefox": "python3 ../../scripts/run-qa.py --project=firefox",
+    "qa:e2e:headed": "python3 ../../scripts/run-qa.py --headed",
+    "qa:e2e:debug": "python3 ../../scripts/run-qa.py --debug",
+    "qa:e2e:report": "playwright show-report test-results/playwright-report",
+    "qa:e2e:update-snapshots": "python3 ../../scripts/run-qa.py --update-snapshots",
+    "qa:e2e:typecheck": "tsc --noEmit -p tsconfig.e2e.json",
+    "qa:report": "python3 ../../scripts/generate-qa-report.py"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
@@ -20,8 +30,10 @@
     "vite": "^6.0.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@types/node": "^26.1.2",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
     "jsdom": "^29.1.1",

@@ -8,6 +8,11 @@ __pycache__/
 dist/
 build/
 *.tsbuildinfo
+apps/web/e2e/fixtures/pdf-large.pdf
+apps/web/test-results/
+QA_AUTOMATED_REPORT.md
+.playwright-browsers/
+.uv-cache/
 data/output/*
 !data/output/.gitkeep
 data/input/*.pdf

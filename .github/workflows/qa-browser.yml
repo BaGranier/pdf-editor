@@ -1,0 +1,100 @@
+name: QA navigateur
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      campaign:
+        description: Campagne à exécuter
+        required: true
+        default: complete
+        type: choice
+        options:
+          - complete
+          - quick
+
+permissions:
+  contents: read
+
+jobs:
+  browser-qa:
+    name: Playwright (${{ github.event_name == 'pull_request' && 'quick' || inputs.campaign }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer uv
+        run: python -m pip install uv
+
+      - name: Installer les dépendances OCR locales
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            ghostscript \
+            ocrmypdf \
+            qpdf \
+            tesseract-ocr-eng \
+            tesseract-ocr-fra
+
+      - name: Installer le backend
+        run: uv sync --directory services/pdf-engine
+
+      - name: Installer le frontend
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Installer Chromium et Firefox
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium firefox
+
+      - name: Exécuter la campagne rapide
+        if: github.event_name == 'pull_request' || inputs.campaign == 'quick'
+        working-directory: apps/web
+        run: npm run qa:e2e:quick
+
+      - name: Exécuter la campagne complète
+        if: github.event_name != 'pull_request' && inputs.campaign == 'complete'
+        working-directory: apps/web
+        run: npm run qa:e2e
+
+      - name: Publier le rapport HTML et JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-browser-report-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            apps/web/test-results/playwright-report/
+            apps/web/test-results/results.json
+            QA_AUTOMATED_REPORT.md
+
+      - name: Publier les traces, captures et vidéos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-browser-failures-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            apps/web/test-results/screenshots/
+            apps/web/test-results/traces/
+            apps/web/test-results/videos/
+            apps/web/test-results/**/test-failed-*.png
+            apps/web/test-results/**/trace.zip
+            apps/web/test-results/**/*.webm

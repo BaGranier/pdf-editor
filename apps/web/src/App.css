@@ -769,7 +769,8 @@ button:disabled {
   font-weight: 600;
 }
 
-.ocr-field select {
+.ocr-field select,
+.ocr-field input {
   width: 100%;
   min-height: 2.5rem;
   padding: 0 0.65rem;
@@ -777,6 +778,11 @@ button:disabled {
   border: 1px solid var(--button-border);
   border-radius: 6px;
   background: var(--button-bg);
+}
+
+.ocr-field input[type="range"] {
+  padding: 0;
+  accent-color: var(--accent);
 }
 
 .ocr-checkbox-field {

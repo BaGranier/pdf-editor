@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
 
+from app.conversion import router as conversion_router
+from app.conversion.errors import ConversionError
 from app.ocr import OcrError, router as ocr_router
 
 
@@ -58,13 +60,37 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["POST"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition", "X-Pdf-Output-Status", "X-Pdf-Output-Warning"],
+    expose_headers=[
+        "Content-Disposition",
+        "X-Pdf-Output-Status",
+        "X-Pdf-Output-Warning",
+        "X-Conversion-Format",
+        "X-Conversion-Duration-Ms",
+        "X-Conversion-Input-Bytes",
+        "X-Conversion-Output-Bytes",
+        "X-Conversion-Ocr-Used",
+        "X-Conversion-Pages",
+        "X-Conversion-Warnings",
+        "X-Conversion-Text-Layer",
+    ],
 )
 app.include_router(ocr_router)
+app.include_router(conversion_router)
 
 
 @app.exception_handler(OcrError)
 async def handle_ocr_error(_: Request, error: OcrError) -> JSONResponse:
+    return JSONResponse(
+        status_code=error.status_code,
+        content={"code": error.code, "message": error.message},
+    )
+
+
+@app.exception_handler(ConversionError)
+async def handle_conversion_error(
+    _: Request,
+    error: ConversionError,
+) -> JSONResponse:
     return JSONResponse(
         status_code=error.status_code,
         content={"code": error.code, "message": error.message},

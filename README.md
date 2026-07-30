@@ -34,6 +34,24 @@ npm run test
 npm run test:run
 ```
 
+### QA navigateur Playwright
+
+La campagne reproductible Chromium + Firefox, ses prérequis, ses artefacts et les
+contrôles restant manuels sont documentés dans
+[QA_AUTOMATION.md](QA_AUTOMATION.md).
+
+Commande complète depuis `apps/web` :
+
+```bash
+npm run qa:e2e
+```
+
+Commande rapide utilisée en CI :
+
+```bash
+npm run qa:e2e:quick
+```
+
 ## Backend
 
 ```bash
@@ -47,6 +65,16 @@ Health check:
 ```bash
 curl http://localhost:8000/health
 ```
+
+### Conversion locale
+
+L’action **Convertir** conserve le PDF source ouvert et télécharge le résultat
+sans l’ajouter au viewer. Elle prend en charge DOCX, TXT UTF-8, HTML autonome,
+PNG et JPEG via `POST /convert`. Pour DOCX, TXT et HTML, le mode OCR automatique
+réutilise l’OCR existant uniquement sur les pages sans couche texte exploitable.
+
+Les formats, options multipart, limites de sécurité, dépendances OCR et limites
+de fidélité sont détaillés dans [CONVERSION.md](CONVERSION.md).
 
 ### Export PDF organisé
 
@@ -105,4 +133,6 @@ après fermeture de l'onglet.
 Les fichiers locaux non privés de validation sont dans `data/input` et la campagne
 manuelle est décrite dans [QA_BROWSER_CHECKLIST.md](QA_BROWSER_CHECKLIST.md).
 
-Limites actuelles : pas encore de split avancé, d'OCR, ni d'édition de texte PDF.
+Limites actuelles : pas encore de split avancé ni d'édition de texte PDF. La
+conversion DOCX reconstruit un document éditable, sans garantir une reproduction
+parfaite des mises en page complexes.
