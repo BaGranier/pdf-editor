@@ -5,6 +5,7 @@ import logging
 import re
 import statistics
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,18 @@ DOCX_EDITABLE_DEGRADED_WARNING = (
 LIST_MARKER = re.compile(
     r"^\s*(?P<marker>[-–—•▪‣●○\uf0b7]|\d+[.)])\s+"
 )
+
+
+@dataclass(frozen=True)
+class CoverPageAnalysis:
+    is_cover_page: bool
+    text_block_count: int
+    word_count: int
+    whitespace_ratio: float
+    largest_font_size: float
+    largest_vertical_gap: float
+    title_position_ratio: float
+    has_lower_page_text: bool
 
 
 def text_retention_ratio(source_text: str, converted_text: str) -> float:
@@ -115,7 +128,11 @@ class PdfToDocxConverter:
                 else document.add_section(WD_SECTION.NEW_PAGE)
             )
             self._configure_editable_section(section, page)
-            self._append_page_content(document, page)
+            self._append_page_content(
+                document,
+                page,
+                allow_cover_page=page_index == 0,
+            )
 
     def _append_visual_pages(
         self,
@@ -228,9 +245,16 @@ class PdfToDocxConverter:
         self,
         document: DocumentType,
         page: fitz.Page,
+        *,
+        allow_cover_page: bool = False,
     ) -> None:
         page_dictionary = page.get_text("dict", sort=True)
         blocks = page_dictionary.get("blocks", [])
+        cover_analysis = self._analyze_cover_page(
+            page,
+            blocks,
+            allow_cover_page=allow_cover_page,
+        )
         regular_size = self._regular_font_size(blocks)
         yellow_rectangles, border_rectangles = self._drawing_rectangles(page)
         table_entries, table_rectangles = self._table_entries(page)
@@ -285,9 +309,13 @@ class PdfToDocxConverter:
                 )
             )
 
+        previous_bottom: float | None = None
         for _top, _left, entry_type, payload in sorted(
-            entries, key=lambda entry: entry[:2]
+            entries,
+            key=lambda entry: entry[:2],
         ):
+            entry_rectangle = self._entry_rectangle(entry_type, payload)
+            paragraph_count = len(document.paragraphs)
             if entry_type == "table":
                 self._append_table(document, payload)
             elif entry_type == "image":
@@ -300,7 +328,174 @@ class PdfToDocxConverter:
                     regular_size=regular_size,
                     yellow_rectangles=yellow_rectangles,
                     border_rectangles=border_rectangles,
+                    preserve_vertical_spacing=cover_analysis.is_cover_page,
                 )
+            if (
+                cover_analysis.is_cover_page
+                and len(document.paragraphs) > paragraph_count
+            ):
+                previous_source_position = (
+                    previous_bottom
+                    if previous_bottom is not None
+                    else document.sections[-1].top_margin.pt
+                )
+                self._apply_cover_page_gap(
+                    document.paragraphs[paragraph_count],
+                    entry_rectangle.y0 - previous_source_position,
+                    page.rect.height,
+                )
+            previous_bottom = (
+                entry_rectangle.y1
+                if previous_bottom is None
+                else max(previous_bottom, entry_rectangle.y1)
+            )
+
+    @classmethod
+    def _analyze_cover_page(
+        cls,
+        page: fitz.Page,
+        blocks: list[dict[str, Any]],
+        *,
+        allow_cover_page: bool,
+    ) -> CoverPageAnalysis:
+        text_blocks = [
+            block
+            for block in blocks
+            if block.get("type") == 0
+            and cls._block_text(block).strip()
+        ]
+        text = " ".join(cls._block_text(block) for block in text_blocks)
+        word_count = len(re.findall(r"\w+", text))
+        text_rectangles = [
+            fitz.Rect(block["bbox"])
+            for block in text_blocks
+            if block.get("bbox")
+        ]
+        content_rectangles = [
+            fitz.Rect(block["bbox"])
+            for block in blocks
+            if block.get("bbox")
+            and block.get("type") in {0, 1}
+            and fitz.Rect(block["bbox"]).get_area()
+            < page.rect.get_area() * 0.65
+        ]
+        ordered_rectangles = sorted(
+            content_rectangles,
+            key=lambda rectangle: (rectangle.y0, rectangle.x0),
+        )
+        vertical_gaps = [
+            max(0, current.y0 - previous.y1)
+            for previous, current in zip(
+                ordered_rectangles,
+                ordered_rectangles[1:],
+                strict=False,
+            )
+        ]
+        largest_vertical_gap = max(vertical_gaps, default=0)
+        occupied_area = sum(
+            min(rectangle.get_area(), page.rect.get_area())
+            for rectangle in content_rectangles
+        )
+        whitespace_ratio = max(
+            0,
+            1 - min(1, occupied_area / max(1, page.rect.get_area())),
+        )
+        span_sizes = [
+            float(span.get("size", 0))
+            for block in text_blocks
+            for line in block.get("lines", [])
+            for span in line.get("spans", [])
+            if str(span.get("text", "")).strip()
+        ]
+        largest_font_size = max(span_sizes, default=0)
+        regular_font_size = statistics.median(span_sizes) if span_sizes else 11
+        title_rectangle = fitz.Rect()
+        title_size = 0.0
+        for block in text_blocks:
+            block_size = max(
+                (
+                    float(span.get("size", 0))
+                    for line in block.get("lines", [])
+                    for span in line.get("spans", [])
+                    if str(span.get("text", "")).strip()
+                ),
+                default=0,
+            )
+            if block_size > title_size:
+                title_size = block_size
+                title_rectangle = fitz.Rect(block["bbox"])
+        title_position_ratio = (
+            title_rectangle.y0 / page.rect.height
+            if not title_rectangle.is_empty
+            else 0
+        )
+        has_lower_page_text = any(
+            rectangle.y0 >= page.rect.height * 0.65
+            for rectangle in text_rectangles
+        )
+        has_long_paragraph = any(
+            len(re.findall(r"\w+", cls._block_text(block))) > 45
+            for block in text_blocks
+        )
+        has_list = any(
+            cls._is_list_line(line)
+            for block in text_blocks
+            for line in block.get("lines", [])
+        )
+        is_cover_page = (
+            allow_cover_page
+            and 3 <= len(text_blocks) <= 8
+            and word_count <= 150
+            and not has_long_paragraph
+            and not has_list
+            and largest_font_size >= max(18, regular_font_size * 1.35)
+            and largest_vertical_gap >= page.rect.height * 0.12
+            and has_lower_page_text
+            and whitespace_ratio >= 0.65
+        )
+        return CoverPageAnalysis(
+            is_cover_page=is_cover_page,
+            text_block_count=len(text_blocks),
+            word_count=word_count,
+            whitespace_ratio=round(whitespace_ratio, 4),
+            largest_font_size=largest_font_size,
+            largest_vertical_gap=largest_vertical_gap,
+            title_position_ratio=round(title_position_ratio, 4),
+            has_lower_page_text=has_lower_page_text,
+        )
+
+    @staticmethod
+    def _block_text(block: dict[str, Any]) -> str:
+        return " ".join(
+            str(span.get("text", "")).strip()
+            for line in block.get("lines", [])
+            for span in line.get("spans", [])
+            if str(span.get("text", "")).strip()
+        )
+
+    @staticmethod
+    def _entry_rectangle(entry_type: str, payload: Any) -> fitz.Rect:
+        if entry_type == "table":
+            return fitz.Rect(payload.bbox)
+        return fitz.Rect(payload.get("bbox", (0, 0, 0, 0)))
+
+    @staticmethod
+    def _apply_cover_page_gap(
+        paragraph: Any,
+        source_gap: float,
+        page_height: float,
+    ) -> None:
+        if source_gap < page_height * 0.035:
+            return
+        preserved_gap = min(
+            source_gap * 0.94,
+            page_height * 0.34,
+        )
+        existing = paragraph.paragraph_format.space_before
+        existing_points = existing.pt if existing is not None else 0
+        paragraph.paragraph_format.space_before = Pt(
+            max(existing_points, preserved_gap),
+        )
 
     @staticmethod
     def _first_text_rectangle(block: dict[str, Any]) -> fitz.Rect:
@@ -577,6 +772,7 @@ class PdfToDocxConverter:
         regular_size: float,
         yellow_rectangles: list[fitz.Rect],
         border_rectangles: list[fitz.Rect],
+        preserve_vertical_spacing: bool = False,
     ) -> None:
         lines = [
             line
@@ -586,7 +782,12 @@ class PdfToDocxConverter:
         if not lines:
             return
         line_groups = self._group_lines(lines, page.rect)
+        previous_bottom: float | None = None
         for group_index, line_group in enumerate(line_groups):
+            group_rectangle = fitz.Rect(line_group[0]["bbox"])
+            for line in line_group[1:]:
+                group_rectangle |= fitz.Rect(line["bbox"])
+            paragraph_count = len(document.paragraphs)
             is_list = self._is_list_line(line_group[0])
             if is_list:
                 self._append_list_lines(
@@ -606,6 +807,7 @@ class PdfToDocxConverter:
                         )
                     ),
                 )
+                previous_bottom = group_rectangle.y1
                 continue
             self._append_text_paragraph(
                 document,
@@ -615,6 +817,17 @@ class PdfToDocxConverter:
                 yellow_rectangles=yellow_rectangles,
                 border_rectangles=border_rectangles,
             )
+            if (
+                preserve_vertical_spacing
+                and previous_bottom is not None
+                and len(document.paragraphs) > paragraph_count
+            ):
+                self._apply_cover_page_gap(
+                    document.paragraphs[paragraph_count],
+                    group_rectangle.y0 - previous_bottom,
+                    page.rect.height,
+                )
+            previous_bottom = group_rectangle.y1
 
     def _append_text_paragraph(
         self,

@@ -128,6 +128,14 @@ par paragraphe, sans reprendre le texte privé. Le statut de lisibilité devient
 un échec si les paragraphes longs sont compactés sous 1,12, même lorsque le
 document tient dans ses trois sections structurelles.
 
+La section « DOCX cover page fidelity » utilise une couverture synthétique sans
+donnée privée. Elle relève le nombre de blocs, l'espace blanc approximatif, les
+positions relatives du titre, de la date et des auteurs, la hiérarchie de taille
+et la rétention textuelle. Le test local `docx_cover_page` peut remplacer cette
+fixture par `data/input/manual-docx-regression/cort_test.pdf` lorsqu'il existe.
+Le rendu LibreOffice reste obligatoire dans la CI complète et apparaît comme
+une réserve lorsqu'il est indisponible localement.
+
 ## Isolation et diagnostics
 
 Playwright crée un contexte neuf pour chaque test. Les scénarios de persistance

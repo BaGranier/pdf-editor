@@ -93,6 +93,11 @@ Le workflow GitHub Actions installe ces paquets avant la campagne.
   exacte n'est appliquée. Les encadrés simples conservent une marge interne de
   8 points. Une page Word supplémentaire est acceptable lorsqu'elle évite une
   compression excessive et ne crée pas de page quasi vide.
+  La première page utilise automatiquement une stratégie de couverture
+  lorsqu'elle contient peu de blocs, beaucoup d'espace blanc, un grand titre et
+  du texte dans le quart inférieur. Les grands écarts verticaux sont alors
+  convertis en espacements Word afin de conserver un titre central et des
+  auteurs en bas de page, tout en gardant le texte modifiable.
 - DOCX `visual` (« Word fidèle visuellement ») : chaque page est rendue comme
   une image pleine page. L'apparence est mieux conservée, mais le contenu est
   moins facilement modifiable. Les paragraphes d'images n'imposent aucune
@@ -179,6 +184,16 @@ cd services/pdf-engine
 QA_REAL_DOCX_PDF=data/input/manual-docx-regression/2-ENGAGEMENT_INDIVIDUEL_ETUDIANT_2026-2027.pdf \
   UV_CACHE_DIR=/tmp/pdf-engine-uv-cache \
   uv run pytest -m docx_real_document
+```
+
+Une page de garde locale peut être vérifiée séparément. Le test est ignoré si
+le fichier n'existe pas et le DOCX de contrôle reste sous `data/output/` :
+
+```bash
+cd services/pdf-engine
+QA_COVER_PAGE_PDF=data/input/manual-docx-regression/cort_test.pdf \
+  UV_CACHE_DIR=/tmp/pdf-engine-uv-cache \
+  uv run pytest -m docx_cover_page
 ```
 
 Les tests backend ouvrent réellement les DOCX, PDF et archives produits. Les

@@ -25,6 +25,9 @@ DOCX_EDITABLE_REAL_RESULTS_PATH = (
     / "docx-editable-real-document"
     / "results.json"
 )
+DOCX_COVER_RESULTS_PATH = (
+    WEB_DIR / "test-results" / "docx-cover-page" / "results.json"
+)
 
 MANUAL_CHECKS = [
     "Fluidité ressentie lors des longues sessions et des exports extrêmes.",
@@ -252,6 +255,7 @@ def browser_versions() -> str:
 def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
     docx_quality: dict[str, Any] | None = None
     docx_editable_real: dict[str, Any] | None = None
+    docx_cover: dict[str, Any] | None = None
     if (
         os.environ.get("QA_DOCX_QUALITY_INCLUDED") != "0"
         and DOCX_QUALITY_RESULTS_PATH.exists()
@@ -275,6 +279,16 @@ def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
                 "status": "unavailable",
                 "reason": "Le résultat DOCX éditable réel est illisible.",
             }
+    if DOCX_COVER_RESULTS_PATH.exists():
+        try:
+            docx_cover = json.loads(
+                DOCX_COVER_RESULTS_PATH.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            docx_cover = {
+                "status": "unavailable",
+                "reason": "Le résultat DOCX de page de garde est illisible.",
+            }
     failed = [
         scenario
         for scenario in scenarios
@@ -287,16 +301,20 @@ def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
     )
     quality_status = (docx_quality or {}).get("status")
     editable_real_status = (docx_editable_real or {}).get("status")
+    cover_status = (docx_cover or {}).get("status")
     decision = (
         "ÉCHEC"
         if failed
         or quality_status == "failed"
         or editable_real_status == "failed"
+        or cover_status == "failed"
         else "RÉUSSITE AVEC RÉSERVES"
         if skipped
         or has_non_blocking_findings
         or quality_status == "unavailable"
         or editable_real_status == "unavailable"
+        or cover_status == "unavailable"
+        or (docx_cover or {}).get("renderStatus") == "unavailable"
         else "RÉUSSITE"
     )
     commit = command_output(["git", "rev-parse", "--short", "HEAD"])
@@ -716,6 +734,56 @@ def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
         if render_warning:
             lines.append(
                 f"- Réserve : {markdown_escape(str(render_warning))}"
+            )
+
+    lines.extend(["", "## DOCX cover page fidelity", ""])
+    if docx_cover is None:
+        lines.extend(
+            [
+                "- Document : fixture de couverture non exécutée",
+                "- Statut : **R** — métriques indisponibles.",
+            ]
+        )
+    else:
+        cover_status_label = (
+            "KO"
+            if docx_cover.get("status") == "failed"
+            else "R"
+            if docx_cover.get("renderStatus") == "unavailable"
+            else "OK"
+        )
+        lines.extend(
+            [
+                f"- Document : "
+                f"`{markdown_escape(str(docx_cover.get('file', 'N/D')))}`",
+                f"- Type de mise en page : "
+                f"`{docx_cover.get('layoutType', 'N/D')}`",
+                f"- Blocs texte source / paragraphes DOCX : "
+                f"{docx_cover.get('sourceTextBlockCount', 'N/D')} / "
+                f"{docx_cover.get('docxParagraphCount', 'N/D')}",
+                f"- Ratio approximatif d'espace blanc : "
+                f"{docx_cover.get('sourceWhitespaceRatio', 'N/D')}",
+                f"- Position relative titre source / DOCX : "
+                f"{docx_cover.get('sourceTitlePositionRatio', 'N/D')} / "
+                f"{docx_cover.get('docxTitlePositionRatio', 'N/D')}",
+                f"- Position relative date / auteurs DOCX : "
+                f"{docx_cover.get('docxDatePositionRatio', 'N/D')} / "
+                f"{docx_cover.get('docxAuthorPositionRatio', 'N/D')}",
+                f"- Ratio de taille du titre : "
+                f"{docx_cover.get('titleSizeRatio', 'N/D')}",
+                f"- Rétention textuelle : "
+                f"{docx_cover.get('textRetentionRatio', 'N/D')}",
+                f"- Document image-only : "
+                f"{'oui' if docx_cover.get('imageOnly') else 'non'}",
+                f"- Pages rendues avec LibreOffice : "
+                f"{docx_cover.get('renderedPageCount', 'N/D')}",
+                f"- Statut : **{cover_status_label}**",
+            ]
+        )
+        if docx_cover.get("renderStatus") == "unavailable":
+            lines.append(
+                "- Réserve : rendu LibreOffice indisponible localement ; "
+                "contrôle requis dans la CI complète."
             )
 
     lines.extend(["", "## Mesures de performance disponibles", ""])
