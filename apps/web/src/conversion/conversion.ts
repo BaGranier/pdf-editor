@@ -4,6 +4,7 @@ export type ConversionTarget = "docx" | "txt" | "html" | "png" | "jpeg";
 export type ConversionOcrMode = "auto" | "never" | "always";
 export type ConversionLanguages = "fra" | "eng" | "fra+eng";
 export type ConversionImageDpi = 96 | 150 | 300;
+export type ConversionDocxMode = "editable" | "visual";
 
 export type ConversionOptions = {
   targetFormat: ConversionTarget;
@@ -12,6 +13,7 @@ export type ConversionOptions = {
   pages: string;
   imageDpi: ConversionImageDpi;
   imageQuality: number;
+  docxMode: ConversionDocxMode;
 };
 
 export type ConversionMetadata = {
@@ -23,6 +25,7 @@ export type ConversionMetadata = {
   pages: number[];
   warnings: string[];
   textLayer: string | null;
+  docxMode: ConversionDocxMode | null;
 };
 
 export type ConversionDownload = {
@@ -30,9 +33,18 @@ export type ConversionDownload = {
   metadata: ConversionMetadata;
 };
 
+export type ConversionUploadDiagnostics = {
+  fileName: string;
+  size: number;
+  mimeType: string;
+  isBlob: boolean;
+  hasPdfSignature: boolean;
+};
+
 type ConversionErrorPayload = {
   code?: unknown;
   message?: unknown;
+  stage?: unknown;
   detail?: unknown;
 };
 
@@ -69,6 +81,7 @@ export class ConversionRequestError extends Error {
   constructor(
     message: string,
     readonly code?: string,
+    readonly stage?: string,
   ) {
     super(message);
     this.name = "ConversionRequestError";
@@ -106,14 +119,20 @@ async function responseError(response: Response): Promise<ConversionRequestError
         : null;
     const codeValue = detail?.code ?? payload.code;
     const messageValue = detail?.message ?? payload.message;
+    const stageValue = detail?.stage ?? payload.stage;
     const code = typeof codeValue === "string" ? codeValue : undefined;
+    const stage = typeof stageValue === "string" ? stageValue : undefined;
     const message =
       typeof messageValue === "string" && messageValue.trim()
         ? messageValue.trim()
         : code
           ? ERROR_MESSAGES[code]
           : undefined;
-    return new ConversionRequestError(message ?? "La conversion a échoué.", code);
+    return new ConversionRequestError(
+      message ?? "La conversion a échoué.",
+      code,
+      stage,
+    );
   } catch {
     return new ConversionRequestError("La conversion a échoué.");
   }
@@ -131,11 +150,62 @@ function normalizedMimeType(blob: Blob, response: Response): string {
     .toLowerCase();
 }
 
+export async function normalizePdfUpload(
+  source: Blob,
+  fallbackFileName = "document.pdf",
+): Promise<{ file: File; diagnostics: ConversionUploadDiagnostics }> {
+  if (!(source instanceof Blob) || source.size <= 0) {
+    throw new ConversionRequestError(
+      "Le document source est vide ou indisponible.",
+      "INVALID_PDF",
+    );
+  }
+
+  const requestedName =
+    source instanceof File && source.name.trim()
+      ? source.name.trim()
+      : fallbackFileName.trim();
+  const fileName = requestedName || "document.pdf";
+  const signature = new Uint8Array(await source.slice(0, 5).arrayBuffer());
+  const hasPdfSignature =
+    signature.length === 5 &&
+    signature[0] === 0x25 &&
+    signature[1] === 0x50 &&
+    signature[2] === 0x44 &&
+    signature[3] === 0x46 &&
+    signature[4] === 0x2d;
+  if (!hasPdfSignature) {
+    throw new ConversionRequestError(
+      "Le document source n'est pas un PDF valide.",
+      "INVALID_PDF",
+    );
+  }
+
+  const file =
+    source instanceof File && source.name === fileName
+      ? source
+      : new File([source], fileName, {
+          type: source.type || "application/pdf",
+        });
+  return {
+    file,
+    diagnostics: {
+      fileName: file.name,
+      size: file.size,
+      mimeType: file.type || "application/pdf",
+      isBlob: file instanceof Blob,
+      hasPdfSignature,
+    },
+  };
+}
+
 export async function requestConversion(
   backendUrl: string,
-  sourceFile: File,
+  source: Blob,
   options: ConversionOptions,
+  sourceFileName = source instanceof File ? source.name : "document.pdf",
 ): Promise<ConversionDownload> {
+  const { file: sourceFile } = await normalizePdfUpload(source, sourceFileName);
   const formData = new FormData();
   formData.append("file", sourceFile, sourceFile.name);
   formData.append("target_format", options.targetFormat);
@@ -144,6 +214,13 @@ export async function requestConversion(
   formData.append("pages", options.pages.trim());
   formData.append("image_dpi", String(options.imageDpi));
   formData.append("image_quality", String(options.imageQuality));
+  formData.append("docx_mode", options.docxMode);
+  if (!(formData.get("file") instanceof Blob)) {
+    throw new ConversionRequestError(
+      "Le document source n'a pas pu être préparé.",
+      "INVALID_PDF",
+    );
+  }
 
   let response: Response;
   try {
@@ -188,6 +265,12 @@ export async function requestConversion(
       pages,
       warnings: parseWarnings(response.headers.get("x-conversion-warnings")),
       textLayer: response.headers.get("x-conversion-text-layer"),
+      docxMode:
+        options.targetFormat === "docx"
+          ? (response.headers.get(
+              "x-conversion-docx-mode",
+            ) as ConversionDocxMode | null) ?? options.docxMode
+          : null,
     },
   };
 }

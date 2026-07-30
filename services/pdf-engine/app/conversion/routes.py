@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
-from app.conversion.models import OcrMode
+from app.conversion.models import DocxMode, OcrMode
 from app.conversion.service import (
     build_options,
     cleanup_temporary_directory,
@@ -33,6 +33,10 @@ async def convert_pdf(
     ] = None,
     image_dpi: Annotated[int, Form(description="96, 150 ou 300 dpi")] = 150,
     image_quality: Annotated[int, Form(description="Qualité JPEG de 1 à 100")] = 85,
+    docx_mode: Annotated[
+        str,
+        Form(description="editable ou visual"),
+    ] = DocxMode.EDITABLE.value,
 ) -> FileResponse:
     options = build_options(
         target_format=target_format,
@@ -41,6 +45,7 @@ async def convert_pdf(
         pages=pages,
         image_dpi=image_dpi,
         image_quality=image_quality,
+        docx_mode=docx_mode,
     )
     prepared = await prepare_conversion(file, options)
     result = prepared.result
@@ -55,6 +60,8 @@ async def convert_pdf(
             json.dumps(result.warnings, ensure_ascii=False),
         ),
         "X-Conversion-Text-Layer": result.text_layer.classification,
+        "X-Conversion-Docx-Mode": options.docx_mode.value,
+        "X-Conversion-Stage": "completed",
     }
     return FileResponse(
         prepared.artifact.path,

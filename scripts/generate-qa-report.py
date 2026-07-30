@@ -3,6 +3,7 @@
 
 import base64
 import json
+import os
 import platform
 import subprocess
 from dataclasses import dataclass
@@ -15,6 +16,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WEB_DIR = PROJECT_ROOT / "apps" / "web"
 RESULTS_PATH = WEB_DIR / "test-results" / "results.json"
 OUTPUT_PATH = PROJECT_ROOT / "QA_AUTOMATED_REPORT.md"
+DOCX_QUALITY_RESULTS_PATH = (
+    WEB_DIR / "test-results" / "docx-visual-quality" / "results.json"
+)
+DOCX_EDITABLE_REAL_RESULTS_PATH = (
+    WEB_DIR
+    / "test-results"
+    / "docx-editable-real-document"
+    / "results.json"
+)
 
 MANUAL_CHECKS = [
     "Fluidité ressentie lors des longues sessions et des exports extrêmes.",
@@ -75,6 +85,7 @@ def collect_specs(
                 diagnostics = None
                 memory_sample = None
                 conversion_results: list[dict[str, Any]] = []
+                docx_regression_results: list[dict[str, Any]] = []
                 ocr_results: list[dict[str, Any]] = []
                 conversion_capture = False
                 artifacts: list[str] = []
@@ -98,6 +109,13 @@ def collect_specs(
                         elif attachment_name == "conversion-result" and path.exists():
                             try:
                                 conversion_results.append(json.loads(path.read_text()))
+                            except (OSError, json.JSONDecodeError):
+                                pass
+                        elif attachment_name == "docx-regression" and path.exists():
+                            try:
+                                docx_regression_results.append(
+                                    json.loads(path.read_text())
+                                )
                             except (OSError, json.JSONDecodeError):
                                 pass
                     elif (
@@ -132,6 +150,24 @@ def collect_specs(
                             )
                         except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
                             pass
+                    elif (
+                        attachment_name == "docx-regression"
+                        and attachment.get("body")
+                    ):
+                        try:
+                            docx_regression_results.append(
+                                json.loads(
+                                    base64.b64decode(
+                                        attachment["body"]
+                                    ).decode()
+                                )
+                            )
+                        except (
+                            ValueError,
+                            UnicodeDecodeError,
+                            json.JSONDecodeError,
+                        ):
+                            pass
                     elif attachment_name == "ocr-result" and attachment.get("body"):
                         try:
                             ocr_results.append(
@@ -148,6 +184,11 @@ def collect_specs(
                     diagnostics = diagnostics or {}
                     diagnostics["conversionResults"] = conversion_results
                     diagnostics["conversionCapture"] = conversion_capture
+                if docx_regression_results:
+                    diagnostics = diagnostics or {}
+                    diagnostics["docxRegressionResults"] = (
+                        docx_regression_results
+                    )
                 if ocr_results:
                     diagnostics = diagnostics or {}
                     diagnostics["ocrResults"] = ocr_results
@@ -187,6 +228,7 @@ def status_label(status: str) -> str:
         "failed": "ÉCHEC",
         "timedOut": "ÉCHEC (TIMEOUT)",
         "interrupted": "INTERROMPU",
+        "unavailable": "INDISPONIBLE",
     }.get(status, status.upper())
 
 
@@ -208,6 +250,31 @@ def browser_versions() -> str:
 
 
 def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
+    docx_quality: dict[str, Any] | None = None
+    docx_editable_real: dict[str, Any] | None = None
+    if (
+        os.environ.get("QA_DOCX_QUALITY_INCLUDED") != "0"
+        and DOCX_QUALITY_RESULTS_PATH.exists()
+    ):
+        try:
+            docx_quality = json.loads(
+                DOCX_QUALITY_RESULTS_PATH.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            docx_quality = {
+                "status": "unavailable",
+                "reason": "Le résultat de qualité DOCX est illisible.",
+            }
+    if DOCX_EDITABLE_REAL_RESULTS_PATH.exists():
+        try:
+            docx_editable_real = json.loads(
+                DOCX_EDITABLE_REAL_RESULTS_PATH.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError):
+            docx_editable_real = {
+                "status": "unavailable",
+                "reason": "Le résultat DOCX éditable réel est illisible.",
+            }
     failed = [
         scenario
         for scenario in scenarios
@@ -218,11 +285,18 @@ def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
         (scenario.diagnostics or {}).get("accessibilityFindings")
         for scenario in scenarios
     )
+    quality_status = (docx_quality or {}).get("status")
+    editable_real_status = (docx_editable_real or {}).get("status")
     decision = (
         "ÉCHEC"
         if failed
+        or quality_status == "failed"
+        or editable_real_status == "failed"
         else "RÉUSSITE AVEC RÉSERVES"
-        if skipped or has_non_blocking_findings
+        if skipped
+        or has_non_blocking_findings
+        or quality_status == "unavailable"
+        or editable_real_status == "unavailable"
         else "RÉUSSITE"
     )
     commit = command_output(["git", "rev-parse", "--short", "HEAD"])
@@ -379,6 +453,196 @@ def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
             lines.append("")
     if not conversion_found:
         lines.append("Aucun résultat de conversion collecté dans cette campagne.")
+
+    lines.extend(["", "## DOCX visual regression", ""])
+    regression_found = False
+    for scenario in scenarios:
+        diagnostics = scenario.diagnostics or {}
+        for regression in diagnostics.get("docxRegressionResults", []):
+            regression_found = True
+            ratios = regression.get("imageNonWhiteRatios", [])
+            lines.extend(
+                [
+                    f"### {regression.get('browser', scenario.project)} — "
+                    f"{regression.get('mode', 'N/D')} — "
+                    f"{'restauré' if regression.get('restored') else 'source'}",
+                    "",
+                    f"- Statut HTTP : {regression.get('httpStatus', 'N/D')}",
+                    f"- Taille envoyée/reçue : "
+                    f"{regression.get('sentBytes', 'N/D')} / "
+                    f"{regression.get('receivedBytes', 'N/D')} octets",
+                    f"- Pages PDF source / DOCX : "
+                    f"{regression.get('sourcePageCount', 'N/D')} / "
+                    f"{regression.get('docxPageCount', 'N/D')}",
+                    f"- Images DOCX : {regression.get('imageCount', 'N/D')}",
+                    f"- Ratios de pixels non blancs : {ratios or 'N/D'}",
+                    f"- Clipping `lineRule=exact` : "
+                    f"{'détecté' if regression.get('clippingDetected') else 'non détecté'}",
+                    "",
+                ]
+            )
+    if not regression_found:
+        lines.append(
+            "Aucun résultat navigateur DOCX dédié collecté dans cette campagne."
+        )
+        lines.append("")
+
+    lines.append("### Validation structurelle et LibreOffice")
+    lines.append("")
+    if docx_quality is None:
+        lines.append(
+            "Contrôle LibreOffice non inclus dans cette campagne rapide."
+        )
+    else:
+        rendered_pages = docx_quality.get("renderedPageCount", {})
+        image_ratios = docx_quality.get("imageSizeRatios", [])
+        lines.extend(
+            [
+                f"- Statut : **{status_label(str(docx_quality.get('status', 'inconnu')))}**",
+                f"- Pages source : {docx_quality.get('sourcePageCount', 'N/D')}",
+                f"- Pages DOCX rendues : éditable "
+                f"{rendered_pages.get('editable', 'N/D')}, visuel "
+                f"{rendered_pages.get('visual', 'N/D')}",
+                f"- Images source / DOCX : "
+                f"{docx_quality.get('sourceImageCount', 'N/D')} / "
+                f"{docx_quality.get('imageCount', 'N/D')}",
+                f"- Ratios de largeur image source / DOCX : "
+                f"{image_ratios or 'N/D'}",
+                f"- Fond noir détecté : "
+                f"{'oui' if (docx_quality.get('blackPixelRatio') or 0) >= 0.05 else 'non'}",
+                f"- Texte témoin : "
+                f"{'présent' if docx_quality.get('witnessTextPresent') else 'absent'}",
+                f"- Titre centré : "
+                f"{'oui' if docx_quality.get('titleCentered') else 'non'}",
+                f"- Déplacement normalisé du texte témoin : "
+                f"{docx_quality.get('textDisplacementRatio', 'N/D')}",
+                f"- Gras : {'présent' if docx_quality.get('boldPresent') else 'absent'}",
+                f"- Surlignage : "
+                f"{'présent' if docx_quality.get('highlightPresent') else 'absent'}",
+                f"- Encadré : "
+                f"{'présent' if docx_quality.get('borderPresent') else 'absent'}",
+                f"- Images visuelles : "
+                f"{docx_quality.get('visualImageCount', 'N/D')}",
+                f"- Ratios de pixels non blancs des images visuelles : "
+                f"{docx_quality.get('visualImageNonWhiteRatios', 'N/D')}",
+                f"- Clipping `lineRule=exact` : "
+                f"{'détecté' if docx_quality.get('visualClippingDetected') else 'non détecté'}",
+            ]
+        )
+        reason = docx_quality.get("reason")
+        if reason:
+            lines.append(f"- Réserve : {markdown_escape(str(reason))}")
+        captures = docx_quality.get("captures", [])
+        lines.append(
+            "- Captures comparatives : "
+            + (
+                ", ".join(f"`{capture}`" for capture in captures)
+                if captures
+                else "non disponibles"
+            )
+        )
+
+    lines.extend(["", "## DOCX editable real-document regression", ""])
+    if docx_editable_real is None:
+        lines.extend(
+            [
+                "- Statut : **NON EXÉCUTÉ**",
+                "- Motif : le PDF privé local n'est pas présent. Le test "
+                "`docx_real_document` est activé uniquement avec "
+                "`QA_REAL_DOCX_PDF` et le fichier reste ignoré par Git.",
+            ]
+        )
+    else:
+        title_presence = docx_editable_real.get("titlePresence", {})
+        warnings = docx_editable_real.get("warnings", [])
+        lines.extend(
+            [
+                f"- Fichier testé : "
+                f"`{markdown_escape(str(docx_editable_real.get('file', 'N/D')))}`",
+                f"- Mode DOCX : `{docx_editable_real.get('docxMode', 'N/D')}`",
+                f"- Pages PDF / sections DOCX : "
+                f"{docx_editable_real.get('sourcePageCount', 'N/D')} / "
+                f"{docx_editable_real.get('docxSectionCount', 'N/D')}",
+                f"- Texte source extrait : "
+                f"{docx_editable_real.get('sourceTextCharacters', 'N/D')} caractères",
+                f"- Texte DOCX extrait avec python-docx : "
+                f"{docx_editable_real.get('docxTextCharacters', 'N/D')} caractères",
+                f"- Ratio de texte conservé : "
+                f"{docx_editable_real.get('textRetentionRatio', 'N/D')}",
+                f"- Paragraphes / images : "
+                f"{docx_editable_real.get('paragraphCount', 'N/D')} / "
+                f"{docx_editable_real.get('imageCount', 'N/D')}",
+                f"- Logo présent : "
+                f"{'oui' if docx_editable_real.get('logoPresent') else 'non'}",
+                f"- Fond du logo acceptable : "
+                f"{'oui' if docx_editable_real.get('logoBackgroundAcceptable') else 'non'}",
+                f"- Titres attendus : "
+                f"{markdown_escape(str(title_presence))}",
+                f"- Listes détectées : "
+                f"{docx_editable_real.get('listCount', 'N/D')}",
+                f"- Surlignage / encadré : "
+                f"{'oui' if docx_editable_real.get('highlightPresent') else 'non'} / "
+                f"{'oui' if docx_editable_real.get('borderPresent') else 'non'}",
+                f"- Avertissements : "
+                f"{markdown_escape('; '.join(str(item) for item in warnings)) if warnings else 'aucun'}",
+                f"- Statut final : "
+                f"**{status_label(str(docx_editable_real.get('status', 'inconnu')))}**",
+            ]
+        )
+
+    lines.extend(["", "## DOCX editable layout fidelity", ""])
+    if docx_editable_real is None:
+        lines.extend(
+            [
+                "- Document : fixture réelle locale absente",
+                "- Résultat : **R** — contrôle manuel non exécuté.",
+            ]
+        )
+    else:
+        rendered_page_count = docx_editable_real.get("renderedPageCount")
+        layout_result = (
+            "KO"
+            if docx_editable_real.get("status") == "failed"
+            else "R"
+            if rendered_page_count is None
+            else "OK"
+        )
+        lines.extend(
+            [
+                f"- Document : "
+                f"`{markdown_escape(str(docx_editable_real.get('file', 'N/D')))}`",
+                f"- Pages source / DOCX estimées / DOCX rendues : "
+                f"{docx_editable_real.get('sourcePageCount', 'N/D')} / "
+                f"{docx_editable_real.get('estimatedPageCount', 'N/D')} / "
+                f"{rendered_page_count if rendered_page_count is not None else 'N/D'}",
+                f"- Méthode de mesure : "
+                f"`{docx_editable_real.get('pageMeasurement', 'N/D')}`",
+                f"- Rétention textuelle : "
+                f"{docx_editable_real.get('textRetentionRatio', 'N/D')}",
+                f"- Paragraphes éditables / mots : "
+                f"{docx_editable_real.get('paragraphCount', 'N/D')} / "
+                f"{docx_editable_real.get('editableWordCount', 'N/D')}",
+                f"- Paragraphes centrés / longs centrés : "
+                f"{docx_editable_real.get('centeredParagraphCount', 'N/D')} / "
+                f"{docx_editable_real.get('longCenteredParagraphCount', 'N/D')}",
+                f"- Paragraphes entièrement gras / gras mixtes : "
+                f"{docx_editable_real.get('fullyBoldParagraphCount', 'N/D')} / "
+                f"{docx_editable_real.get('mixedBoldParagraphCount', 'N/D')}",
+                f"- Listes / puces vides : "
+                f"{docx_editable_real.get('listCount', 'N/D')} / "
+                f"{docx_editable_real.get('emptyBulletCount', 'N/D')}",
+                f"- Pages quasi vides : "
+                f"{docx_editable_real.get('quasiEmptyPageCount', 'N/D')}",
+                f"- Sauts de page explicites : "
+                f"{docx_editable_real.get('explicitPageBreakCount', 'N/D')}",
+                f"- Résultat : **{layout_result}**",
+            ]
+        )
+        render_warning = docx_editable_real.get("renderWarning")
+        if render_warning:
+            lines.append(
+                f"- Réserve : {markdown_escape(str(render_warning))}"
+            )
 
     lines.extend(["", "## Mesures de performance disponibles", ""])
     metric_found = False

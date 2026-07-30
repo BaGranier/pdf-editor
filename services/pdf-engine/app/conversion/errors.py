@@ -9,9 +9,11 @@ class ConversionError(Exception):
         message: str,
         *,
         diagnostic: str | None = None,
+        stage: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.code = code
         self.message = message
         self.diagnostic = diagnostic
+        self.stage = stage

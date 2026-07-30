@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import sys
 import tempfile
@@ -18,8 +19,10 @@ from app.conversion.models import (
     ConversionArtifact,
     ConversionOptions,
     ConversionResult,
+    DocxMode,
     OcrMode,
     PreparedConversion,
+    parse_docx_mode,
     parse_ocr_mode,
     parse_page_range,
     parse_target_format,
@@ -28,6 +31,7 @@ from app.conversion.models import (
 
 CONVERSION_TIMEOUT_SECONDS = 180
 MAX_OUTPUT_SIZE_BYTES = 200 * 1024 * 1024
+logger = logging.getLogger(__name__)
 
 
 def create_temporary_directory() -> Path:
@@ -46,9 +50,11 @@ def build_options(
     pages: str | None,
     image_dpi: int,
     image_quality: int,
+    docx_mode: str = DocxMode.EDITABLE.value,
 ) -> ConversionOptions:
     parsed_target = parse_target_format(target_format)
     parsed_ocr_mode = parse_ocr_mode(ocr_mode)
+    parsed_docx_mode = parse_docx_mode(docx_mode)
     try:
         return ConversionOptions(
             target_format=parsed_target,
@@ -57,6 +63,7 @@ def build_options(
             pages=pages,
             image_dpi=image_dpi,
             image_quality=image_quality,
+            docx_mode=parsed_docx_mode,
         )
     except ValidationError as error:
         raise ConversionError(
@@ -66,28 +73,40 @@ def build_options(
         ) from error
 
 
-def _map_ocr_error(error: ocr.OcrError) -> ConversionError:
+def _map_ocr_error(
+    error: ocr.OcrError,
+    *,
+    stage: str | None = None,
+) -> ConversionError:
     if error.code == "INVALID_PDF":
-        return ConversionError(400, "INVALID_PDF", error.message)
+        return ConversionError(400, "INVALID_PDF", error.message, stage=stage)
     if error.code in {"PDF_TOO_LARGE", "PDF_PAGE_LIMIT_EXCEEDED"}:
-        return ConversionError(413, "OUTPUT_TOO_LARGE", error.message)
+        return ConversionError(
+            413,
+            "OUTPUT_TOO_LARGE",
+            error.message,
+            stage=stage,
+        )
     if error.code in {"OCR_TOOL_UNAVAILABLE", "OCR_LANGUAGE_UNAVAILABLE"}:
         return ConversionError(
             503,
             "DEPENDENCY_UNAVAILABLE",
             "Le moteur OCR ou la langue demandée n'est pas disponible.",
+            stage=stage,
         )
     if error.code == "OCR_TIMEOUT":
         return ConversionError(
             504,
             "CONVERSION_TIMEOUT",
             "La conversion avec OCR a dépassé le délai autorisé.",
+            stage=stage,
         )
     return ConversionError(
         502,
         "CONVERSION_FAILED",
         "La préparation OCR du document a échoué.",
         diagnostic=error.diagnostic,
+        stage=stage,
     )
 
 
@@ -157,7 +176,7 @@ async def prepare_searchable_pdf(
             expected_page_count=page_count,
         )
     except ocr.OcrError as error:
-        raise _map_ocr_error(error) from error
+        raise _map_ocr_error(error, stage="ocr_auto") from error
     return output_pdf, True
 
 
@@ -181,6 +200,8 @@ async def execute_conversion_worker(
         str(options.image_dpi),
         "--quality",
         str(options.image_quality),
+        "--docx-mode",
+        options.docx_mode.value,
         "--manifest",
         str(manifest_path),
     ]
@@ -250,14 +271,21 @@ async def prepare_conversion(
     temporary_directory = create_temporary_directory()
     cleanup_in_service = True
     input_path = temporary_directory / "input.pdf"
+    stage = "upload_read"
 
     try:
         try:
             await ocr.copy_uploaded_pdf(file, input_path)
+        except ocr.OcrError as error:
+            raise _map_ocr_error(error, stage=stage) from error
+
+        stage = "pdf_validation"
+        try:
             page_count = ocr.validate_source_pdf(input_path)
         except ocr.OcrError as error:
-            raise _map_ocr_error(error) from error
+            raise _map_ocr_error(error, stage=stage) from error
 
+        stage = "page_selection"
         page_indexes = parse_page_range(options.pages, page_count)
         selected_path = create_selected_pdf(
             input_path,
@@ -265,10 +293,12 @@ async def prepare_conversion(
             page_indexes,
             page_count,
         )
+        stage = "text_layer_detection"
         text_layer = detect_text_layer(
             selected_path,
             list(range(len(page_indexes))),
         )
+        stage = "ocr_auto"
         searchable_path, ocr_used = await prepare_searchable_pdf(
             selected_path,
             temporary_directory / "searchable.pdf",
@@ -277,11 +307,17 @@ async def prepare_conversion(
             needs_ocr=bool(text_layer.image_only_pages),
             temporary_directory=temporary_directory,
         )
+        stage = (
+            f"docx_{options.docx_mode.value}_generation"
+            if options.target_format.value == "docx"
+            else f"{options.target_format.value}_generation"
+        )
         artifact = await execute_conversion_worker(
             searchable_path,
             temporary_directory,
             options,
         )
+        stage = "response_preparation"
         warnings = list(artifact.warnings)
         if (
             options.ocr_mode == OcrMode.NEVER
@@ -313,6 +349,19 @@ async def prepare_conversion(
         )
         cleanup_in_service = False
         return prepared
+    except ConversionError as error:
+        if error.stage is None:
+            error.stage = stage
+        raise
+    except Exception as error:
+        logger.exception("Unexpected conversion failure at stage=%s", stage)
+        raise ConversionError(
+            502,
+            "CONVERSION_FAILED",
+            "Le document n'a pas pu être converti.",
+            diagnostic=type(error).__name__,
+            stage=stage,
+        ) from error
     finally:
         if cleanup_in_service:
             cleanup_temporary_directory(temporary_directory)

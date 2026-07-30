@@ -23,6 +23,11 @@ class OcrMode(StrEnum):
     ALWAYS = "always"
 
 
+class DocxMode(StrEnum):
+    EDITABLE = "editable"
+    VISUAL = "visual"
+
+
 SUPPORTED_LANGUAGES = frozenset({"fra", "eng", "fra+eng"})
 SUPPORTED_IMAGE_DPI = frozenset({96, 150, 300})
 
@@ -34,6 +39,7 @@ class ConversionOptions(BaseModel):
     pages: str | None = None
     image_dpi: int = 150
     image_quality: int = Field(default=85, ge=1, le=100)
+    docx_mode: DocxMode = DocxMode.EDITABLE
 
     @field_validator("languages")
     @classmethod
@@ -101,6 +107,17 @@ def parse_ocr_mode(value: str) -> OcrMode:
             status_code=422,
             code="CONVERSION_FAILED",
             message="Le mode OCR doit être auto, never ou always.",
+        ) from error
+
+
+def parse_docx_mode(value: str) -> DocxMode:
+    try:
+        return DocxMode(value)
+    except ValueError as error:
+        raise ConversionError(
+            status_code=422,
+            code="CONVERSION_FAILED",
+            message="Le mode DOCX doit être editable ou visual.",
         ) from error
 
 

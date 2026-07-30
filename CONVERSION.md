@@ -17,6 +17,7 @@ après le téléchargement ou après une erreur.
 | `pages` | vide/toutes les pages, ou une plage telle que `1-3,5` |
 | `image_dpi` | `96`, `150`, `300` |
 | `image_quality` | qualité JPEG de 1 à 100 |
+| `docx_mode` | `editable` (défaut) ou `visual` |
 
 Plusieurs images sont regroupées dans une archive ZIP avec des noms
 déterministes comme `document_page_0001.png`. Une seule page produit directement
@@ -57,23 +58,47 @@ Le workflow GitHub Actions installe ces paquets avant la campagne.
 
 ## Sorties
 
-- DOCX : paragraphes, titres simples, images, tableaux simples, sauts de page et
-  orientations sont reconstruits avec PyMuPDF et `python-docx`.
+- DOCX `editable` (« Word éditable ») : paragraphes, titres, styles de texte,
+  listes, images à leur taille d'affichage, tableaux et formes simples sont
+  reconstruits avec PyMuPDF et `python-docx`. Les blocs longs utilisent la
+  largeur utile de la page et restent alignés à gauche ou justifiés ; seuls les
+  titres courts réellement centrés conservent un centrage. Les lignes de
+  continuation d'une liste restent dans la même puce.
+- DOCX `visual` (« Word fidèle visuellement ») : chaque page est rendue comme
+  une image pleine page. L'apparence est mieux conservée, mais le contenu est
+  moins facilement modifiable. Les paragraphes d'images n'imposent aucune
+  hauteur de ligne exacte, afin que Word et LibreOffice ne masquent pas le
+  rendu pleine page.
 - TXT : UTF-8, ordre de lecture PyMuPDF et séparateur `--- Page N ---`.
 - HTML : UTF-8 autonome, CSS inclus, sections par page et images encodées en
   base64 ; aucune ressource réseau.
 - PNG/JPEG : rendu dans l’orientation de la page au DPI demandé.
 
-La conversion DOCX tente de conserver la mise en page, mais certains éléments
+Le mode DOCX éditable tente de conserver la mise en page, mais certains éléments
 complexes peuvent être réorganisés. Les colonnes complexes, formulaires,
 annotations avancées, équations, polices PAO et la fidélité pixel à pixel ne sont
-pas garantis.
+pas garantis. Le mode visuel privilégie l'apparence au détriment de
+l'éditabilité. Le mode éditable ne bascule jamais silencieusement vers le mode
+visuel et n'insère pas une capture pleine page lorsqu'une couche texte
+exploitable existe. Si `python-docx` permet de relire moins de 50 % des mots de
+la couche texte source, la sortie reste éditable mais porte un avertissement de
+conversion dégradée.
 
 Les tests ouvrent automatiquement les DOCX avec `python-docx` et vérifient le
 texte, les images, les tableaux et les orientations du corpus synthétique. Une
 ouverture manuelle sous Microsoft Word et LibreOffice reste recommandée pour
 juger la fidélité visuelle, les césures et les variations de mise en page propres
 à chaque moteur.
+
+La campagne complète exécute aussi un contrôle visuel synthétique : elle rend le
+DOCX en PDF avec LibreOffice headless, compare le nombre de pages, les images et
+les marqueurs de style, puis produit des captures côte à côte dans
+`apps/web/test-results/docx-visual-quality/`. Ce contrôle requiert
+`libreoffice-writer` :
+
+```bash
+sudo apt-get install libreoffice-writer
+```
 
 ## Limites de sécurité
 
@@ -88,7 +113,16 @@ juger la fidélité visuelle, les césures et les variations de mise en page pro
 Les noms de sortie sont générés côté serveur. Les erreurs métier exposent les
 codes `INVALID_PDF`, `UNSUPPORTED_TARGET_FORMAT`, `INVALID_PAGE_RANGE`,
 `OCR_REQUIRED`, `CONVERSION_FAILED`, `CONVERSION_TIMEOUT`, `OUTPUT_TOO_LARGE`
-et `DEPENDENCY_UNAVAILABLE`.
+et `DEPENDENCY_UNAVAILABLE`. Une erreur de conversion contient aussi une étape
+stable (`upload_read`, `pdf_validation`, `ocr_auto`,
+`docx_editable_generation`, `docx_visual_generation` ou
+`response_preparation`) pour retrouver la cause dans les journaux sans exposer
+le contenu du document.
+
+Avant l'envoi, le frontend vérifie que la source est un Blob non vide commençant
+par `%PDF-`. Après une restauration IndexedDB, un Blob valide est reconstruit
+comme `File` nommé et typé `application/pdf`; aucun objet vide ou document
+dérivé sans octets PDF n'est envoyé.
 
 ## Validation
 
@@ -98,9 +132,29 @@ uv run pytest
 
 cd ../../apps/web
 npm run test:run
+npm run typecheck
+npm run typecheck:e2e
 npm run qa:e2e:quick
+npm run qa:docx-visual
+```
+
+Le document utilisateur de régression reste exclusivement local et est ignoré
+par Git sous `data/input/manual-docx-regression/`. Lorsqu'il est disponible, le
+test optionnel vérifie avec `python-docx` le texte Word réel, les titres, listes,
+images, surlignage et encadré, sans versionner ni le PDF ni le DOCX produit :
+
+```bash
+cd services/pdf-engine
+QA_REAL_DOCX_PDF=data/input/manual-docx-regression/2-ENGAGEMENT_INDIVIDUEL_ETUDIANT_2026-2027.pdf \
+  UV_CACHE_DIR=/tmp/pdf-engine-uv-cache \
+  uv run pytest -m docx_real_document
 ```
 
 Les tests backend ouvrent réellement les DOCX, PDF et archives produits. Les
 scénarios Playwright effectuent les téléchargements dans Chromium et Firefox et
-alimentent la section « Conversion locale » de `QA_AUTOMATED_REPORT.md`.
+alimentent les sections « Conversion locale », « DOCX visual regression » et
+« DOCX editable real-document regression » de `QA_AUTOMATED_REPORT.md`. Le
+rapport réel ne contient que des mesures agrégées et le nom du fichier, jamais
+son texte ni ses octets. Le test navigateur dédié couvre le document
+immédiatement après ouverture puis après rechargement/restauration IndexedDB,
+dans les modes éditable et visuel.

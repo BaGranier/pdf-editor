@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import type {
   ConversionImageDpi,
+  ConversionDocxMode,
   ConversionLanguages,
   ConversionOcrMode,
   ConversionOptions,
@@ -33,6 +34,7 @@ export function ConversionDialog({
   const [pages, setPages] = useState("");
   const [imageDpi, setImageDpi] = useState<ConversionImageDpi>(150);
   const [imageQuality, setImageQuality] = useState(85);
+  const [docxMode, setDocxMode] = useState<ConversionDocxMode>("editable");
   const isTextTarget = textTargets.has(targetFormat);
 
   useEffect(() => {
@@ -57,6 +59,7 @@ export function ConversionDialog({
         pages,
         imageDpi,
         imageQuality,
+        docxMode,
       });
     }
   }
@@ -94,6 +97,30 @@ export function ConversionDialog({
               <option value="jpeg">Images JPEG</option>
             </select>
           </label>
+
+          {targetFormat === "docx" ? (
+            <>
+              <label className="ocr-field" htmlFor={`${titleId}-docx-mode`}>
+                <span>Mode Word</span>
+                <select
+                  id={`${titleId}-docx-mode`}
+                  value={docxMode}
+                  disabled={isProcessing}
+                  onChange={(event) =>
+                    setDocxMode(event.target.value as ConversionDocxMode)
+                  }
+                >
+                  <option value="editable">Word éditable</option>
+                  <option value="visual">Word fidèle visuellement</option>
+                </select>
+              </label>
+              <p className="ocr-dialog__info">
+                {docxMode === "editable"
+                  ? "Produit un document modifiable. La mise en page peut être approximative."
+                  : "Conserve l’apparence sous forme d’images. Le texte n’est pas facilement modifiable."}
+              </p>
+            </>
+          ) : null}
 
           <label className="ocr-field" htmlFor={`${titleId}-pages`}>
             <span>Pages</span>
@@ -174,10 +201,14 @@ export function ConversionDialog({
             </>
           )}
 
-          {targetFormat === "docx" ? (
+          {targetFormat === "docx" && docxMode === "editable" ? (
             <p className="ocr-dialog__warning" role="note">
               La conversion tente de conserver la mise en page, mais certains éléments
               complexes peuvent être réorganisés.
+            </p>
+          ) : targetFormat === "docx" ? (
+            <p className="ocr-dialog__warning" role="note">
+              Chaque page sera conservée comme une image dans le document Word.
             </p>
           ) : null}
 

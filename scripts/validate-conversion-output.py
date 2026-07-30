@@ -11,6 +11,21 @@ from pathlib import Path
 
 import fitz
 from docx import Document
+from docx.oxml.ns import qn
+
+
+def image_non_white_ratio(content: bytes) -> float:
+    pixmap = fitz.Pixmap(content)
+    samples = pixmap.samples
+    non_white = 0
+    for index in range(0, len(samples), pixmap.n):
+        opaque = pixmap.n < 4 or samples[index + pixmap.n - 1] >= 32
+        if opaque and any(
+            samples[index + channel] < 248
+            for channel in range(min(3, pixmap.n))
+        ):
+            non_white += 1
+    return round(non_white / (pixmap.width * pixmap.height), 5)
 
 
 def validate_docx(path: Path) -> dict[str, object]:
@@ -18,6 +33,39 @@ def validate_docx(path: Path) -> dict[str, object]:
         raise ValueError("Le DOCX n'est pas une archive ZIP valide.")
     document = Document(path)
     text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+    media_parts = [
+        part
+        for part in document.part.package.parts
+        if part.content_type.startswith("image/")
+        and "thumbnail" not in str(part.partname)
+    ]
+    image_paragraphs = [
+        paragraph
+        for paragraph in document.paragraphs
+        if paragraph._p.xpath(".//w:drawing")
+    ]
+    exact_line_rule_paragraphs = 0
+    for paragraph in image_paragraphs:
+        spacing_nodes = paragraph._p.xpath("./w:pPr/w:spacing")
+        if spacing_nodes and spacing_nodes[0].get(qn("w:lineRule")) == "exact":
+            exact_line_rule_paragraphs += 1
+    image_extents = []
+    for index, shape in enumerate(document.inline_shapes):
+        section = document.sections[min(index, len(document.sections) - 1)]
+        image_extents.append(
+            {
+                "widthPt": round(shape.width.pt, 2),
+                "heightPt": round(shape.height.pt, 2),
+                "pageWidthRatio": round(
+                    shape.width / section.page_width,
+                    4,
+                ),
+                "pageHeightRatio": round(
+                    shape.height / section.page_height,
+                    4,
+                ),
+            }
+        )
     return {
         "valid": True,
         "text": text,
@@ -25,6 +73,13 @@ def validate_docx(path: Path) -> dict[str, object]:
         "imageCount": len(document.inline_shapes),
         "tableCount": len(document.tables),
         "sectionCount": len(document.sections),
+        "imageNonWhiteRatios": [
+            image_non_white_ratio(part.blob) for part in media_parts
+        ],
+        "imageExtents": image_extents,
+        "imageParagraphCount": len(image_paragraphs),
+        "exactLineRuleImageParagraphs": exact_line_rule_paragraphs,
+        "clippingDetected": exact_line_rule_paragraphs > 0,
         "orientations": [
             "landscape"
             if section.page_width > section.page_height

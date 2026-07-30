@@ -6,19 +6,27 @@ import json
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import Any
 
 import fitz
 import pytest
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
+from docx.oxml.ns import qn
 from fastapi import UploadFile
 from starlette.datastructures import Headers
 
 from app import ocr
-from app.conversion.docx_converter import PdfToDocxConverter
+from app.conversion.docx_converter import (
+    DOCX_EDITABLE_DEGRADED_WARNING,
+    PdfToDocxConverter,
+    text_retention_ratio,
+)
 from app.conversion.errors import ConversionError
 from app.conversion.image_converter import PdfToImageConverter
 from app.conversion.models import (
     ConversionOptions,
+    DocxMode,
     OcrMode,
     TargetFormat,
     parse_page_range,
@@ -108,6 +116,32 @@ def make_mixed_pdf() -> bytes:
     scan = fitz.open(stream=make_scan_pdf(), filetype="pdf")
     document.insert_pdf(scan)
     scan.close()
+    return save_document(document)
+
+
+def make_image_backed_text_pdf() -> bytes:
+    background_source = fitz.open()
+    background_page = background_source.new_page(width=612, height=792)
+    background_page.draw_rect(
+        background_page.rect,
+        fill=(0.96, 0.96, 0.96),
+    )
+    background_page.insert_text(
+        (60, 160),
+        "BACKGROUND RENDERING",
+        fontsize=24,
+    )
+    background = background_page.get_pixmap(dpi=96, alpha=False).tobytes("png")
+    background_source.close()
+
+    document = fitz.open()
+    page = document.new_page(width=612, height=792)
+    page.insert_image(page.rect, stream=background)
+    page.insert_text(
+        (60, 160),
+        "EDITABLE TEXT LAYER",
+        fontsize=24,
+    )
     return save_document(document)
 
 
@@ -345,6 +379,348 @@ def test_reference_docx_corpus_is_openable_and_contains_expected_content(
         cleanup_temporary_directory(prepared.temporary_directory)
 
 
+def test_editable_docx_preserves_fidelity_markers(tmp_path: Path) -> None:
+    source = REFERENCE_FIXTURE_DIR / "conversion-docx-fidelity.pdf"
+    output = tmp_path / "editable.docx"
+
+    PdfToDocxConverter().convert(source, output, mode=DocxMode.EDITABLE)
+
+    assert output.stat().st_size > 0
+    assert zipfile.is_zipfile(output)
+    document = Document(output)
+    assert len(document.sections) == 3
+    assert len(document.inline_shapes) == 3
+    assert all(
+        100 <= image.width.pt <= 140
+        and 25 <= image.height.pt <= 50
+        for image in document.inline_shapes
+    )
+
+    title = next(
+        paragraph
+        for paragraph in document.paragraphs
+        if paragraph.text == "Engagement individuel"
+    )
+    title_index = next(
+        index
+        for index, paragraph in enumerate(document.paragraphs)
+        if paragraph.text == "Engagement individuel"
+    )
+    assert title.style.name == "Title"
+    assert title.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert any(run.bold for run in title.runs)
+    subtitle = next(
+        paragraph
+        for paragraph in document.paragraphs
+        if paragraph.text.strip()
+        == "Exemplaire à remettre signé à l'administration"
+    )
+    subtitle_index = next(
+        index
+        for index, paragraph in enumerate(document.paragraphs)
+        if paragraph.text.strip()
+        == "Exemplaire à remettre signé à l'administration"
+    )
+    assert subtitle_index == title_index + 1
+    assert subtitle.alignment == WD_ALIGN_PARAGRAPH.CENTER
+    assert not any(
+        paragraph.alignment == WD_ALIGN_PARAGRAPH.CENTER
+        and len(paragraph.text.split()) >= 12
+        for paragraph in document.paragraphs
+    )
+    assert any(
+        run.bold
+        for paragraph in document.paragraphs
+        if "respect de ces règles" in paragraph.text
+        for run in paragraph.runs
+    )
+    assert any(
+        run.font.highlight_color == WD_COLOR_INDEX.YELLOW
+        for paragraph in document.paragraphs
+        if "Nom de l'étudiant" in paragraph.text
+        for run in paragraph.runs
+    )
+    assert any(
+        paragraph._p.xpath(".//w:pBdr")
+        for paragraph in document.paragraphs
+        if "premier paragraphe encadré" in paragraph.text
+    )
+    assert sum(
+        paragraph.style.name == "List Bullet"
+        for paragraph in document.paragraphs
+    ) >= 3
+    assert not any(
+        paragraph.style.name in {"List Bullet", "List Number"}
+        and not paragraph.text.strip()
+        for paragraph in document.paragraphs
+    )
+    first_drawing_index = next(
+        index
+        for index, paragraph in enumerate(document.paragraphs)
+        if paragraph._p.xpath(".//w:drawing")
+    )
+    assert first_drawing_index < title_index
+
+    with zipfile.ZipFile(output) as archive:
+        logo = fitz.Pixmap(archive.read("word/media/image1.png"))
+    assert logo.alpha
+    color_channels = min(3, logo.n)
+    logo_samples = logo.samples
+    black_pixels = sum(
+        (
+            logo.n < 4 or logo_samples[index + logo.n - 1] >= 32
+        )
+        and all(
+            logo_samples[index + channel] < 24
+            for channel in range(color_channels)
+        )
+        for index in range(0, len(logo_samples), logo.n)
+    )
+    assert black_pixels / (logo.width * logo.height) < 0.05
+
+
+def test_docx_image_soft_mask_drops_existing_alpha_before_composition() -> None:
+    source = REFERENCE_FIXTURE_DIR / "conversion-docx-fidelity.pdf"
+    with fitz.open(source) as pdf:
+        page = pdf[0]
+        block = next(
+            item
+            for item in page.get_text("dict")["blocks"]
+            if item.get("type") == 1
+        )
+        color_pixmap = fitz.Pixmap(block["image"])
+        color_with_alpha = fitz.Pixmap(color_pixmap, 1)
+        block_with_redundant_alpha = {
+            **block,
+            "image": color_with_alpha.tobytes("png"),
+        }
+
+        rendered = PdfToDocxConverter._render_image(
+            page,
+            block_with_redundant_alpha,
+            fitz.Rect(block["bbox"]),
+        )
+
+    result = fitz.Pixmap(rendered)
+    assert result.colorspace is not None
+    assert result.colorspace.n == 3
+    assert result.alpha
+    assert result.width == color_pixmap.width
+    assert result.height == color_pixmap.height
+
+
+def test_docx_runs_keep_mixed_bold_formatting() -> None:
+    document = Document()
+    paragraph = document.add_paragraph()
+
+    PdfToDocxConverter._append_styled_run(
+        paragraph,
+        {
+            "text": "Texte normal ",
+            "font": "ArialMT",
+            "flags": 0,
+            "size": 9,
+            "color": 0,
+        },
+        "Texte normal ",
+        highlighted=False,
+    )
+    PdfToDocxConverter._append_styled_run(
+        paragraph,
+        {
+            "text": "expression importante",
+            "font": "Arial-BoldMT",
+            "flags": 16,
+            "size": 9,
+            "color": 0,
+        },
+        "expression importante",
+        highlighted=False,
+    )
+
+    assert paragraph.runs[0].bold is False
+    assert paragraph.runs[1].bold is True
+
+
+def test_docx_image_extraction_falls_back_to_a_white_page_clip() -> None:
+    source = REFERENCE_FIXTURE_DIR / "conversion-docx-fidelity.pdf"
+    with fitz.open(source) as pdf:
+        page = pdf[0]
+        block = next(
+            item
+            for item in page.get_text("dict")["blocks"]
+            if item.get("type") == 1
+        )
+        rendered = PdfToDocxConverter._render_image(
+            page,
+            {**block, "image": b"not-an-image", "mask": b"not-a-mask"},
+            fitz.Rect(block["bbox"]),
+        )
+
+    result = fitz.Pixmap(rendered)
+    assert result.alpha == 0
+    assert result.colorspace is not None
+    assert result.colorspace.n == 3
+    assert result.width > 0
+    assert result.height > 0
+
+
+def test_visual_docx_renders_one_full_page_image_per_source_page(
+) -> None:
+    source = REFERENCE_FIXTURE_DIR / "conversion-docx-fidelity.pdf"
+    prepared = asyncio.run(
+        prepare_conversion(
+            make_upload(source.read_bytes(), source.name),
+            ConversionOptions(
+                target_format=TargetFormat.DOCX,
+                ocr_mode=OcrMode.AUTO,
+                docx_mode=DocxMode.VISUAL,
+            ),
+        )
+    )
+    temporary_directory = prepared.temporary_directory
+    try:
+        output = prepared.artifact.path
+        document = Document(output)
+        assert zipfile.is_zipfile(output)
+        assert output.stat().st_size > 0
+        assert len(document.sections) == 3
+        assert len(document.inline_shapes) == 3
+        for image_index, image in enumerate(document.inline_shapes):
+            section = document.sections[image_index]
+            assert image.width.pt > 580 and image.height.pt > 820
+            assert 0.97 <= image.width / section.page_width <= 1
+            assert 0.97 <= image.height / section.page_height <= 1
+            extent = image._inline.xpath("./wp:extent")[0]
+            assert int(extent.get("cx")) == image.width
+            assert int(extent.get("cy")) == image.height
+
+        image_paragraphs = [
+            paragraph
+            for paragraph in document.paragraphs
+            if paragraph._p.xpath(".//w:drawing")
+        ]
+        assert len(image_paragraphs) == 3
+        for paragraph in image_paragraphs:
+            spacing = paragraph._p.xpath("./w:pPr/w:spacing")
+            assert not spacing or spacing[0].get(qn("w:lineRule")) != "exact"
+
+        media_parts = [
+            part
+            for part in document.part.package.parts
+            if part.content_type.startswith("image/")
+            and "thumbnail" not in str(part.partname)
+        ]
+        assert len(media_parts) == 3
+        for part in media_parts:
+            pixmap = fitz.Pixmap(part.blob)
+            samples = pixmap.samples
+            non_white_pixels = sum(
+                any(
+                    samples[index + channel] < 248
+                    for channel in range(min(3, pixmap.n))
+                )
+                for index in range(0, len(samples), pixmap.n)
+            )
+            assert non_white_pixels / (pixmap.width * pixmap.height) > 0.002
+        assert any(
+            "moins facilement modifiable" in warning
+            for warning in prepared.artifact.warnings
+        )
+    finally:
+        cleanup_temporary_directory(temporary_directory)
+    assert not temporary_directory.exists()
+
+
+def test_docx_mode_validation_is_stable() -> None:
+    options = build_options(
+        target_format="docx",
+        languages="fra",
+        ocr_mode="auto",
+        pages=None,
+        image_dpi=150,
+        image_quality=85,
+        docx_mode="visual",
+    )
+    assert options.docx_mode == DocxMode.VISUAL
+
+    with pytest.raises(ConversionError) as error:
+        build_options(
+            target_format="docx",
+            languages="fra",
+            ocr_mode="auto",
+            pages=None,
+            image_dpi=150,
+            image_quality=85,
+            docx_mode="../../visual",
+        )
+    assert error.value.code == "CONVERSION_FAILED"
+    assert "editable ou visual" in error.value.message
+
+
+def test_editable_text_retention_uses_source_token_coverage() -> None:
+    source = "Titre important texte répété répété et contenu final"
+    assert text_retention_ratio(source, source) == 1
+    assert text_retention_ratio(source, "Titre important texte") < 0.5
+    assert text_retention_ratio("", "") == 1
+
+
+def test_editable_docx_warns_instead_of_falling_back_to_visual(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = write_fixture(
+        tmp_path,
+        make_text_pdf(
+            [
+                " ".join(
+                    f"sourceword{index}" for index in range(80)
+                )
+            ]
+        ),
+    )
+    output = tmp_path / "degraded.docx"
+
+    def append_incomplete_text(
+        _converter: PdfToDocxConverter,
+        document: Any,
+        _pdf: fitz.Document,
+    ) -> None:
+        document.add_paragraph("sourceword0")
+
+    monkeypatch.setattr(
+        PdfToDocxConverter,
+        "_append_editable_pages",
+        append_incomplete_text,
+    )
+    artifact = PdfToDocxConverter().convert(
+        source,
+        output,
+        mode=DocxMode.EDITABLE,
+    )
+    document = Document(output)
+
+    assert DOCX_EDITABLE_DEGRADED_WARNING in artifact.warnings
+    assert len(document.inline_shapes) == 0
+    assert document.paragraphs[-1].text == "sourceword0"
+
+
+def test_editable_docx_does_not_embed_a_full_page_screenshot_when_text_exists(
+    tmp_path: Path,
+) -> None:
+    source = write_fixture(tmp_path, make_image_backed_text_pdf())
+    output = tmp_path / "editable-with-background.docx"
+
+    PdfToDocxConverter().convert(source, output, mode=DocxMode.EDITABLE)
+    document = Document(output)
+    extracted_text = "\n".join(
+        paragraph.text for paragraph in document.paragraphs
+    )
+
+    assert "EDITABLE TEXT LAYER" in extracted_text
+    assert len(document.inline_shapes) == 0
+
+
 @pytest.mark.parametrize(
     ("target_format", "extension"),
     [(TargetFormat.PNG, "png"), (TargetFormat.JPEG, "jpg")],
@@ -471,6 +847,7 @@ def test_endpoint_returns_headers_and_cleans_temporary_files() -> None:
     assert response.media_type == "text/plain; charset=utf-8"
     assert response.headers["x-conversion-format"] == "txt"
     assert response.headers["x-conversion-ocr-used"] == "false"
+    assert response.headers["x-conversion-stage"] == "completed"
     assert output_path.read_text(encoding="utf-8").endswith("\n")
     assert response.background is not None
     cleanup_temporary_directory(output_path.parent)
@@ -499,6 +876,7 @@ def test_invalid_pdf_has_stable_error_and_is_cleaned(
             )
         )
     assert error.value.code == "INVALID_PDF"
+    assert error.value.stage == "pdf_validation"
     assert not temporary_directory.exists()
 
 
@@ -543,6 +921,7 @@ def test_worker_timeout_and_dependency_errors_are_stable(
             )
         )
     assert error.value.code == code
+    assert error.value.stage == "txt_generation"
     assert not temporary_directory.exists()
 
 
@@ -626,4 +1005,42 @@ def test_worker_failure_is_sanitized(
             )
         )
     assert error.value.code == "CONVERSION_FAILED"
+    assert error.value.stage == "txt_generation"
     assert "pdf-engine-conversion-" not in (error.value.diagnostic or "")
+
+
+def test_unexpected_conversion_failure_reports_exact_stage_and_cleans_up(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    temporary_directory = tmp_path / "unexpected-failure"
+
+    def create_directory() -> Path:
+        temporary_directory.mkdir()
+        return temporary_directory
+
+    def fail_detection(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("synthetic detector failure")
+
+    monkeypatch.setattr(
+        "app.conversion.service.create_temporary_directory",
+        create_directory,
+    )
+    monkeypatch.setattr(
+        "app.conversion.service.detect_text_layer",
+        fail_detection,
+    )
+
+    with pytest.raises(ConversionError) as error:
+        asyncio.run(
+            prepare_conversion(
+                make_upload(make_text_pdf(["Stage witness"])),
+                ConversionOptions(target_format=TargetFormat.DOCX),
+            )
+        )
+
+    assert error.value.code == "CONVERSION_FAILED"
+    assert error.value.status_code == 502
+    assert error.value.stage == "text_layer_detection"
+    assert error.value.diagnostic == "RuntimeError"
+    assert not temporary_directory.exists()

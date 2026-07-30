@@ -8,7 +8,10 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 from pypdf import PdfReader, PdfWriter
+from starlette.requests import Request
+
 from app import main
+from app.conversion.errors import ConversionError
 
 
 def make_pdf(page_count: int = 1, *, encrypted: bool = False) -> bytes:
@@ -44,6 +47,41 @@ def make_plan(pages: list[dict[str, object]], **extra: object) -> str:
 
 def test_health_is_still_available() -> None:
     assert main.health().status == "ok"
+
+
+def test_conversion_error_response_exposes_code_and_stage_without_diagnostic() -> None:
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/convert",
+            "raw_path": b"/convert",
+            "query_string": b"",
+            "headers": [],
+            "server": ("testserver", 80),
+            "client": ("testclient", 123),
+        }
+    )
+    response = asyncio.run(
+        main.handle_conversion_error(
+            request,
+            ConversionError(
+                502,
+                "CONVERSION_FAILED",
+                "La conversion a échoué.",
+                stage="docx_visual_generation",
+                diagnostic="/private/path.pdf",
+            ),
+        )
+    )
+
+    assert response.status_code == 502
+    assert json.loads(response.body) == {
+        "code": "CONVERSION_FAILED",
+        "message": "La conversion a échoué.",
+        "stage": "docx_visual_generation",
+    }
 
 
 def test_build_output_name_rejects_empty_and_path_values() -> None:

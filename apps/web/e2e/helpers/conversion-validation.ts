@@ -12,6 +12,16 @@ export type ConversionValidation = {
   tableCount?: number;
   sectionCount?: number;
   orientations?: string[];
+  imageNonWhiteRatios?: number[];
+  imageExtents?: Array<{
+    widthPt: number;
+    heightPt: number;
+    pageWidthRatio: number;
+    pageHeightRatio: number;
+  }>;
+  imageParagraphCount?: number;
+  exactLineRuleImageParagraphs?: number;
+  clippingDetected?: boolean;
   pageSeparators?: number;
   pageSections?: number;
   externalResourceCount?: number;

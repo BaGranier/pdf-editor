@@ -225,8 +225,11 @@ function buildViewerSnapshot(document: OpenPdfDocument): ViewerDocumentSnapshot 
 }
 
 async function restoreOpenDocument(storedDocument: StoredPdfDocument): Promise<OpenPdfDocument> {
+  if (!(storedDocument.content instanceof Blob) || storedDocument.content.size === 0) {
+    throw new Error("Le document restauré ne contient plus de données PDF valides.");
+  }
   const file = new File([storedDocument.content], storedDocument.fileName, {
-    type: storedDocument.mimeType,
+    type: storedDocument.mimeType || "application/pdf",
   });
   const data = new Uint8Array(await file.arrayBuffer());
   const loadingTask = pdfjsLib.getDocument({ data });
@@ -2577,6 +2580,7 @@ export function App() {
           PDF_ENGINE_URL,
           sourceDocument.file,
           options,
+          sourceDocument.fileName,
         );
         downloadConversionFile(conversion.file);
         const pageSummary =

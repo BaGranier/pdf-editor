@@ -27,4 +27,6 @@ target-version = "py311"
 pythonpath = ["."]
 markers = [
     "integration: tests that invoke locally installed OCR binaries",
+    "regression: focused non-smoke regression coverage",
+    "docx_real_document: optional local DOCX validation using a private PDF",
 ]

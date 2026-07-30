@@ -72,6 +72,8 @@ app.add_middleware(
         "X-Conversion-Pages",
         "X-Conversion-Warnings",
         "X-Conversion-Text-Layer",
+        "X-Conversion-Docx-Mode",
+        "X-Conversion-Stage",
     ],
 )
 app.include_router(ocr_router)
@@ -88,12 +90,23 @@ async def handle_ocr_error(_: Request, error: OcrError) -> JSONResponse:
 
 @app.exception_handler(ConversionError)
 async def handle_conversion_error(
-    _: Request,
+    request: Request,
     error: ConversionError,
 ) -> JSONResponse:
+    logger.warning(
+        "Conversion failure path=%s stage=%s code=%s status=%s diagnostic=%s",
+        request.url.path,
+        error.stage or "unknown",
+        error.code,
+        error.status_code,
+        error.diagnostic or "none",
+    )
+    content = {"code": error.code, "message": error.message}
+    if error.stage is not None:
+        content["stage"] = error.stage
     return JSONResponse(
         status_code=error.status_code,
-        content={"code": error.code, "message": error.message},
+        content=content,
     )
 
 

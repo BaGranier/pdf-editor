@@ -6,7 +6,7 @@ from pathlib import Path
 
 from app.conversion.docx_converter import PdfToDocxConverter
 from app.conversion.image_converter import PdfToImageConverter
-from app.conversion.models import TargetFormat
+from app.conversion.models import DocxMode, TargetFormat
 from app.conversion.text_converter import (
     PdfToHtmlConverter,
     PdfToTextConverter,
@@ -19,11 +19,13 @@ def run_worker(
     target_format: TargetFormat,
     dpi: int,
     quality: int,
+    docx_mode: DocxMode,
 ) -> dict[str, object]:
     if target_format == TargetFormat.DOCX:
         artifact = PdfToDocxConverter().convert(
             input_pdf,
             output_directory / "conversion.docx",
+            mode=docx_mode,
         )
     elif target_format == TargetFormat.TXT:
         artifact = PdfToTextConverter().convert(
@@ -58,6 +60,11 @@ def main() -> None:
     parser.add_argument("--target-format", type=TargetFormat, required=True)
     parser.add_argument("--dpi", type=int, required=True)
     parser.add_argument("--quality", type=int, required=True)
+    parser.add_argument(
+        "--docx-mode",
+        type=DocxMode,
+        default=DocxMode.EDITABLE,
+    )
     parser.add_argument("--manifest", type=Path, required=True)
     arguments = parser.parse_args()
     result = run_worker(
@@ -66,6 +73,7 @@ def main() -> None:
         arguments.target_format,
         arguments.dpi,
         arguments.quality,
+        arguments.docx_mode,
     )
     arguments.manifest.write_text(json.dumps(result), encoding="utf-8")
 

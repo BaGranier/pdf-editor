@@ -67,6 +67,14 @@ génère en plus `pdf-large.pdf`, un fichier reproductible de plus de 50 Mo et
 250 pages. `QA_SKIP_LARGE=1` permet d'éviter cette génération lors d'un diagnostic
 local ciblé.
 
+La régression DOCX critique est couverte dans
+`conversion-docx-regression.spec.ts` sur Chromium et Firefox. Le scénario
+convertit une fixture synthétique immédiatement après ouverture, puis après
+rechargement et restauration IndexedDB, dans les modes éditable et visuel. Il
+contrôle le multipart envoyé, l'absence de HTTP 502, les tailles d'entrée et de
+sortie, les pixels non blancs des images et l'absence de clipping Word
+`lineRule="exact"`.
+
 ## Résultats
 
 Après l'exécution :
@@ -77,6 +85,10 @@ Après l'exécution :
 - `apps/web/test-results/traces/` : traces du premier retry ;
 - `apps/web/test-results/videos/` : vidéos des échecs ;
 - `QA_AUTOMATED_REPORT.md` : résumé de campagne.
+- `apps/web/test-results/docx-visual-quality/` : mesures structurelles DOCX,
+  rendu LibreOffice et comparaisons côte à côte lorsque disponibles.
+- `apps/web/test-results/docx-editable-real-document/results.json` : mesures
+  agrégées du test DOCX éditable sur document local, sans contenu PDF ou DOCX.
 
 Le code de sortie reste celui de Playwright si un scénario bloquant échoue, même
 si le résumé Markdown a pu être généré. Pour régénérer seulement le résumé :
@@ -86,6 +98,29 @@ npm run qa:report
 ```
 
 Le rapport HTML s'ouvre avec `npm run qa:e2e:report`.
+
+### Régression DOCX éditable sur document réel
+
+Le PDF privé n'est jamais versionné. Le chemin
+`data/input/manual-docx-regression/` est couvert par les règles d'ignorance des
+PDF d'entrée. Le test est ignoré lorsque le fichier n'existe pas et s'active
+localement ainsi :
+
+```bash
+cd services/pdf-engine
+QA_REAL_DOCX_PDF=data/input/manual-docx-regression/2-ENGAGEMENT_INDIVIDUEL_ETUDIANT_2026-2027.pdf \
+  UV_CACHE_DIR=/tmp/pdf-engine-uv-cache \
+  uv run pytest -m docx_real_document
+```
+
+La validation rouvre obligatoirement la sortie avec `python-docx`, contrôle
+qu'elle contient des paragraphes modifiables et au moins 95 % des mots source,
+et refuse qu'une sortie image-only valide le mode `editable`. Elle mesure aussi
+les paragraphes centrés, le gras intégral ou mixte, les listes et puces vides,
+les sections Word, les sauts explicites et les pages quasi vides. LibreOffice
+fournit le nombre de pages rendu lorsqu'il est utilisable ; sinon le rapport
+indique explicitement la mesure structurelle et la réserve. Le rapport
+Markdown indique « non exécuté » lorsque la donnée privée locale est absente.
 
 ## Isolation et diagnostics
 

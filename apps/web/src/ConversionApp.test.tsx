@@ -133,11 +133,26 @@ describe("PDF conversion in App", () => {
     expect(within(dialog).getByLabelText("Format de sortie")).toHaveValue("docx");
     expect(within(dialog).getByLabelText("Langue OCR")).toHaveValue("fra");
     expect(within(dialog).getByLabelText("Reconnaissance OCR")).toHaveValue("auto");
+    expect(within(dialog).getByLabelText("Mode Word")).toHaveValue("editable");
     expect(within(dialog).getByText(/éléments complexes/)).toBeVisible();
+    expect(
+      within(dialog).getByText(/Produit un document modifiable/),
+    ).toBeVisible();
+
+    fireEvent.change(within(dialog).getByLabelText("Mode Word"), {
+      target: { value: "visual" },
+    });
+    expect(
+      within(dialog).getByText(/Conserve l’apparence sous forme d’images/),
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText(/Chaque page sera conservée comme une image/),
+    ).toBeVisible();
 
     fireEvent.change(within(dialog).getByLabelText("Format de sortie"), {
       target: { value: "png" },
     });
+    expect(within(dialog).queryByLabelText("Mode Word")).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText("Langue OCR")).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText("Résolution")).toHaveValue("150");
     expect(within(dialog).queryByLabelText(/Qualité JPEG/)).not.toBeInTheDocument();
@@ -175,6 +190,9 @@ describe("PDF conversion in App", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("Conversion en cours…");
     expect(screen.getByRole("button", { name: "Convertir" })).toBeDisabled();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledOnce();
+    });
     const request = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(request[0]).toBe("http://localhost:8000/convert");
     const form = request[1].body as FormData;
@@ -182,6 +200,7 @@ describe("PDF conversion in App", () => {
     expect(form.get("languages")).toBe("fra+eng");
     expect(form.get("ocr_mode")).toBe("always");
     expect(form.get("pages")).toBe("1-2");
+    expect(form.get("docx_mode")).toBe("editable");
 
     resolveRequest(
       createResponse({
@@ -190,7 +209,11 @@ describe("PDF conversion in App", () => {
           "x-conversion-pages": "1,2",
           "x-conversion-ocr-used": "true",
           "x-conversion-output-bytes": "42",
-          "x-conversion-warnings": encodeURIComponent("[]"),
+          "x-conversion-warnings": encodeURIComponent(
+            JSON.stringify([
+              "La conversion Word éditable est dégradée : moins de 50 % du texte source a été reconstruit.",
+            ]),
+          ),
         },
       }),
     );
@@ -199,6 +222,9 @@ describe("PDF conversion in App", () => {
         "Conversion réussie : conversion.docx (2 pages). OCR automatique utilisé.",
       );
     });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Avertissement : La conversion Word éditable est dégradée",
+    );
     expect(
       screen.getByRole("button", { name: "source.pdf, document actif" }),
     ).toBeInTheDocument();

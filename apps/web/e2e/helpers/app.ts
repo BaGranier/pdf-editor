@@ -16,6 +16,10 @@ export const fixtures = {
   conversionScan: path.join(fixtureDirectory, "conversion-scan.pdf"),
   conversionMixed: path.join(fixtureDirectory, "conversion-mixed.pdf"),
   conversionLandscape: path.join(fixtureDirectory, "conversion-landscape.pdf"),
+  conversionDocxFidelity: path.join(
+    fixtureDirectory,
+    "conversion-docx-fidelity.pdf",
+  ),
 } as const;
 
 export async function openApp(page: Page): Promise<void> {
@@ -66,6 +70,39 @@ export async function getStoredDocuments(page: Page) {
     });
     database.close();
     return documents;
+  });
+}
+
+export async function getStoredDocumentUploadDiagnostics(page: Page) {
+  return page.evaluate(async () => {
+    const request = indexedDB.open("pdf-editor-mvp-db", 1);
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const documents = await new Promise<
+      Array<{ fileName: string; mimeType: string; content: Blob }>
+    >((resolve, reject) => {
+      const transaction = database.transaction("documents", "readonly");
+      const getAllRequest = transaction.objectStore("documents").getAll();
+      getAllRequest.onsuccess = () => resolve(getAllRequest.result);
+      getAllRequest.onerror = () => reject(getAllRequest.error);
+    });
+    database.close();
+    return Promise.all(
+      documents.map(async (document) => {
+        const signature = Array.from(
+          new Uint8Array(await document.content.slice(0, 5).arrayBuffer()),
+        );
+        return {
+          fileName: document.fileName,
+          mimeType: document.mimeType,
+          size: document.content.size,
+          isBlob: document.content instanceof Blob,
+          signature: String.fromCharCode(...signature),
+        };
+      }),
+    );
   });
 }
 
