@@ -18,6 +18,7 @@ après le téléchargement ou après une erreur.
 | `image_dpi` | `96`, `150`, `300` |
 | `image_quality` | qualité JPEG de 1 à 100 |
 | `docx_mode` | `editable` (défaut) ou `visual` |
+| `output_filename` | nom de téléchargement optionnel, sans chemin |
 
 Plusieurs images sont regroupées dans une archive ZIP avec des noms
 déterministes comme `document_page_0001.png`. Une seule page produit directement
@@ -33,6 +34,29 @@ Types MIME téléchargés :
 | PNG, une page | `image/png` |
 | JPEG, une page | `image/jpeg` |
 | PNG/JPEG, plusieurs pages | `application/zip` |
+
+## Noms des téléchargements
+
+Le dialogue propose un nom dérivé du PDF source. Pour `rapport annuel.pdf`, les
+valeurs par défaut sont `rapport annuel.docx`, `rapport annuel-visual.docx`,
+`rapport annuel.txt` et `rapport annuel.html`. Une image seule porte son numéro
+de page, par exemple `rapport annuel-page-003.png`; plusieurs images produisent
+`rapport annuel-images.zip`.
+
+L’utilisateur peut modifier ce nom avant la conversion. L’extension est ajoutée
+ou corrigée automatiquement selon le résultat réel : `.docx`, `.txt`, `.html`,
+`.png`, `.jpg` ou `.zip`. Le nom annoncé par `Content-Disposition` reste
+l’autorité au téléchargement ; le nom choisi sert de repli si cet en-tête n’est
+pas accessible au navigateur.
+
+Un nom est limité à 160 caractères. Les caractères de contrôle et les caractères
+interdits sur les systèmes courants (`/`, `\`, `:`, `*`, `?`, `"`, `<`, `>` et
+`|`) ne sont jamais utilisés tels quels côté serveur. Toute composante de chemin
+est supprimée, les noms réservés sont neutralisés et un nom source absent devient
+`document-converti`. Il n’est pas possible de choisir un répertoire : le
+navigateur reste responsable de la destination du téléchargement. Un nom
+explicitement vide est refusé avec `INVALID_OUTPUT_FILENAME`; les caractères
+dangereux d’un appel API direct sont neutralisés de façon déterministe.
 
 ## OCR automatique
 
@@ -110,10 +134,12 @@ sudo apt-get install libreoffice-writer
 - OCR : 600 secondes selon la configuration existante ;
 - PDF protégés par mot de passe : non pris en charge.
 
-Les noms de sortie sont générés côté serveur. Les erreurs métier exposent les
+Les noms de sortie sont validés et normalisés à nouveau côté serveur. Les erreurs
+métier exposent les
 codes `INVALID_PDF`, `UNSUPPORTED_TARGET_FORMAT`, `INVALID_PAGE_RANGE`,
-`OCR_REQUIRED`, `CONVERSION_FAILED`, `CONVERSION_TIMEOUT`, `OUTPUT_TOO_LARGE`
-et `DEPENDENCY_UNAVAILABLE`. Une erreur de conversion contient aussi une étape
+`OCR_REQUIRED`, `CONVERSION_FAILED`, `CONVERSION_TIMEOUT`, `OUTPUT_TOO_LARGE`,
+`DEPENDENCY_UNAVAILABLE` et `INVALID_OUTPUT_FILENAME`. Une erreur de conversion
+contient aussi une étape
 stable (`upload_read`, `pdf_validation`, `ocr_auto`,
 `docx_editable_generation`, `docx_visual_generation` ou
 `response_preparation`) pour retrouver la cause dans les journaux sans exposer

@@ -75,6 +75,12 @@ async function validateAndReport(
   expect(requestBody).toContain("auto");
   expect(requestBody).toContain('name="languages"');
   expect(requestBody).toContain("fra");
+  expect(requestBody).toContain('name="output_filename"');
+  expect(run.download.suggestedFilename()).toBe(
+    mode === "visual"
+      ? "conversion-docx-fidelity-visual.docx"
+      : "conversion-docx-fidelity.docx",
+  );
   expect(validation.valid).toBe(true);
   expect(validation.sectionCount).toBe(3);
   expect(validation.clippingDetected).toBe(false);

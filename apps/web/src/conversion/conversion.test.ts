@@ -1,8 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ConversionRequestError,
+  defaultConversionFilename,
+  forceConversionFilenameExtension,
   normalizePdfUpload,
   requestConversion,
+  validateConversionFilename,
   type ConversionOptions,
 } from "./conversion";
 
@@ -14,6 +17,7 @@ const options: ConversionOptions = {
   imageDpi: 150,
   imageQuality: 85,
   docxMode: "visual",
+  outputFilename: "source-visual.docx",
 };
 
 function successfulResponse() {
@@ -120,6 +124,31 @@ describe("conversion PDF upload normalization", () => {
     expect(form.get("docx_mode")).toBe("visual");
     expect(form.get("ocr_mode")).toBe("auto");
     expect(form.get("languages")).toBe("fra+eng");
+    expect(form.get("output_filename")).toBe("source-visual.docx");
+  });
+
+  it("uses the requested name when Content-Disposition is unavailable", async () => {
+    const response = successfulResponse();
+    response.headers.delete("content-disposition");
+    response.headers.set("content-type", "text/plain; charset=utf-8");
+    response.blob = vi.fn().mockResolvedValue(
+      new Blob(["texte"], { type: "text/plain" }),
+    );
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+    const conversion = await requestConversion(
+      "http://localhost:8000",
+      new File(["%PDF-1.7\nsource"], "source.pdf", {
+        type: "application/pdf",
+      }),
+      {
+        ...options,
+        targetFormat: "txt",
+        outputFilename: "compte-rendu.docx",
+      },
+    );
+
+    expect(conversion.file.name).toBe("compte-rendu.txt");
   });
 
   it("retains the backend failure stage for diagnostics", async () => {
@@ -153,5 +182,55 @@ describe("conversion PDF upload normalization", () => {
       code: "CONVERSION_FAILED",
       stage: "docx_visual_generation",
     });
+  });
+});
+
+describe("conversion output file names", () => {
+  it.each([
+    ["docx", "editable", "", "rapport annuel.docx"],
+    ["docx", "visual", "", "rapport annuel-visual.docx"],
+    ["txt", "editable", "", "rapport annuel.txt"],
+    ["html", "editable", "", "rapport annuel.html"],
+    ["png", "editable", "3", "rapport annuel-page-003.png"],
+    ["jpeg", "editable", "2", "rapport annuel-page-002.jpg"],
+    ["png", "editable", "1-2", "rapport annuel-images.zip"],
+    ["jpeg", "editable", "", "rapport annuel-images.zip"],
+  ] as const)(
+    "proposes the expected %s/%s name",
+    (target, mode, pages, expected) => {
+      expect(
+        defaultConversionFilename("rapport annuel.pdf", target, mode, pages),
+      ).toBe(expected);
+    },
+  );
+
+  it("preserves the custom base while forcing the current extension", () => {
+    expect(
+      forceConversionFilenameExtension("mon-document.docx", "txt", ""),
+    ).toBe("mon-document.txt");
+    expect(
+      forceConversionFilenameExtension("mon-document.exe", "docx", ""),
+    ).toBe("mon-document.docx");
+    expect(
+      forceConversionFilenameExtension("mes-images.png", "png", "1-2"),
+    ).toBe("mes-images.zip");
+  });
+
+  it("uses a direct image name when the complete source has one page", () => {
+    expect(
+      defaultConversionFilename("scan.pdf", "png", "editable", "", 1),
+    ).toBe("scan-page-001.png");
+    expect(
+      defaultConversionFilename("scan.pdf", "jpeg", "editable", "all", 1),
+    ).toBe("scan-page-001.jpg");
+  });
+
+  it("rejects empty, path-like and overlong user input", () => {
+    expect(validateConversionFilename("   ")).toMatch(/requis/);
+    expect(validateConversionFilename("../../secret.docx")).toMatch(
+      /ne peut pas contenir/,
+    );
+    expect(validateConversionFilename("a".repeat(161))).toMatch(/160/);
+    expect(validateConversionFilename("rapport final.docx")).toBeNull();
   });
 });

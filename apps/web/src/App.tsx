@@ -2797,6 +2797,7 @@ export function App() {
       {isConversionDialogOpen && activeDocument ? (
         <ConversionDialog
           sourceFileName={activeDocument.fileName}
+          sourcePageCount={activeDocument.pageCount}
           hasPendingOrganizationChanges={hasPendingOrganizationChanges}
           isProcessing={isConverting}
           onCancel={() => setIsConversionDialogOpen(false)}

@@ -134,6 +134,9 @@ describe("PDF conversion in App", () => {
     expect(within(dialog).getByLabelText("Langue OCR")).toHaveValue("fra");
     expect(within(dialog).getByLabelText("Reconnaissance OCR")).toHaveValue("auto");
     expect(within(dialog).getByLabelText("Mode Word")).toHaveValue("editable");
+    expect(within(dialog).getByLabelText("Nom du fichier")).toHaveValue(
+      "source.docx",
+    );
     expect(within(dialog).getByText(/éléments complexes/)).toBeVisible();
     expect(
       within(dialog).getByText(/Produit un document modifiable/),
@@ -148,6 +151,9 @@ describe("PDF conversion in App", () => {
     expect(
       within(dialog).getByText(/Chaque page sera conservée comme une image/),
     ).toBeVisible();
+    expect(within(dialog).getByLabelText("Nom du fichier")).toHaveValue(
+      "source-visual.docx",
+    );
 
     fireEvent.change(within(dialog).getByLabelText("Format de sortie"), {
       target: { value: "png" },
@@ -155,12 +161,52 @@ describe("PDF conversion in App", () => {
     expect(within(dialog).queryByLabelText("Mode Word")).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText("Langue OCR")).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText("Résolution")).toHaveValue("150");
+    expect(within(dialog).getByLabelText("Nom du fichier")).toHaveValue(
+      "source-images.zip",
+    );
     expect(within(dialog).queryByLabelText(/Qualité JPEG/)).not.toBeInTheDocument();
 
     fireEvent.change(within(dialog).getByLabelText("Format de sortie"), {
       target: { value: "jpeg" },
     });
     expect(within(dialog).getByLabelText(/Qualité JPEG/)).toBeInTheDocument();
+  });
+
+  it("preserves a custom base, updates extensions and rejects invalid names", async () => {
+    render(<App />);
+    await openPdf();
+    const dialog = openDialog();
+    const filename = within(dialog).getByLabelText("Nom du fichier");
+    const submit = within(dialog).getByRole("button", {
+      name: "Lancer la conversion",
+    });
+
+    fireEvent.change(filename, { target: { value: "mon compte-rendu.docx" } });
+    fireEvent.change(within(dialog).getByLabelText("Format de sortie"), {
+      target: { value: "txt" },
+    });
+    expect(filename).toHaveValue("mon compte-rendu.txt");
+
+    fireEvent.change(within(dialog).getByLabelText("Format de sortie"), {
+      target: { value: "png" },
+    });
+    expect(filename).toHaveValue("mon compte-rendu.zip");
+    fireEvent.change(within(dialog).getByLabelText("Pages"), {
+      target: { value: "2" },
+    });
+    expect(filename).toHaveValue("mon compte-rendu.png");
+
+    fireEvent.change(filename, { target: { value: "" } });
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Le nom du fichier est requis.",
+    );
+    expect(submit).toBeDisabled();
+
+    fireEvent.change(filename, { target: { value: "../secret.png" } });
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Le nom ne peut pas contenir",
+    );
+    expect(submit).toBeDisabled();
   });
 
   it("downloads a real response, exposes progress and keeps the source open", async () => {
@@ -184,6 +230,9 @@ describe("PDF conversion in App", () => {
     fireEvent.change(within(dialog).getByLabelText("Pages"), {
       target: { value: "1-2" },
     });
+    fireEvent.change(within(dialog).getByLabelText("Nom du fichier"), {
+      target: { value: "dossier final" },
+    });
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Lancer la conversion" }),
     );
@@ -201,11 +250,12 @@ describe("PDF conversion in App", () => {
     expect(form.get("ocr_mode")).toBe("always");
     expect(form.get("pages")).toBe("1-2");
     expect(form.get("docx_mode")).toBe("editable");
+    expect(form.get("output_filename")).toBe("dossier final.docx");
 
     resolveRequest(
       createResponse({
         headers: {
-          "content-disposition": 'attachment; filename="conversion.docx"',
+          "content-disposition": 'attachment; filename="dossier final.docx"',
           "x-conversion-pages": "1,2",
           "x-conversion-ocr-used": "true",
           "x-conversion-output-bytes": "42",
@@ -219,7 +269,7 @@ describe("PDF conversion in App", () => {
     );
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveTextContent(
-        "Conversion réussie : conversion.docx (2 pages). OCR automatique utilisé.",
+        "Conversion réussie : dossier final.docx (2 pages). OCR automatique utilisé.",
       );
     });
     expect(screen.getByRole("status")).toHaveTextContent(
@@ -228,7 +278,7 @@ describe("PDF conversion in App", () => {
     expect(
       screen.getByRole("button", { name: "source.pdf, document actif" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /conversion\.docx, document actif/ }))
+    expect(screen.queryByRole("button", { name: /dossier final\.docx, document actif/ }))
       .not.toBeInTheDocument();
     expect(HTMLAnchorElement.prototype.click).toHaveBeenCalledOnce();
   });

@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
+from app.conversion.filenames import build_conversion_download_name
 from app.conversion.models import DocxMode, OcrMode
 from app.conversion.service import (
     build_options,
@@ -37,6 +38,10 @@ async def convert_pdf(
         str,
         Form(description="editable ou visual"),
     ] = DocxMode.EDITABLE.value,
+    output_filename: Annotated[
+        str | None,
+        Form(description="Nom du fichier téléchargé, sans chemin"),
+    ] = None,
 ) -> FileResponse:
     options = build_options(
         target_format=target_format,
@@ -49,6 +54,17 @@ async def convert_pdf(
     )
     prepared = await prepare_conversion(file, options)
     result = prepared.result
+    try:
+        download_name = build_conversion_download_name(
+            source_filename=file.filename,
+            requested_filename=output_filename,
+            target_format=result.target_format,
+            docx_mode=options.docx_mode,
+            page_numbers=result.page_numbers,
+        )
+    except Exception:
+        cleanup_temporary_directory(prepared.temporary_directory)
+        raise
     headers = {
         "X-Conversion-Format": result.target_format.value,
         "X-Conversion-Duration-Ms": str(result.duration_ms),
@@ -66,7 +82,7 @@ async def convert_pdf(
     return FileResponse(
         prepared.artifact.path,
         media_type=prepared.artifact.media_type,
-        filename=prepared.artifact.filename,
+        filename=download_name,
         headers=headers,
         background=BackgroundTask(
             cleanup_temporary_directory,

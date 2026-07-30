@@ -7,9 +7,15 @@ import type {
   ConversionOptions,
   ConversionTarget,
 } from "../conversion/conversion";
+import {
+  defaultConversionFilename,
+  forceConversionFilenameExtension,
+  validateConversionFilename,
+} from "../conversion/conversion";
 
 type ConversionDialogProps = {
   sourceFileName: string;
+  sourcePageCount: number;
   hasPendingOrganizationChanges: boolean;
   isProcessing: boolean;
   onCancel: () => void;
@@ -20,6 +26,7 @@ const textTargets = new Set<ConversionTarget>(["docx", "txt", "html"]);
 
 export function ConversionDialog({
   sourceFileName,
+  sourcePageCount,
   hasPendingOrganizationChanges,
   isProcessing,
   onCancel,
@@ -35,7 +42,18 @@ export function ConversionDialog({
   const [imageDpi, setImageDpi] = useState<ConversionImageDpi>(150);
   const [imageQuality, setImageQuality] = useState(85);
   const [docxMode, setDocxMode] = useState<ConversionDocxMode>("editable");
+  const [outputFilename, setOutputFilename] = useState(() =>
+    defaultConversionFilename(
+      sourceFileName,
+      "docx",
+      "editable",
+      "",
+      sourcePageCount,
+    ),
+  );
+  const filenameEditedRef = useRef(false);
   const isTextTarget = textTargets.has(targetFormat);
+  const filenameError = validateConversionFilename(outputFilename);
 
   useEffect(() => {
     firstControlRef.current?.focus();
@@ -49,9 +67,39 @@ export function ConversionDialog({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isProcessing, onCancel]);
 
+  function updateSuggestedFilename(
+    nextTarget: ConversionTarget,
+    nextDocxMode: ConversionDocxMode,
+    nextPages: string,
+  ) {
+    setOutputFilename((currentFilename) =>
+      filenameEditedRef.current
+        ? forceConversionFilenameExtension(
+            currentFilename,
+            nextTarget,
+            nextPages,
+            sourcePageCount,
+          )
+        : defaultConversionFilename(
+            sourceFileName,
+            nextTarget,
+            nextDocxMode,
+            nextPages,
+            sourcePageCount,
+          ),
+    );
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!isProcessing) {
+    if (!isProcessing && !filenameError) {
+      const normalizedOutputFilename = forceConversionFilenameExtension(
+        outputFilename,
+        targetFormat,
+        pages,
+        sourcePageCount,
+      );
+      setOutputFilename(normalizedOutputFilename);
       onSubmit({
         targetFormat,
         languages,
@@ -60,6 +108,7 @@ export function ConversionDialog({
         imageDpi,
         imageQuality,
         docxMode,
+        outputFilename: normalizedOutputFilename,
       });
     }
   }
@@ -88,7 +137,11 @@ export function ConversionDialog({
               id={`${titleId}-format`}
               value={targetFormat}
               disabled={isProcessing}
-              onChange={(event) => setTargetFormat(event.target.value as ConversionTarget)}
+              onChange={(event) => {
+                const nextTarget = event.target.value as ConversionTarget;
+                setTargetFormat(nextTarget);
+                updateSuggestedFilename(nextTarget, docxMode, pages);
+              }}
             >
               <option value="docx">Document Word (DOCX)</option>
               <option value="txt">Texte UTF-8 (TXT)</option>
@@ -106,9 +159,11 @@ export function ConversionDialog({
                   id={`${titleId}-docx-mode`}
                   value={docxMode}
                   disabled={isProcessing}
-                  onChange={(event) =>
-                    setDocxMode(event.target.value as ConversionDocxMode)
-                  }
+                  onChange={(event) => {
+                    const nextMode = event.target.value as ConversionDocxMode;
+                    setDocxMode(nextMode);
+                    updateSuggestedFilename(targetFormat, nextMode, pages);
+                  }}
                 >
                   <option value="editable">Word éditable</option>
                   <option value="visual">Word fidèle visuellement</option>
@@ -130,9 +185,52 @@ export function ConversionDialog({
               value={pages}
               placeholder="Toutes, ou par exemple 1-3,5"
               disabled={isProcessing}
-              onChange={(event) => setPages(event.target.value)}
+              onChange={(event) => {
+                const nextPages = event.target.value;
+                setPages(nextPages);
+                updateSuggestedFilename(targetFormat, docxMode, nextPages);
+              }}
             />
           </label>
+
+          <label className="ocr-field" htmlFor={`${titleId}-output-filename`}>
+            <span>Nom du fichier</span>
+            <input
+              id={`${titleId}-output-filename`}
+              type="text"
+              value={outputFilename}
+              disabled={isProcessing}
+              aria-invalid={filenameError ? "true" : undefined}
+              aria-describedby={
+                filenameError ? `${titleId}-output-filename-error` : undefined
+              }
+              onChange={(event) => {
+                filenameEditedRef.current = true;
+                setOutputFilename(event.target.value);
+              }}
+              onBlur={() => {
+                if (!filenameError) {
+                  setOutputFilename(
+                    forceConversionFilenameExtension(
+                      outputFilename,
+                      targetFormat,
+                      pages,
+                      sourcePageCount,
+                    ),
+                  );
+                }
+              }}
+            />
+          </label>
+          {filenameError ? (
+            <p
+              id={`${titleId}-output-filename-error`}
+              className="ocr-dialog__warning"
+              role="alert"
+            >
+              {filenameError}
+            </p>
+          ) : null}
 
           {isTextTarget ? (
             <>
@@ -226,7 +324,7 @@ export function ConversionDialog({
             <button
               type="submit"
               className="ocr-dialog__submit"
-              disabled={isProcessing}
+              disabled={isProcessing || Boolean(filenameError)}
             >
               Lancer la conversion
             </button>

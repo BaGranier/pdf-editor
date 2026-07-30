@@ -14,6 +14,7 @@ export type ConversionOptions = {
   imageDpi: ConversionImageDpi;
   imageQuality: number;
   docxMode: ConversionDocxMode;
+  outputFilename: string;
 };
 
 export type ConversionMetadata = {
@@ -57,6 +58,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   CONVERSION_TIMEOUT: "La conversion a dépassé le délai autorisé.",
   OUTPUT_TOO_LARGE: "Le résultat de conversion est trop volumineux.",
   DEPENDENCY_UNAVAILABLE: "Le moteur de conversion demandé n'est pas disponible.",
+  INVALID_OUTPUT_FILENAME: "Le nom du fichier de sortie n'est pas valide.",
 };
 
 const MIME_TYPES: Record<ConversionTarget, string[]> = {
@@ -138,9 +140,121 @@ async function responseError(response: Response): Promise<ConversionRequestError
   }
 }
 
-function fallbackName(sourceName: string, target: ConversionTarget): string {
-  const stem = sourceName.replace(/\.pdf$/i, "") || "document";
-  return `${stem}-conversion.${FALLBACK_EXTENSIONS[target]}`;
+const OUTPUT_EXTENSION = /\.[a-z0-9]{1,10}$/i;
+const FORBIDDEN_OUTPUT_CHARACTERS = /[/\\:*?"<>|\u0000-\u001f\u007f]/;
+
+function sourceStem(sourceName: string): string {
+  const leaf = sourceName.replace(/\\/g, "/").split("/").pop() ?? "";
+  return (
+    leaf
+      .replace(/\.pdf$/i, "")
+      .replace(/[/\\:*?"<>|\u0000-\u001f\u007f]/g, "-")
+      .replace(/\s+/g, " ")
+      .replace(/(?:\s*-\s*){2,}/g, "-")
+      .trim()
+      .replace(/^[ .-]+|[ .-]+$/g, "") || "document-converti"
+  );
+}
+
+function singleSelectedPage(
+  pages: string,
+  sourcePageCount?: number,
+): number | null {
+  const normalized = pages.trim().toLowerCase();
+  if (!normalized || normalized === "all") {
+    return sourcePageCount === 1 ? 1 : null;
+  }
+
+  const selected = new Set<number>();
+  for (const rawPart of normalized.split(",")) {
+    const part = rawPart.trim();
+    const rangeMatch = /^(\d+)\s*-\s*(\d+)$/.exec(part);
+    if (rangeMatch) {
+      const first = Number(rangeMatch[1]);
+      const last = Number(rangeMatch[2]);
+      if (first <= 0 || last < first || last - first > 1) {
+        return null;
+      }
+      for (let page = first; page <= last; page += 1) {
+        selected.add(page);
+      }
+    } else if (/^\d+$/.test(part)) {
+      selected.add(Number(part));
+    } else {
+      return null;
+    }
+    if (selected.size > 1) {
+      return null;
+    }
+  }
+  const [pageNumber] = selected;
+  return pageNumber && pageNumber > 0 ? pageNumber : null;
+}
+
+export function conversionFilenameExtension(
+  target: ConversionTarget,
+  pages: string,
+  sourcePageCount?: number,
+): string {
+  if (target === "jpeg") {
+    return singleSelectedPage(pages, sourcePageCount) === null ? "zip" : "jpg";
+  }
+  if (target === "png") {
+    return singleSelectedPage(pages, sourcePageCount) === null ? "zip" : "png";
+  }
+  return FALLBACK_EXTENSIONS[target];
+}
+
+export function defaultConversionFilename(
+  sourceName: string,
+  target: ConversionTarget,
+  docxMode: ConversionDocxMode,
+  pages: string,
+  sourcePageCount?: number,
+): string {
+  let stem = sourceStem(sourceName);
+  const singlePage = singleSelectedPage(pages, sourcePageCount);
+  if (target === "docx" && docxMode === "visual") {
+    stem = `${stem}-visual`;
+  } else if ((target === "png" || target === "jpeg") && singlePage !== null) {
+    stem = `${stem}-page-${String(singlePage).padStart(3, "0")}`;
+  } else if (target === "png" || target === "jpeg") {
+    stem = `${stem}-images`;
+  }
+  const suffix = `.${conversionFilenameExtension(
+    target,
+    pages,
+    sourcePageCount,
+  )}`;
+  return `${stem.slice(0, 160 - suffix.length).trim()}${suffix}`;
+}
+
+export function forceConversionFilenameExtension(
+  value: string,
+  target: ConversionTarget,
+  pages: string,
+  sourcePageCount?: number,
+): string {
+  const stem = value.trim().replace(OUTPUT_EXTENSION, "").trim();
+  const suffix = `.${conversionFilenameExtension(
+    target,
+    pages,
+    sourcePageCount,
+  )}`;
+  return `${stem.slice(0, 160 - suffix.length).trim()}${suffix}`;
+}
+
+export function validateConversionFilename(value: string): string | null {
+  if (!value.trim()) {
+    return "Le nom du fichier est requis.";
+  }
+  if (FORBIDDEN_OUTPUT_CHARACTERS.test(value)) {
+    return 'Le nom ne peut pas contenir /, \\, :, *, ?, ", <, > ou |.';
+  }
+  if (value.trim().length > 160) {
+    return "Le nom du fichier ne peut pas dépasser 160 caractères.";
+  }
+  return null;
 }
 
 function normalizedMimeType(blob: Blob, response: Response): string {
@@ -215,6 +329,7 @@ export async function requestConversion(
   formData.append("image_dpi", String(options.imageDpi));
   formData.append("image_quality", String(options.imageQuality));
   formData.append("docx_mode", options.docxMode);
+  formData.append("output_filename", options.outputFilename.trim());
   if (!(formData.get("file") instanceof Blob)) {
     throw new ConversionRequestError(
       "Le document source n'a pas pu être préparé.",
@@ -245,7 +360,17 @@ export async function requestConversion(
   }
   const outputName = getDownloadFileName(
     response.headers.get("content-disposition"),
-    fallbackName(sourceFile.name, options.targetFormat),
+    forceConversionFilenameExtension(
+      options.outputFilename ||
+        defaultConversionFilename(
+          sourceFile.name,
+          options.targetFormat,
+          options.docxMode,
+          options.pages,
+        ),
+      options.targetFormat,
+      options.pages,
+    ),
   );
   const pages = (response.headers.get("x-conversion-pages") ?? "")
     .split(",")

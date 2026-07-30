@@ -80,10 +80,12 @@ test("QA-CONV-001 @smoke convertit réellement en DOCX et conserve la source", a
     result,
     "docx",
     testInfo,
-    "conversion.docx",
+    "conversion-simple-text.docx",
   );
 
-  expect(result.download.suggestedFilename()).toBe("conversion.docx");
+  expect(result.download.suggestedFilename()).toBe(
+    "conversion-simple-text.docx",
+  );
   expect(result.response.headers()["content-type"]).toContain(
     "application/vnd.openxmlformats-officedocument",
   );
@@ -96,6 +98,12 @@ test("QA-CONV-001 @smoke convertit réellement en DOCX et conserve la source", a
     }),
   ).toBeVisible();
   await expect(page.locator(".document-item")).toHaveCount(1);
+  const customResult = await qa.measure("conversion-docx-custom-name", () =>
+    runConversion(page, "docx", async (dialog) => {
+      await dialog.getByLabel("Nom du fichier").fill("rapport client");
+    }),
+  );
+  expect(customResult.download.suggestedFilename()).toBe("rapport client.docx");
   await testInfo.attach("conversion-screenshot", {
     body: await page.screenshot(),
     contentType: "image/png",
@@ -110,9 +118,17 @@ test("QA-CONV-002 @smoke convertit en TXT UTF-8 puis en HTML autonome", async ({
   await openPdf(page, fixtures.conversionText);
 
   const txtResult = await qa.measure("conversion-txt", () =>
-    runConversion(page, "txt"),
+    runConversion(page, "txt", async (dialog) => {
+      await dialog.getByLabel("Nom du fichier").fill("notes de conversion");
+    }),
   );
-  const txt = await saveAndReport(txtResult, "txt", testInfo, "conversion.txt");
+  const txt = await saveAndReport(
+    txtResult,
+    "txt",
+    testInfo,
+    "notes de conversion.txt",
+  );
+  expect(txtResult.download.suggestedFilename()).toBe("notes de conversion.txt");
   expect(txt.validation.text).toContain("Document numérique français");
   expect(txt.validation.pageSeparators).toBe(2);
 
@@ -123,7 +139,7 @@ test("QA-CONV-002 @smoke convertit en TXT UTF-8 puis en HTML autonome", async ({
     htmlResult,
     "html",
     testInfo,
-    "conversion.html",
+    "conversion-simple-text.html",
   );
   expect(html.validation.valid).toBe(true);
   expect(html.validation.pageSections).toBe(2);
@@ -145,16 +161,17 @@ test("QA-CONV-003 @regression convertit plusieurs pages PNG dans un ZIP", async 
       await dialog.getByLabel("Format de sortie").selectOption("jpeg");
       await expect(dialog.getByLabel(/Qualité JPEG/)).toBeVisible();
       await dialog.getByLabel("Format de sortie").selectOption("png");
+      await dialog.getByLabel("Nom du fichier").fill("pages retenues.png");
     }),
   );
   const converted = await saveAndReport(
     result,
     "png",
     testInfo,
-    "conversion_images.zip",
+    "pages retenues.zip",
   );
 
-  expect(result.download.suggestedFilename()).toBe("conversion_images.zip");
+  expect(result.download.suggestedFilename()).toBe("pages retenues.zip");
   expect(converted.validation.archive).toBe(true);
   expect(converted.validation.names).toEqual([
     "document_page_0001.png",
