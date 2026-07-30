@@ -87,7 +87,12 @@ Le workflow GitHub Actions installe ces paquets avant la campagne.
   reconstruits avec PyMuPDF et `python-docx`. Les blocs longs utilisent la
   largeur utile de la page et restent alignés à gauche ou justifiés ; seuls les
   titres courts réellement centrés conservent un centrage. Les lignes de
-  continuation d'une liste restent dans la même puce.
+  continuation d'une liste restent dans la même puce. L'interlignage est
+  relatif à la police et privilégie la lisibilité : 1,10 pour le corps, 1,14
+  pour les paragraphes longs et 1,08 pour les listes. Aucune hauteur de ligne
+  exacte n'est appliquée. Les encadrés simples conservent une marge interne de
+  8 points. Une page Word supplémentaire est acceptable lorsqu'elle évite une
+  compression excessive et ne crée pas de page quasi vide.
 - DOCX `visual` (« Word fidèle visuellement ») : chaque page est rendue comme
   une image pleine page. L'apparence est mieux conservée, mais le contenu est
   moins facilement modifiable. Les paragraphes d'images n'imposent aucune

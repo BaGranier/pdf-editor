@@ -460,6 +460,53 @@ def test_editable_docx_preserves_fidelity_markers(tmp_path: Path) -> None:
         if paragraph._p.xpath(".//w:drawing")
     )
     assert first_drawing_index < title_index
+    assert isinstance(title.paragraph_format.line_spacing, float)
+    assert title.paragraph_format.line_spacing >= 1.03
+    assert title.paragraph_format.space_after is not None
+    assert title.paragraph_format.space_after.pt > 0
+    assert not document.element.xpath(
+        './/w:spacing[@w:lineRule="exact"]'
+    )
+
+    long_paragraphs = [
+        paragraph
+        for paragraph in document.paragraphs
+        if len(paragraph.text.split()) >= 20
+    ]
+    assert long_paragraphs
+    assert all(
+        isinstance(paragraph.paragraph_format.line_spacing, float)
+        and paragraph.paragraph_format.line_spacing >= 1.12
+        for paragraph in long_paragraphs
+    )
+    list_paragraphs = [
+        paragraph
+        for paragraph in document.paragraphs
+        if paragraph.style.name in {"List Bullet", "List Number"}
+    ]
+    assert all(
+        isinstance(paragraph.paragraph_format.line_spacing, float)
+        and paragraph.paragraph_format.line_spacing >= 1.05
+        for paragraph in list_paragraphs
+    )
+    assert any(
+        paragraph.paragraph_format.space_before is not None
+        and paragraph.paragraph_format.space_before.pt > 0
+        for paragraph in list_paragraphs
+    )
+
+    bordered_paragraph = next(
+        paragraph
+        for paragraph in document.paragraphs
+        if "premier paragraphe encadré" in paragraph.text
+    )
+    border_edges = bordered_paragraph._p.xpath("./w:pPr/w:pBdr/*")
+    assert border_edges
+    assert all(int(edge.get(qn("w:space"), "0")) >= 7 for edge in border_edges)
+    assert bordered_paragraph.paragraph_format.space_before is not None
+    assert bordered_paragraph.paragraph_format.space_before.pt >= 3
+    assert bordered_paragraph.paragraph_format.space_after is not None
+    assert bordered_paragraph.paragraph_format.space_after.pt >= 3
 
     with zipfile.ZipFile(output) as archive:
         logo = fitz.Pixmap(archive.read("word/media/image1.png"))

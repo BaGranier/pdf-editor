@@ -644,6 +644,80 @@ def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
                 f"- Réserve : {markdown_escape(str(render_warning))}"
             )
 
+    lines.extend(["", "## DOCX editable spacing quality", ""])
+    if docx_editable_real is None:
+        lines.extend(
+            [
+                "- Document : fixture réelle locale absente",
+                "- Statut : **R** — contrôle d'espacement non exécuté.",
+            ]
+        )
+    else:
+        line_spacing = docx_editable_real.get("lineSpacing", {})
+        paragraph_spacing = docx_editable_real.get(
+            "paragraphSpacingPoints",
+            {},
+        )
+        rendered_page_count = docx_editable_real.get("renderedPageCount")
+        spacing_status = docx_editable_real.get(
+            "readabilityStatus",
+            "KO"
+            if docx_editable_real.get("status") == "failed"
+            else "R"
+            if rendered_page_count is None
+            else "OK",
+        )
+        lines.extend(
+            [
+                f"- Pages source / sections DOCX estimées : "
+                f"{docx_editable_real.get('sourcePageCount', 'N/D')} / "
+                f"{docx_editable_real.get('estimatedPageCount', 'N/D')}",
+                f"- Paragraphes non vides / mots éditables : "
+                f"{docx_editable_real.get('paragraphCount', 'N/D')} / "
+                f"{docx_editable_real.get('editableWordCount', 'N/D')}",
+                f"- Moyenne mots / lignes estimées par paragraphe : "
+                f"{docx_editable_real.get('averageWordsPerParagraph', 'N/D')} / "
+                f"{docx_editable_real.get('averageEstimatedLinesPerParagraph', 'N/D')}",
+                f"- Rétention textuelle : "
+                f"{docx_editable_real.get('textRetentionRatio', 'N/D')}",
+                f"- Paragraphes par section : "
+                f"{docx_editable_real.get('structuralPageParagraphCounts', 'N/D')}",
+                f"- Mots par section : "
+                f"{docx_editable_real.get('structuralPageWordCounts', 'N/D')}",
+                f"- Remplissage vertical estimé : "
+                f"{docx_editable_real.get('estimatedVerticalFillRatios', 'N/D')}",
+                f"- Sections denses / quasi vides : "
+                f"{docx_editable_real.get('denseSectionCount', 'N/D')} / "
+                f"{docx_editable_real.get('quasiEmptyPageCount', 'N/D')}",
+                f"- Listes / puces vides : "
+                f"{docx_editable_real.get('listCount', 'N/D')} / "
+                f"{docx_editable_real.get('emptyBulletCount', 'N/D')}",
+                f"- Interlignage min./max./moyen : "
+                f"{line_spacing.get('minimum', 'N/D')} / "
+                f"{line_spacing.get('maximum', 'N/D')} / "
+                f"{line_spacing.get('average', 'N/D')}",
+                f"- Interlignage minimum paragraphes longs / listes : "
+                f"{line_spacing.get('longParagraphMinimum', 'N/D')} / "
+                f"{line_spacing.get('listMinimum', 'N/D')}",
+                f"- Interlignage minimum paragraphes ordinaires : "
+                f"{line_spacing.get('ordinaryParagraphMinimum', 'N/D')}",
+                f"- Espacement après min./max./moyen : "
+                f"{paragraph_spacing.get('afterMinimum', 'N/D')} / "
+                f"{paragraph_spacing.get('afterMaximum', 'N/D')} / "
+                f"{paragraph_spacing.get('afterAverage', 'N/D')} pt",
+                f"- Marge interne de l'encadré : "
+                f"{docx_editable_real.get('borderPaddingPoints', 'N/D')} pt",
+                f"- Paragraphes avec `lineRule=exact` : "
+                f"{docx_editable_real.get('exactLineRuleParagraphCount', 'N/D')}",
+                f"- Statut lisibilité : **{spacing_status}**",
+            ]
+        )
+        render_warning = docx_editable_real.get("renderWarning")
+        if render_warning:
+            lines.append(
+                f"- Réserve : {markdown_escape(str(render_warning))}"
+            )
+
     lines.extend(["", "## Mesures de performance disponibles", ""])
     metric_found = False
     for scenario in scenarios:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -102,6 +103,55 @@ def section_word_counts(document: Document) -> list[int]:
             current_count = 0
     counts.append(current_count)
     return counts
+
+
+def section_paragraph_counts(document: Document) -> list[int]:
+    counts: list[int] = []
+    current_count = 0
+    for element in document.element.body.iterchildren():
+        if element.tag == qn("w:p"):
+            text = " ".join(
+                node.text or ""
+                for node in element.xpath(".//w:t")
+            )
+            if text.strip():
+                current_count += 1
+            if element.xpath("./w:pPr/w:sectPr"):
+                counts.append(current_count)
+                current_count = 0
+    counts.append(current_count)
+    return counts
+
+
+def spacing_value(paragraph: object) -> float | None:
+    value = paragraph.paragraph_format.line_spacing
+    return float(value) if isinstance(value, float) else None
+
+
+def point_value(value: object) -> float:
+    return float(value.pt) if value is not None else 0
+
+
+def estimated_vertical_fill_ratios(
+    document: Document,
+    word_counts: list[int],
+    paragraph_counts: list[int],
+) -> list[float]:
+    ratios: list[float] = []
+    for index, word_count in enumerate(word_counts):
+        section = document.sections[min(index, len(document.sections) - 1)]
+        usable_height = (
+            section.page_height.pt
+            - section.top_margin.pt
+            - section.bottom_margin.pt
+        )
+        estimated_lines = max(1, math.ceil(word_count / 12))
+        estimated_height = (
+            estimated_lines * 9 * 1.12
+            + paragraph_counts[index] * 2.5
+        )
+        ratios.append(round(estimated_height / usable_height, 4))
+    return ratios
 
 
 def libreoffice_page_metrics(
@@ -272,6 +322,12 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
         None,
     )
     structural_page_word_counts = section_word_counts(document)
+    structural_page_paragraph_counts = section_paragraph_counts(document)
+    vertical_fill_ratios = estimated_vertical_fill_ratios(
+        document,
+        structural_page_word_counts,
+        structural_page_paragraph_counts,
+    )
     structural_quasi_empty_pages = sum(
         word_count < 15
         for word_count in structural_page_word_counts
@@ -285,6 +341,84 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
     )
     explicit_page_breaks = len(
         document.element.xpath(".//w:br[@w:type='page']")
+    )
+    exact_line_rule_paragraphs = [
+        paragraph
+        for paragraph in document.paragraphs
+        if any(
+            spacing.get(qn("w:lineRule")) == "exact"
+            for spacing in paragraph._p.xpath("./w:pPr/w:spacing")
+        )
+    ]
+    line_spacing_values = [
+        value
+        for paragraph in meaningful_paragraphs
+        if (value := spacing_value(paragraph)) is not None
+    ]
+    long_paragraphs = [
+        paragraph
+        for paragraph in meaningful_paragraphs
+        if paragraph.style.name == "Normal"
+        if len(paragraph.text.split()) >= 30
+    ]
+    long_line_spacing_values = [
+        value
+        for paragraph in long_paragraphs
+        if (value := spacing_value(paragraph)) is not None
+    ]
+    ordinary_paragraphs = [
+        paragraph
+        for paragraph in meaningful_paragraphs
+        if paragraph.style.name == "Normal"
+        and len(paragraph.text.split()) < 30
+        and not paragraph._p.xpath(".//w:pBdr")
+    ]
+    ordinary_line_spacing_values = [
+        value
+        for paragraph in ordinary_paragraphs
+        if (value := spacing_value(paragraph)) is not None
+    ]
+    list_paragraphs = [
+        paragraph
+        for paragraph in meaningful_paragraphs
+        if paragraph.style.name in {"List Bullet", "List Number"}
+    ]
+    list_line_spacing_values = [
+        value
+        for paragraph in list_paragraphs
+        if (value := spacing_value(paragraph)) is not None
+    ]
+    paragraph_space_before_values = [
+        point_value(paragraph.paragraph_format.space_before)
+        for paragraph in meaningful_paragraphs
+    ]
+    paragraph_space_after_values = [
+        point_value(paragraph.paragraph_format.space_after)
+        for paragraph in meaningful_paragraphs
+    ]
+    border_paragraphs = [
+        paragraph
+        for paragraph in meaningful_paragraphs
+        if paragraph._p.xpath(".//w:pBdr")
+    ]
+    border_padding_values = [
+        int(edge.get(qn("w:space"), "0"))
+        for paragraph in border_paragraphs
+        for edge in paragraph._p.xpath("./w:pPr/w:pBdr/*")
+    ]
+    dense_section_count = sum(
+        ratio > 1.05
+        for ratio in vertical_fill_ratios
+    )
+    estimated_line_counts = [
+        max(1, math.ceil(len(paragraph.text.split()) / 12))
+        for paragraph in meaningful_paragraphs
+    ]
+    average_words_per_paragraph = (
+        len(docx_text.split()) / len(meaningful_paragraphs)
+    )
+    average_estimated_lines_per_paragraph = (
+        sum(estimated_line_counts) / len(estimated_line_counts)
     )
     checks = {
         "openable": output_path.stat().st_size > 0,
@@ -313,6 +447,42 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
         "structuralQuasiEmptyPages": structural_quasi_empty_pages == 0,
         "pageInflation": len(document.sections) <= source_page_count + 1,
         "explicitPageBreaks": explicit_page_breaks <= source_page_count - 1,
+        "safeLineRules": len(exact_line_rule_paragraphs) == 0,
+        "readableLongLineSpacing": (
+            bool(long_line_spacing_values)
+            and min(long_line_spacing_values) >= 1.12
+            and max(long_line_spacing_values) <= 1.2
+        ),
+        "readableOrdinaryLineSpacing": (
+            bool(ordinary_line_spacing_values)
+            and min(ordinary_line_spacing_values) >= 1.08
+            and max(ordinary_line_spacing_values) <= 1.16
+        ),
+        "readableListLineSpacing": (
+            bool(list_line_spacing_values)
+            and min(list_line_spacing_values) >= 1.05
+            and max(list_line_spacing_values) <= 1.12
+        ),
+        "reasonableParagraphSpacing": (
+            1.5
+            <= (
+                sum(paragraph_space_after_values)
+                / len(paragraph_space_after_values)
+            )
+            <= 4
+            and max(paragraph_space_before_values, default=0) <= 8
+            and max(paragraph_space_after_values, default=0) <= 6
+        ),
+        "borderPadding": (
+            bool(border_padding_values)
+            and min(border_padding_values) >= 7
+            and all(
+                point_value(paragraph.paragraph_format.space_before) >= 3
+                and point_value(paragraph.paragraph_format.space_after) >= 3
+                for paragraph in border_paragraphs
+            )
+        ),
+        "sectionDensity": dense_section_count == 0,
         "renderedPageInflation": (
             rendered_page_count is None
             or rendered_page_count <= source_page_count + 1
@@ -336,6 +506,14 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
                 "textRetentionRatio": round(retention_ratio, 4),
                 "paragraphCount": len(meaningful_paragraphs),
                 "editableWordCount": len(docx_text.split()),
+                "averageWordsPerParagraph": round(
+                    average_words_per_paragraph,
+                    2,
+                ),
+                "averageEstimatedLinesPerParagraph": round(
+                    average_estimated_lines_per_paragraph,
+                    2,
+                ),
                 "imageCount": len(document.inline_shapes),
                 "logoPresent": len(document.inline_shapes) > 0,
                 "logoBackgroundAcceptable": logo_background_acceptable,
@@ -351,6 +529,11 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
                 "mixedBoldParagraphCount": len(mixed_bold_paragraphs),
                 "emptyBulletCount": len(empty_bullets),
                 "structuralPageWordCounts": structural_page_word_counts,
+                "structuralPageParagraphCounts": (
+                    structural_page_paragraph_counts
+                ),
+                "estimatedVerticalFillRatios": vertical_fill_ratios,
+                "denseSectionCount": dense_section_count,
                 "estimatedPageCount": len(document.sections),
                 "renderedPageCount": rendered_page_count,
                 "renderedPageWordCounts": rendered_page_word_counts,
@@ -360,12 +543,62 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
                     else structural_quasi_empty_pages
                 ),
                 "explicitPageBreakCount": explicit_page_breaks,
+                "exactLineRuleParagraphCount": len(
+                    exact_line_rule_paragraphs
+                ),
+                "lineSpacing": {
+                    "minimum": round(min(line_spacing_values), 4),
+                    "maximum": round(max(line_spacing_values), 4),
+                    "average": round(
+                        sum(line_spacing_values) / len(line_spacing_values),
+                        4,
+                    ),
+                    "longParagraphMinimum": round(
+                        min(long_line_spacing_values),
+                        4,
+                    ),
+                    "ordinaryParagraphMinimum": round(
+                        min(ordinary_line_spacing_values),
+                        4,
+                    ),
+                    "listMinimum": round(
+                        min(list_line_spacing_values),
+                        4,
+                    ),
+                },
+                "paragraphSpacingPoints": {
+                    "beforeMaximum": round(
+                        max(paragraph_space_before_values),
+                        2,
+                    ),
+                    "afterMinimum": round(
+                        min(paragraph_space_after_values),
+                        2,
+                    ),
+                    "afterMaximum": round(
+                        max(paragraph_space_after_values),
+                        2,
+                    ),
+                    "afterAverage": round(
+                        sum(paragraph_space_after_values)
+                        / len(paragraph_space_after_values),
+                        2,
+                    ),
+                },
+                "borderPaddingPoints": border_padding_values,
                 "pageMeasurement": (
                     "libreoffice"
                     if rendered_page_count is not None
                     else "sections-docx"
                 ),
                 "renderWarning": render_reason,
+                "readabilityStatus": (
+                    "KO"
+                    if not all(checks.values())
+                    else "R"
+                    if rendered_page_count is None
+                    else "OK"
+                ),
                 "highlightPresent": highlight_present,
                 "borderPresent": border_present,
                 "warnings": list(artifact.warnings),

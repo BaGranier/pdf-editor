@@ -155,19 +155,21 @@ class PdfToDocxConverter:
         styles = document.styles
         styles["Normal"].font.name = "Arial"
         styles["Normal"].font.size = Pt(11)
-        styles["Normal"].paragraph_format.space_after = Pt(0)
-        styles["Normal"].paragraph_format.line_spacing = 1
+        styles["Normal"].paragraph_format.space_after = Pt(2)
+        styles["Normal"].paragraph_format.line_spacing = 1.1
         styles["Title"].font.name = "Arial"
         styles["Title"].font.size = Pt(20)
         styles["Title"].font.bold = True
         styles["Title"].paragraph_format.space_before = Pt(0)
-        styles["Title"].paragraph_format.space_after = Pt(2)
+        styles["Title"].paragraph_format.space_after = Pt(3)
+        styles["Title"].paragraph_format.line_spacing = 1.04
         for style_name, size in (("Heading 1", 15), ("Heading 2", 13)):
             styles[style_name].font.name = "Arial"
             styles[style_name].font.size = Pt(size)
             styles[style_name].font.bold = True
-            styles[style_name].paragraph_format.space_before = Pt(2)
-            styles[style_name].paragraph_format.space_after = Pt(1)
+            styles[style_name].paragraph_format.space_before = Pt(4.5)
+            styles[style_name].paragraph_format.space_after = Pt(2.5)
+            styles[style_name].paragraph_format.line_spacing = 1.06
 
     @staticmethod
     def _configure_page_size(section: Any, rectangle: fitz.Rect) -> None:
@@ -583,12 +585,26 @@ class PdfToDocxConverter:
         ]
         if not lines:
             return
-        for line_group in self._group_lines(lines, page.rect):
-            if self._is_list_line(line_group[0]):
+        line_groups = self._group_lines(lines, page.rect)
+        for group_index, line_group in enumerate(line_groups):
+            is_list = self._is_list_line(line_group[0])
+            if is_list:
                 self._append_list_lines(
                     document,
                     line_group,
                     yellow_rectangles=yellow_rectangles,
+                    starts_list=(
+                        group_index == 0
+                        or not self._is_list_line(
+                            line_groups[group_index - 1][0]
+                        )
+                    ),
+                    ends_list=(
+                        group_index == len(line_groups) - 1
+                        or not self._is_list_line(
+                            line_groups[group_index + 1][0]
+                        )
+                    ),
                 )
                 continue
             self._append_text_paragraph(
@@ -623,6 +639,7 @@ class PdfToDocxConverter:
             for line in lines
             for span in line.get("spans", [])
         )
+        bold_ratio = self._bold_text_ratio(lines)
         is_wide = block_rectangle.width > page.rect.width * 0.6
         centered = (
             text_length <= 100
@@ -634,6 +651,7 @@ class PdfToDocxConverter:
             regular_size,
             centered=centered,
             text_length=text_length,
+            bold_ratio=bold_ratio,
         )
         paragraph = document.add_paragraph(style=style)
         if centered:
@@ -645,9 +663,20 @@ class PdfToDocxConverter:
         paragraph.paragraph_format.keep_together = style != "Normal"
         paragraph.paragraph_format.keep_with_next = style != "Normal"
         paragraph.paragraph_format.widow_control = True
-        if style == "Normal":
-            paragraph.paragraph_format.space_after = Pt(0)
-            paragraph.paragraph_format.line_spacing = 1
+        if style == "Title":
+            paragraph.paragraph_format.space_before = Pt(0)
+            paragraph.paragraph_format.space_after = Pt(3)
+            paragraph.paragraph_format.line_spacing = 1.04
+        elif style.startswith("Heading"):
+            paragraph.paragraph_format.space_before = Pt(4.5)
+            paragraph.paragraph_format.space_after = Pt(2.5)
+            paragraph.paragraph_format.line_spacing = 1.06
+        else:
+            paragraph.paragraph_format.space_before = Pt(0)
+            paragraph.paragraph_format.space_after = Pt(2)
+            paragraph.paragraph_format.line_spacing = (
+                1.14 if text_length >= 120 else 1.1
+            )
 
         previous_text = ""
         for line_index, line in enumerate(lines):
@@ -674,6 +703,27 @@ class PdfToDocxConverter:
             for rectangle in border_rectangles
         ):
             self._add_paragraph_border(paragraph)
+
+    @staticmethod
+    def _bold_text_ratio(lines: list[dict[str, Any]]) -> float:
+        bold_characters = 0
+        total_characters = 0
+        for line in lines:
+            for span in line.get("spans", []):
+                text = str(span.get("text", "")).strip()
+                if not text:
+                    continue
+                character_count = len(text)
+                total_characters += character_count
+                flags = int(span.get("flags", 0))
+                font_name = str(span.get("font", "")).lower()
+                if bool(flags & 16) or "bold" in font_name:
+                    bold_characters += character_count
+        return (
+            bold_characters / total_characters
+            if total_characters
+            else 0
+        )
 
     @classmethod
     def _group_lines(
@@ -777,6 +827,8 @@ class PdfToDocxConverter:
         lines: list[dict[str, Any]],
         *,
         yellow_rectangles: list[fitz.Rect],
+        starts_list: bool,
+        ends_list: bool,
     ) -> None:
         line = lines[0]
         spans = line.get("spans", [])
@@ -799,10 +851,11 @@ class PdfToDocxConverter:
             style="List Number" if numbered else "List Bullet"
         )
         paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        paragraph.paragraph_format.left_indent = Pt(14)
-        paragraph.paragraph_format.first_line_indent = Pt(-10)
-        paragraph.paragraph_format.space_after = Pt(0)
-        paragraph.paragraph_format.line_spacing = 1
+        paragraph.paragraph_format.left_indent = Pt(18)
+        paragraph.paragraph_format.first_line_indent = Pt(-12)
+        paragraph.paragraph_format.space_before = Pt(2.5 if starts_list else 0)
+        paragraph.paragraph_format.space_after = Pt(4 if ends_list else 0.75)
+        paragraph.paragraph_format.line_spacing = 1.08
         paragraph.paragraph_format.keep_together = False
         paragraph.paragraph_format.widow_control = True
         remaining_prefix = marker.end()
@@ -843,6 +896,7 @@ class PdfToDocxConverter:
         *,
         centered: bool,
         text_length: int,
+        bold_ratio: float,
     ) -> str:
         if (
             centered
@@ -853,6 +907,12 @@ class PdfToDocxConverter:
         if text_length < 160 and largest_size >= max(18, regular_size * 1.55):
             return "Title" if centered else "Heading 1"
         if text_length < 180 and largest_size >= max(13.5, regular_size * 1.22):
+            return "Heading 2"
+        if (
+            not centered
+            and text_length <= 110
+            and bold_ratio >= 0.8
+        ):
             return "Heading 2"
         return "Normal"
 
@@ -923,6 +983,9 @@ class PdfToDocxConverter:
 
     @staticmethod
     def _add_paragraph_border(paragraph: Any) -> None:
+        paragraph.paragraph_format.space_before = Pt(4)
+        paragraph.paragraph_format.space_after = Pt(4)
+        paragraph.paragraph_format.line_spacing = 1.12
         paragraph_properties = paragraph._p.get_or_add_pPr()
         borders = paragraph_properties.find(qn("w:pBdr"))
         if borders is None:
@@ -932,6 +995,6 @@ class PdfToDocxConverter:
             edge = OxmlElement(f"w:{edge_name}")
             edge.set(qn("w:val"), "single")
             edge.set(qn("w:sz"), "8")
-            edge.set(qn("w:space"), "5")
+            edge.set(qn("w:space"), "8")
             edge.set(qn("w:color"), "333333")
             borders.append(edge)

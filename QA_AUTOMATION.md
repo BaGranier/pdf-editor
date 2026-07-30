@@ -121,6 +121,12 @@ les sections Word, les sauts explicites et les pages quasi vides. LibreOffice
 fournit le nombre de pages rendu lorsqu'il est utilisable ; sinon le rapport
 indique explicitement la mesure structurelle et la réserve. Le rapport
 Markdown indique « non exécuté » lorsque la donnée privée locale est absente.
+La section « DOCX editable spacing quality » publie également les valeurs
+d'interlignage, les espacements avant/après, la marge interne de l'encadré et
+une estimation de densité par section, la moyenne de mots et de lignes estimées
+par paragraphe, sans reprendre le texte privé. Le statut de lisibilité devient
+un échec si les paragraphes longs sont compactés sous 1,12, même lorsque le
+document tient dans ses trois sections structurelles.
 
 ## Isolation et diagnostics
 
