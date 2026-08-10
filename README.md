@@ -5,10 +5,14 @@ Local-first web MVP for a PDF editor.
 ## Structure
 
 - `apps/web`: Vite + React + TypeScript frontend
+- `apps/desktop`: Tauri v2 native shell and local backend lifecycle
 - `services/pdf-engine`: FastAPI backend
 - `packages/shared`: shared schemas and types
 - `data/input`: sample PDFs
 - `data/output`: generated PDFs
+
+Le développement et le packaging natifs sont documentés dans
+[DESKTOP.md](DESKTOP.md).
 
 ## Frontend
 

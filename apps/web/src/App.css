@@ -92,6 +92,41 @@ body {
   color: var(--text-primary);
 }
 
+.desktop-app-shell {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.desktop-backend-state {
+  min-height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.desktop-backend-state p {
+  margin: 0;
+}
+
+.desktop-backend-log {
+  max-width: 48rem;
+  overflow-wrap: anywhere;
+}
+
+.desktop-backend-ready {
+  margin: 0;
+  padding: 0.35rem 1rem;
+  color: var(--text-secondary);
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.8rem;
+  text-align: right;
+}
+
 button,
 input,
 select {

@@ -56,6 +56,7 @@ import {
   renderPdfTextLayer,
   type PdfTextLayerRenderTask,
 } from "./pdf/textLayer";
+import { getWebBackendBaseUrl } from "./api/backend";
 import "./App.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -64,7 +65,6 @@ const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.1;
 const VIEWER_PAN_STEP = 56;
-const PDF_ENGINE_URL = import.meta.env.VITE_PDF_ENGINE_URL ?? "http://localhost:8000";
 const DEFAULT_RECOMMENDED_MAX_FILE_SIZE_MB = 50;
 const DEFAULT_RECOMMENDED_MAX_PAGE_COUNT = 250;
 const DEFAULT_RECOMMENDED_MAX_OPEN_DOCUMENTS = 8;
@@ -1638,7 +1638,11 @@ function EmptyState({ status, mode }: EmptyStateProps) {
   );
 }
 
-export function App() {
+type AppProps = {
+  backendUrl?: string;
+};
+
+export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const storedPreferences = useMemo(() => loadViewerPreferences(), []);
   const nextDocumentId = useRef(1);
   const documentsRef = useRef<OpenPdfDocument[]>([]);
@@ -2444,7 +2448,7 @@ export function App() {
     setExportFeedback(null);
 
     try {
-      const response = await fetch(`${PDF_ENGINE_URL}/pdf/export/organize`, {
+      const response = await fetch(`${backendUrl}/pdf/export/organize`, {
         method: "POST",
         body: formData,
       });
@@ -2515,7 +2519,7 @@ export function App() {
     } finally {
       setIsExporting(false);
     }
-  }, [activeDocument, activeOrganizationPlan, documents, openGeneratedPdfDocument, outputName, saveToOutputDir]);
+  }, [activeDocument, activeOrganizationPlan, backendUrl, documents, openGeneratedPdfDocument, outputName, saveToOutputDir]);
 
   const runOcrOnActiveDocument = useCallback(
     async (options: OcrOptions) => {
@@ -2532,7 +2536,7 @@ export function App() {
 
       try {
         const returnedFile = await requestOcrPdf(
-          PDF_ENGINE_URL,
+          backendUrl,
           sourceFile,
           options,
         );
@@ -2561,7 +2565,7 @@ export function App() {
         setIsOcrProcessing(false);
       }
     },
-    [activeDocument, isOcrProcessing, openGeneratedPdfDocument],
+    [activeDocument, backendUrl, isOcrProcessing, openGeneratedPdfDocument],
   );
 
   const convertActiveDocument = useCallback(
@@ -2577,7 +2581,7 @@ export function App() {
 
       try {
         const conversion = await requestConversion(
-          PDF_ENGINE_URL,
+          backendUrl,
           sourceDocument.file,
           options,
           sourceDocument.fileName,
@@ -2609,7 +2613,7 @@ export function App() {
         setIsConverting(false);
       }
     },
-    [activeDocument, isConverting],
+    [activeDocument, backendUrl, isConverting],
   );
 
   const removeMissingSourcePages = useCallback(() => {

@@ -8,6 +8,11 @@ __pycache__/
 dist/
 build/
 *.tsbuildinfo
+target/
+apps/desktop/src-tauri/binaries/pdf-engine-*
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/.tauri/
+*.spec
 apps/web/e2e/fixtures/pdf-large.pdf
 apps/web/test-results/
 QA_AUTOMATED_REPORT.md
@@ -23,3 +28,6 @@ data/input/**/*.pdf
 .env
 .env.*
 .codex/
+/.cargo/
+/.rustup/
+/.toolchains/

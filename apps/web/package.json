@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "typecheck:e2e": "tsc --noEmit -p tsconfig.e2e.json",
     "test": "vitest",
     "test:run": "vitest run",
     "preview": "vite preview",
@@ -22,6 +24,7 @@
     "qa:report": "python3 ../../scripts/generate-qa-report.py"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
     "@vitejs/plugin-react": "^4.3.4",
     "pdfjs-dist": "^6.1.200",
     "react": "^19.0.0",

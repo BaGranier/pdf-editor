@@ -1,0 +1,16 @@
+{
+  "name": "@pdf-editor-mvp/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "web:dev": "npm --prefix ../web run dev -- --host 127.0.0.1 --port 5173 --strictPort",
+    "web:build": "npm --prefix ../web run build",
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "python3 ../../scripts/build-backend-sidecar.py && tauri build",
+    "desktop:check": "python3 ../../scripts/desktop-check.py"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}

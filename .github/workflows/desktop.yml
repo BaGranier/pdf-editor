@@ -1,0 +1,80 @@
+name: Desktop
+
+on:
+  push:
+    paths:
+      - "apps/desktop/**"
+      - "apps/web/**"
+      - "services/pdf-engine/**"
+      - "scripts/*desktop*.py"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "apps/desktop/**"
+      - "apps/web/**"
+      - "services/pdf-engine/**"
+      - "scripts/*desktop*.py"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            apps/desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@1.88.0
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: services/pdf-engine/uv.lock
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install project dependencies
+        run: |
+          npm ci --prefix apps/web
+          npm ci --prefix apps/desktop
+          uv sync --directory services/pdf-engine --locked
+
+      - name: Check Rust version
+        run: rustc --version
+
+      - name: Frontend desktop tests and build
+        run: |
+          npm --prefix apps/web run test:run -- \
+            src/api/backend.test.ts \
+            src/components/DesktopBackendGate.test.tsx
+          npm --prefix apps/web run build
+
+      - name: Backend desktop tests
+        working-directory: services/pdf-engine
+        run: uv run pytest tests/test_desktop_server.py
+
+      - name: Tauri cargo check
+        working-directory: apps/desktop/src-tauri
+        run: cargo check --locked
+
+      - name: Desktop configuration check
+        working-directory: apps/desktop
+        run: npm run desktop:check
