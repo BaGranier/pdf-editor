@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 export type ValidatedPdf = {
   valid: boolean;
   pageCount: number;
+  imageCount: number;
   text: string;
   pages: Array<{
     width: number;

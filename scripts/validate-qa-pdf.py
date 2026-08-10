@@ -7,6 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
+import fitz
 from pypdf import PdfReader
 
 
@@ -17,9 +18,13 @@ def main() -> None:
     args = parser.parse_args()
 
     reader = PdfReader(args.pdf, strict=True)
+    with fitz.open(args.pdf) as fitz_document:
+        image_count = sum(len(page.get_images(full=True)) for page in fitz_document)
+
     result = {
         "valid": True,
         "pageCount": len(reader.pages),
+        "imageCount": image_count,
         "text": "\n".join(page.extract_text() or "" for page in reader.pages),
         "pages": [
             {

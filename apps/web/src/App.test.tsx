@@ -26,12 +26,16 @@ vi.mock("pdfjs-dist/build/pdf.worker.mjs?url", () => ({
 
 function createPdfDocumentMock(pageCount = 1) {
   const page = {
-    getViewport: vi.fn(() => ({
-      width: 800,
-      height: 1000,
-      scale: 1,
+    getViewport: vi.fn(({ scale = 1 }: { scale?: number } = {}) => ({
+      width: 800 * scale,
+      height: 1000 * scale,
+      scale,
       userUnit: 1,
       rotation: 0,
+      viewBox: [0, 0, 800, 1000],
+      transform: [scale, 0, 0, -scale, 0, 1000 * scale],
+      convertToPdfPoint: (x: number, y: number) => [x / scale, 1000 - y / scale],
+      convertToViewportPoint: (x: number, y: number) => [x * scale, (1000 - y) * scale],
     })),
     streamTextContent: vi.fn(() => new ReadableStream()),
     render: vi.fn(() => ({
@@ -346,6 +350,482 @@ describe("App", () => {
 
     fireEvent.keyDown(viewer, { key: "End" });
     expect(viewer).toHaveProperty("scrollTop", 1200);
+  });
+
+  it("adds, edits, styles, moves, zooms and deletes free text blocks", async () => {
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [
+          new File(["%PDF-1.4"], "texte.pdf", { type: "application/pdf" }),
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Couche d'édition de la page 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Texte" }));
+    expect(screen.getByRole("button", { name: "Texte" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    fireEvent.click(screen.getByLabelText("Couche d'édition de la page 1"), {
+      clientX: 100,
+      clientY: 150,
+    });
+
+    const input = await screen.findByLabelText("Texte ajouté page 1");
+    fireEvent.change(input, { target: { value: "Été 2026 : 42,50 !" } });
+    fireEvent.change(screen.getByLabelText("Police du texte"), {
+      target: { value: "Times" },
+    });
+    fireEvent.change(screen.getByLabelText("Taille du texte"), {
+      target: { value: "24" },
+    });
+    fireEvent.change(screen.getByLabelText("Couleur du texte"), {
+      target: { value: "#c026d3" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Gras" }));
+
+    expect(input).toHaveValue("Été 2026 : 42,50 !");
+    expect(input).toHaveStyle({
+      color: "#c026d3",
+      fontFamily: "Times",
+      fontSize: "24px",
+      fontWeight: "700",
+    });
+
+    const block = input.closest<HTMLElement>(".pdf-text-edit");
+    expect(block).not.toBeNull();
+    expect(block).toHaveStyle({ left: "100px", top: "150px" });
+
+    fireEvent.mouseDown(
+      screen.getByRole("button", { name: "Déplacer le bloc de texte page 1" }),
+      { button: 0, clientX: 100, clientY: 150 },
+    );
+    fireEvent.mouseMove(window, { clientX: 140, clientY: 170 });
+    fireEvent.mouseUp(window);
+
+    expect(block).toHaveStyle({ left: "140px", top: "170px" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Augmenter le zoom" }));
+
+    await waitFor(() => {
+      expect(block).toHaveStyle({ left: "154px", top: "187px" });
+      expect(input).toHaveStyle({ fontSize: "26.4px" });
+    });
+    expect(input).toHaveValue("Été 2026 : 42,50 !");
+
+    fireEvent.click(screen.getByRole("button", { name: "Supprimer le bloc" }));
+    expect(screen.queryByLabelText("Texte ajouté page 1")).not.toBeInTheDocument();
+  });
+
+  it("exports text operations for several source pages", async () => {
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.resolve(createPdfDocumentMock(2)),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+    const fetchMock = vi.fn().mockRejectedValue(new Error("stop after request"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [
+          new File(["%PDF-1.4"], "multi-texte.pdf", {
+            type: "application/pdf",
+          }),
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Couche d'édition de la page 2")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Texte" }));
+    fireEvent.click(screen.getByLabelText("Couche d'édition de la page 1"), {
+      clientX: 60,
+      clientY: 80,
+    });
+    fireEvent.change(screen.getByLabelText("Texte ajouté page 1"), {
+      target: { value: "Premier bloc" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Texte" }));
+    fireEvent.click(screen.getByLabelText("Couche d'édition de la page 2"), {
+      clientX: 120,
+      clientY: 140,
+    });
+    fireEvent.change(screen.getByLabelText("Texte ajouté page 2"), {
+      target: { value: "Deuxième bloc" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(screen.getByRole("button", { name: "Exporter le PDF" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const [, request] = fetchMock.mock.calls[0] as [string, { body: FormData }];
+    const plan = JSON.parse(String(request.body.get("plan"))) as {
+      edits: Array<{
+        type: string;
+        page: number;
+        text: string;
+        sourceDocumentId: string;
+        rect: { x0: number; y0: number; x1: number; y1: number };
+      }>;
+    };
+
+    expect(plan.edits).toHaveLength(2);
+    expect(plan.edits.map((edit) => [edit.page, edit.text])).toEqual([
+      [1, "Premier bloc"],
+      [2, "Deuxième bloc"],
+    ]);
+    expect(plan.edits[0].sourceDocumentId).toBeTruthy();
+    expect(plan.edits[0].rect).toEqual({
+      x0: 60,
+      y0: 848,
+      x1: 280,
+      y1: 920,
+    });
+
+    vi.unstubAllGlobals();
+  });
+
+  it("draws, places, moves, resizes, zooms and deletes a visual signature", async () => {
+    const context = {
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      closePath: vi.fn(),
+      clearRect: vi.fn(),
+      lineCap: "butt",
+      lineJoin: "miter",
+      lineWidth: 1,
+      strokeStyle: "#000000",
+    } as unknown as CanvasRenderingContext2D;
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(context);
+    const toDataUrl = vi
+      .spyOn(HTMLCanvasElement.prototype, "toDataURL")
+      .mockReturnValue("data:image/png;base64,c2lnbmF0dXJl");
+
+    render(<App />);
+    const sidebar = screen.getByRole("complementary", {
+      name: "Documents ouverts",
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [
+          new File(["%PDF-1.4"], "signature.pdf", {
+            type: "application/pdf",
+          }),
+        ],
+      },
+    });
+    await screen.findByLabelText("Couche d'édition de la page 1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Signature" }));
+    const canvas = screen.getByLabelText("Zone de dessin de la signature");
+    fireEvent.pointerDown(canvas, {
+      button: 0,
+      pointerId: 1,
+      pointerType: "mouse",
+      clientX: 10,
+      clientY: 10,
+    });
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 100, clientY: 40 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 100, clientY: 40 });
+    fireEvent.click(screen.getByRole("button", { name: "Valider la signature" }));
+
+    expect(screen.getByRole("button", { name: "Signature" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    fireEvent.click(screen.getByLabelText("Couche d'édition de la page 1"), {
+      clientX: 100,
+      clientY: 150,
+    });
+
+    const signature = await screen.findByAltText("Signature visuelle page 1");
+    const block = signature.closest<HTMLElement>(".pdf-signature-edit");
+    expect(block).toHaveStyle({
+      left: "100px",
+      top: "150px",
+      width: "180px",
+      height: "60px",
+    });
+
+    fireEvent.mouseDown(block!, { button: 0, clientX: 100, clientY: 150 });
+    fireEvent.mouseMove(window, { clientX: 140, clientY: 170 });
+    fireEvent.mouseUp(window);
+    expect(block).toHaveStyle({ left: "140px", top: "170px" });
+
+    fireEvent.mouseDown(
+      screen.getByRole("button", { name: "Redimensionner la signature page 1" }),
+      { button: 0, clientX: 320, clientY: 230 },
+    );
+    fireEvent.mouseMove(window, { clientX: 410, clientY: 260 });
+    fireEvent.mouseUp(window);
+    expect(block).toHaveStyle({ width: "270px", height: "90px" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Augmenter le zoom" }));
+    await waitFor(() => {
+      expect(block).toHaveStyle({
+        left: "154px",
+        top: "187px",
+        width: "297px",
+        height: "99px",
+      });
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Supprimer la signature page 1" }),
+    );
+    expect(
+      screen.queryByAltText("Signature visuelle page 1"),
+    ).not.toBeInTheDocument();
+
+    getContext.mockRestore();
+    toDataUrl.mockRestore();
+  });
+
+  it("exports signature placement and its local image payload", async () => {
+    const context = {
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      closePath: vi.fn(),
+      clearRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D;
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(context);
+    const toDataUrl = vi
+      .spyOn(HTMLCanvasElement.prototype, "toDataURL")
+      .mockReturnValue("data:image/png;base64,c2lnbmF0dXJl");
+    const fetchMock = vi.fn().mockRejectedValue(new Error("stop after request"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    const sidebar = screen.getByRole("complementary", {
+      name: "Documents ouverts",
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [new File(["%PDF-1.4"], "signed.pdf", { type: "application/pdf" })],
+      },
+    });
+    await screen.findByLabelText("Couche d'édition de la page 1");
+    fireEvent.click(screen.getByRole("button", { name: "Signature" }));
+    const canvas = screen.getByLabelText("Zone de dessin de la signature");
+    fireEvent.pointerDown(canvas, { button: 0, pointerId: 1, pointerType: "mouse" });
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 40, clientY: 20 });
+    fireEvent.pointerUp(canvas, { pointerId: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Valider la signature" }));
+    fireEvent.click(screen.getByLabelText("Couche d'édition de la page 1"), {
+      clientX: 75,
+      clientY: 125,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(screen.getByRole("button", { name: "Exporter le PDF" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const [, request] = fetchMock.mock.calls[0] as [string, { body: FormData }];
+    const plan = JSON.parse(String(request.body.get("plan"))) as {
+      signatures: Array<{
+        type: string;
+        page: number;
+        imageId: string;
+        sourceDocumentId: string;
+        rect: { x0: number; y0: number; x1: number; y1: number };
+      }>;
+      signatureImages: Array<{
+        id: string;
+        mimeType: string;
+        dataUrl: string;
+        width: number;
+        height: number;
+      }>;
+    };
+
+    expect(plan.signatures).toHaveLength(1);
+    expect(plan.signatures[0]).toEqual(
+      expect.objectContaining({
+        type: "signature",
+        page: 1,
+        sourceDocumentId: expect.any(String),
+        rect: { x0: 75, y0: 815, x1: 255, y1: 875 },
+      }),
+    );
+    expect(plan.signatureImages).toEqual([
+      expect.objectContaining({
+        id: plan.signatures[0].imageId,
+        mimeType: "image/png",
+        dataUrl: "data:image/png;base64,c2lnbmF0dXJl",
+        width: 900,
+        height: 300,
+      }),
+    ]);
+
+    getContext.mockRestore();
+    toDataUrl.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("coordinates tools, stacking, common selection and keyboard deletion", async () => {
+    const context = {
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      closePath: vi.fn(),
+      clearRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(
+      "data:image/png;base64,c2lnbmF0dXJl",
+    );
+
+    render(<App />);
+    const sidebar = screen.getByRole("complementary", {
+      name: "Documents ouverts",
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [new File(["%PDF-1.4"], "core.pdf", { type: "application/pdf" })],
+      },
+    });
+    const layer = await screen.findByLabelText("Couche d'édition de la page 1");
+    const selectTool = screen.getByRole("button", { name: "Sélection" });
+    const textTool = screen.getByRole("button", { name: "Texte" });
+    const signatureTool = screen.getByRole("button", { name: "Signature" });
+    expect(selectTool).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(textTool);
+    expect(textTool).toHaveAttribute("aria-pressed", "true");
+    expect(signatureTool).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(layer, { clientX: 100, clientY: 150 });
+    const firstText = await screen.findByLabelText("Texte ajouté page 1");
+    fireEvent.change(firstText, { target: { value: "Premier objet" } });
+    expect(selectTool).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(signatureTool);
+    expect(signatureTool).toHaveAttribute("aria-pressed", "true");
+    expect(textTool).toHaveAttribute("aria-pressed", "false");
+    const canvas = screen.getByLabelText("Zone de dessin de la signature");
+    fireEvent.pointerDown(canvas, { button: 0, pointerId: 1, pointerType: "mouse" });
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 40, clientY: 20 });
+    fireEvent.pointerUp(canvas, { pointerId: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Valider la signature" }));
+    fireEvent.click(layer, { clientX: 110, clientY: 160 });
+    const signature = await screen.findByAltText("Signature visuelle page 1");
+
+    let objectClasses = Array.from(
+      layer.querySelectorAll(".pdf-text-edit, .pdf-signature-edit"),
+    ).map((element) => element.classList[0]);
+    expect(objectClasses).toEqual(["pdf-text-edit", "pdf-signature-edit"]);
+    expect(signature.closest(".pdf-signature-edit")).toHaveClass("is-selected");
+
+    fireEvent.click(textTool);
+    fireEvent.click(layer, { clientX: 120, clientY: 170 });
+    const textInputs = await screen.findAllByLabelText("Texte ajouté page 1");
+    fireEvent.change(textInputs[1], { target: { value: "Objet au-dessus" } });
+    objectClasses = Array.from(
+      layer.querySelectorAll(".pdf-text-edit, .pdf-signature-edit"),
+    ).map((element) => element.classList[0]);
+    expect(objectClasses).toEqual([
+      "pdf-text-edit",
+      "pdf-signature-edit",
+      "pdf-text-edit",
+    ]);
+
+    fireEvent.click(layer);
+    expect(
+      screen.queryByRole("region", { name: "Propriétés du texte ajouté" }),
+    ).not.toBeInTheDocument();
+    expect(signature.closest(".pdf-signature-edit")).not.toHaveClass("is-selected");
+
+    fireEvent.click(signature);
+    const viewer = screen.getByRole("region", { name: "Aperçu PDF core.pdf" });
+    viewer.focus();
+    fireEvent.keyDown(viewer, { key: "Delete" });
+    expect(screen.queryByAltText("Signature visuelle page 1")).not.toBeInTheDocument();
+
+    fireEvent.click(textInputs[1]);
+    fireEvent.keyDown(textInputs[1], { key: "Backspace" });
+    expect(screen.getAllByLabelText("Texte ajouté page 1")).toHaveLength(2);
+    viewer.focus();
+    fireEvent.keyDown(viewer, { key: "Backspace" });
+    expect(screen.getAllByLabelText("Texte ajouté page 1")).toHaveLength(1);
+  });
+
+  it("isolates heterogeneous edits while switching between documents", async () => {
+    const context = {
+      beginPath: vi.fn(),
+      moveTo: vi.fn(),
+      lineTo: vi.fn(),
+      stroke: vi.fn(),
+      closePath: vi.fn(),
+      clearRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(
+      "data:image/png;base64,c2lnbmF0dXJl",
+    );
+    render(<App />);
+    const sidebar = screen.getByRole("complementary", {
+      name: "Documents ouverts",
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [
+          new File(["%PDF-A"], "document-a.pdf", { type: "application/pdf" }),
+          new File(["%PDF-B"], "document-b.pdf", { type: "application/pdf" }),
+        ],
+      },
+    });
+    let layer = await screen.findByLabelText("Couche d'édition de la page 1");
+    fireEvent.click(screen.getByRole("button", { name: "Texte" }));
+    fireEvent.click(layer, { clientX: 80, clientY: 100 });
+    fireEvent.change(await screen.findByLabelText("Texte ajouté page 1"), {
+      target: { value: "Texte B" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "document-a.pdf" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("region", { name: "Aperçu PDF document-a.pdf" }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByLabelText("Texte ajouté page 1")).not.toBeInTheDocument();
+    layer = screen.getByLabelText("Couche d'édition de la page 1");
+    fireEvent.click(screen.getByRole("button", { name: "Signature" }));
+    const canvas = screen.getByLabelText("Zone de dessin de la signature");
+    fireEvent.pointerDown(canvas, { button: 0, pointerId: 1, pointerType: "mouse" });
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(canvas, { pointerId: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Valider la signature" }));
+    fireEvent.click(layer, { clientX: 90, clientY: 110 });
+    expect(await screen.findByAltText("Signature visuelle page 1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "document-b.pdf" }));
+    await screen.findByRole("region", { name: "Aperçu PDF document-b.pdf" });
+    expect(screen.getByLabelText("Texte ajouté page 1")).toHaveValue("Texte B");
+    expect(screen.queryByAltText("Signature visuelle page 1")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "document-a.pdf" }));
+    await screen.findByRole("region", { name: "Aperçu PDF document-a.pdf" });
+    expect(screen.getByAltText("Signature visuelle page 1")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Texte ajouté page 1")).not.toBeInTheDocument();
   });
 
   it("discards a failed restored document and releases its PDF loading task", async () => {

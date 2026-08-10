@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import io
 import json
 import logging
@@ -7,10 +9,17 @@ import re
 from pathlib import Path
 from typing import Annotated, Literal
 
+import fitz
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
 
@@ -37,9 +46,70 @@ class OrganizeExportPage(BaseModel):
         return value % 360
 
 
+class PdfEditRect(BaseModel):
+    x0: float = Field(allow_inf_nan=False)
+    y0: float = Field(allow_inf_nan=False)
+    x1: float = Field(allow_inf_nan=False)
+    y1: float = Field(allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_dimensions(self) -> "PdfEditRect":
+        if self.x1 <= self.x0 or self.y1 <= self.y0:
+            raise ValueError("Le rectangle d'édition doit avoir une surface positive.")
+        return self
+
+
+class AddTextStyle(BaseModel):
+    font_family: Literal["Helvetica", "Times", "Courier"] = Field(alias="fontFamily")
+    font_size: float = Field(alias="fontSize", ge=6, le=144, allow_inf_nan=False)
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    bold: bool = False
+
+
+class AddTextEdit(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    type: Literal["add_text"]
+    source_document_id: str | None = Field(
+        default=None,
+        alias="sourceDocumentId",
+    )
+    page: int = Field(ge=1)
+    rect: PdfEditRect
+    text: str = Field(max_length=10_000)
+    style: AddTextStyle
+    order: int = Field(default=0, ge=0)
+
+
+class SignatureImagePayload(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    mime_type: Literal["image/png", "image/jpeg"] = Field(alias="mimeType")
+    data_url: str = Field(alias="dataUrl", min_length=1, max_length=7_100_000)
+    width: int = Field(gt=0, le=20_000)
+    height: int = Field(gt=0, le=20_000)
+
+
+class SignatureEdit(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    type: Literal["signature"]
+    source_document_id: str | None = Field(
+        default=None,
+        alias="sourceDocumentId",
+    )
+    page: int = Field(ge=1)
+    rect: PdfEditRect
+    image_id: str = Field(alias="imageId", min_length=1, max_length=200)
+    order: int = Field(default=0, ge=0)
+
+
 class OrganizeExportPlan(BaseModel):
     output_name: str | None = Field(default=None, alias="outputName")
     pages: list[OrganizeExportPage]
+    edits: list[AddTextEdit] = Field(default_factory=list)
+    signatures: list[SignatureEdit] = Field(default_factory=list)
+    signature_images: list[SignatureImagePayload] = Field(
+        default_factory=list,
+        alias="signatureImages",
+    )
     save_to_output_dir: bool = Field(default=False, alias="saveToOutputDir")
 
 
@@ -177,33 +247,232 @@ def read_source_pdf(source: bytes) -> PdfReader:
     try:
         reader = PdfReader(io.BytesIO(source), strict=True)
     except (PdfReadError, ValueError) as error:
-        raise HTTPException(status_code=400, detail="Un fichier fourni n'est pas un PDF valide.") from error
+        raise HTTPException(
+            status_code=400, detail="Un fichier fourni n'est pas un PDF valide."
+        ) from error
 
     if reader.is_encrypted:
-        raise HTTPException(status_code=400, detail="Les PDF protégés ne sont pas pris en charge.")
+        raise HTTPException(
+            status_code=400, detail="Les PDF protégés ne sont pas pris en charge."
+        )
 
     return reader
 
 
+FONT_NAMES: dict[tuple[str, bool], str] = {
+    ("Helvetica", False): "helv",
+    ("Helvetica", True): "hebo",
+    ("Times", False): "tiro",
+    ("Times", True): "tibo",
+    ("Courier", False): "cour",
+    ("Courier", True): "cobo",
+}
+
+
+def _resolve_source_document_id(
+    source_document_id: str | None,
+    readers: dict[str, PdfReader],
+) -> str:
+    if source_document_id is None and len(readers) == 1:
+        return next(iter(readers))
+
+    if source_document_id not in readers:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Le document source {source_document_id!r} est introuvable.",
+        )
+    return source_document_id
+
+
+def _parse_hex_color(value: str) -> tuple[float, float, float]:
+    return tuple(int(value[index : index + 2], 16) / 255 for index in (1, 3, 5))
+
+
+MAX_SIGNATURE_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+def _decode_signature_image(image: SignatureImagePayload) -> bytes:
+    expected_prefix = f"data:{image.mime_type};base64,"
+    if not image.data_url.startswith(expected_prefix):
+        raise HTTPException(
+            status_code=422,
+            detail=f"Les données de l'image de signature {image.id!r} sont invalides.",
+        )
+
+    try:
+        decoded = base64.b64decode(
+            image.data_url[len(expected_prefix) :],
+            validate=True,
+        )
+    except (binascii.Error, ValueError) as error:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Les données de l'image de signature {image.id!r} sont invalides.",
+        ) from error
+
+    if not decoded or len(decoded) > MAX_SIGNATURE_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"L'image de signature {image.id!r} dépasse la taille autorisée.",
+        )
+    is_valid_png = image.mime_type == "image/png" and decoded.startswith(
+        b"\x89PNG\r\n\x1a\n"
+    )
+    is_valid_jpeg = (
+        image.mime_type == "image/jpeg"
+        and decoded.startswith(b"\xff\xd8")
+        and decoded.endswith(b"\xff\xd9")
+    )
+    if not is_valid_png and not is_valid_jpeg:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Le format de l'image de signature {image.id!r} est invalide.",
+        )
+    return decoded
+
+
+def apply_visual_edits(
+    source: bytes,
+    text_edits_by_output_page: dict[int, list[AddTextEdit]],
+    signature_edits_by_output_page: dict[int, list[SignatureEdit]],
+    signature_images: dict[str, bytes],
+) -> bytes:
+    if not text_edits_by_output_page and not signature_edits_by_output_page:
+        return source
+
+    try:
+        with fitz.open(stream=source, filetype="pdf") as document:
+            output_page_indexes = set(text_edits_by_output_page) | set(
+                signature_edits_by_output_page
+            )
+            for output_page_index in sorted(output_page_indexes):
+                page = document[output_page_index]
+                visual_edits: list[AddTextEdit | SignatureEdit] = [
+                    *text_edits_by_output_page.get(output_page_index, []),
+                    *signature_edits_by_output_page.get(output_page_index, []),
+                ]
+                for edit in sorted(visual_edits, key=lambda item: item.order):
+                    pdf_rect = fitz.Rect(
+                        edit.rect.x0,
+                        edit.rect.y0,
+                        edit.rect.x1,
+                        edit.rect.y1,
+                    )
+                    page_rect = pdf_rect * page.transformation_matrix
+                    if isinstance(edit, AddTextEdit):
+                        if not edit.text:
+                            continue
+                        spare_height = page.insert_textbox(
+                            page_rect,
+                            edit.text,
+                            fontname=FONT_NAMES[
+                                (edit.style.font_family, edit.style.bold)
+                            ],
+                            fontsize=edit.style.font_size,
+                            color=_parse_hex_color(edit.style.color),
+                            lineheight=1.2,
+                            overlay=True,
+                        )
+                        if spare_height < 0:
+                            raise HTTPException(
+                                status_code=422,
+                                detail=(
+                                    f"Le bloc de texte {edit.id!r} est trop petit "
+                                    "pour contenir son texte."
+                                ),
+                            )
+                    else:
+                        page.insert_image(
+                            page_rect,
+                            stream=signature_images[edit.image_id],
+                            keep_proportion=True,
+                            overlay=True,
+                        )
+            return document.tobytes(garbage=4, deflate=True)
+    except HTTPException:
+        raise
+    except (fitz.FileDataError, RuntimeError, ValueError) as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Les modifications visuelles n'ont pas pu être appliquées au PDF.",
+        ) from error
+
+
 def export_organized_pdf(sources: dict[str, bytes], plan: OrganizeExportPlan) -> bytes:
     if not plan.pages:
-        raise HTTPException(status_code=422, detail="Le plan d'organisation ne contient aucune page.")
+        raise HTTPException(
+            status_code=422, detail="Le plan d'organisation ne contient aucune page."
+        )
 
-    readers = {document_id: read_source_pdf(source) for document_id, source in sources.items()}
+    readers = {
+        document_id: read_source_pdf(source) for document_id, source in sources.items()
+    }
 
     writer = PdfWriter()
 
-    for page_plan in plan.pages:
-        source_document_id = page_plan.source_document_id
-        if source_document_id is None and len(readers) == 1:
-            source_document_id = next(iter(readers))
-
-        reader = readers.get(source_document_id or "")
-        if reader is None:
+    edits_by_source_page: dict[tuple[str, int], list[AddTextEdit]] = {}
+    for edit in plan.edits:
+        source_document_id = _resolve_source_document_id(
+            edit.source_document_id,
+            readers,
+        )
+        if edit.page > len(readers[source_document_id].pages):
             raise HTTPException(
                 status_code=422,
-                detail=f"Le document source {source_document_id!r} est introuvable.",
+                detail=(
+                    f"La page {edit.page} du bloc de texte {edit.id!r} " "est invalide."
+                ),
             )
+        edits_by_source_page.setdefault(
+            (source_document_id, edit.page - 1),
+            [],
+        ).append(edit)
+
+    signature_images: dict[str, bytes] = {}
+    for image in plan.signature_images:
+        if image.id in signature_images:
+            raise HTTPException(
+                status_code=422,
+                detail=f"L'identifiant d'image de signature {image.id!r} est dupliqué.",
+            )
+        signature_images[image.id] = _decode_signature_image(image)
+
+    signatures_by_source_page: dict[tuple[str, int], list[SignatureEdit]] = {}
+    for signature in plan.signatures:
+        source_document_id = _resolve_source_document_id(
+            signature.source_document_id,
+            readers,
+        )
+        if signature.page > len(readers[source_document_id].pages):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"La page {signature.page} de la signature {signature.id!r} "
+                    "est invalide."
+                ),
+            )
+        if signature.image_id not in signature_images:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"L'image {signature.image_id!r} de la signature "
+                    f"{signature.id!r} est introuvable."
+                ),
+            )
+        signatures_by_source_page.setdefault(
+            (source_document_id, signature.page - 1),
+            [],
+        ).append(signature)
+
+    edits_by_output_page: dict[int, list[AddTextEdit]] = {}
+    signatures_by_output_page: dict[int, list[SignatureEdit]] = {}
+
+    for output_page_index, page_plan in enumerate(plan.pages):
+        source_document_id = _resolve_source_document_id(
+            page_plan.source_document_id,
+            readers,
+        )
+        reader = readers[source_document_id]
 
         if page_plan.source_page_index >= len(reader.pages):
             raise HTTPException(
@@ -217,10 +486,25 @@ def export_organized_pdf(sources: dict[str, bytes], plan: OrganizeExportPlan) ->
         writer.add_page(reader.pages[page_plan.source_page_index])
         if page_plan.rotation:
             writer.pages[-1].rotate(page_plan.rotation)
+        page_edits = edits_by_source_page.get(
+            (source_document_id, page_plan.source_page_index),
+        )
+        if page_edits:
+            edits_by_output_page[output_page_index] = page_edits
+        page_signatures = signatures_by_source_page.get(
+            (source_document_id, page_plan.source_page_index),
+        )
+        if page_signatures:
+            signatures_by_output_page[output_page_index] = page_signatures
 
     output = io.BytesIO()
     writer.write(output)
-    return output.getvalue()
+    return apply_visual_edits(
+        output.getvalue(),
+        edits_by_output_page,
+        signatures_by_output_page,
+        signature_images,
+    )
 
 
 def get_output_path(output_name: str) -> Path:

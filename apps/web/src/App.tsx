@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type ChangeEvent,
@@ -11,7 +12,12 @@ import {
   type RefObject,
 } from "react";
 import * as pdfjsLib from "pdfjs-dist";
-import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from "pdfjs-dist";
+import type {
+  PDFDocumentLoadingTask,
+  PDFDocumentProxy,
+  PageViewport,
+  RenderTask,
+} from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import {
   clearStoredDocuments,
@@ -57,6 +63,22 @@ import {
   type PdfTextLayerRenderTask,
 } from "./pdf/textLayer";
 import { getWebBackendBaseUrl } from "./api/backend";
+import { PdfEditLayer } from "./components/PdfEditLayer";
+import { TextEditToolbar } from "./components/TextEditToolbar";
+import {
+  SignatureDialog,
+  type SignatureImageDraft,
+} from "./components/SignatureDialog";
+import {
+  DEFAULT_TEXT_STYLE,
+  type AddTextEdit,
+  type EditingTool,
+  type PdfEdit,
+  type PdfRect,
+  type SignatureEdit,
+  type SignatureImage,
+} from "./editing/types";
+import { pdfEditsReducer } from "./editing/state";
 import "./App.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -278,7 +300,7 @@ function isInteractiveElement(target: EventTarget | null) {
 
   return (
     target.closest(
-      "button, input, textarea, select, a[href], [contenteditable='true'], .textLayer",
+      "button, input, textarea, select, a[href], [contenteditable='true'], .textLayer, .pdf-edit-layer",
     ) !== null
   );
 }
@@ -317,17 +339,46 @@ type PdfPageCanvasProps = {
   pdfDocument: PDFDocumentProxy;
   pageNumber: number;
   zoom: number;
+  edits: PdfEdit[];
+  signatureImages: Record<string, SignatureImage>;
+  selectedEditId: string | null;
+  activeTool: EditingTool;
+  pendingSignatureImage: SignatureImage | null;
   scrollRootRef: RefObject<HTMLElement | null>;
   registerPageRef: (pageNumber: number, node: HTMLElement | null) => void;
+  onAddText: (pageNumber: number, rect: PdfRect) => void;
+  onPlaceSignature: (pageNumber: number, rect: PdfRect) => void;
+  onSelectEdit: (editId: string) => void;
+  onDeselectEdit: () => void;
+  onUpdateEdit: (edit: PdfEdit) => void;
+  onDeleteEdit: (editId: string) => void;
 };
 
-function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef, registerPageRef }: PdfPageCanvasProps) {
+function PdfPageCanvas({
+  pdfDocument,
+  pageNumber,
+  zoom,
+  edits,
+  signatureImages,
+  selectedEditId,
+  activeTool,
+  pendingSignatureImage,
+  scrollRootRef,
+  registerPageRef,
+  onAddText,
+  onPlaceSignature,
+  onSelectEdit,
+  onDeselectEdit,
+  onUpdateEdit,
+  onDeleteEdit,
+}: PdfPageCanvasProps) {
   const pageRef = useRef<HTMLElement | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
   const [shouldRender, setShouldRender] = useState(false);
   const [renderState, setRenderState] = useState<RenderState>("idle");
+  const [viewport, setViewport] = useState<PageViewport | null>(null);
 
   useEffect(() => {
     const pageElement = pageRef.current;
@@ -405,6 +456,7 @@ function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef, registerP
         surface.style.height = `${viewport.height}px`;
         surface.style.minWidth = "0";
         surface.style.minHeight = "0";
+        setViewport(viewport);
 
         context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
         context.clearRect(0, 0, viewport.width, viewport.height);
@@ -472,7 +524,15 @@ function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef, registerP
       aria-label={`Page ${pageNumber}`}
     >
       <div className="page-number">Page {pageNumber}</div>
-      <div ref={surfaceRef} className="page-surface">
+      <div
+        ref={surfaceRef}
+        className="page-surface"
+        onClick={() => {
+          if (activeTool === "select") {
+            onDeselectEdit();
+          }
+        }}
+      >
         {renderState === "error" ? (
           <p className="page-error">Impossible d'afficher cette page.</p>
         ) : null}
@@ -487,6 +547,22 @@ function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef, registerP
           className="textLayer pdf-text-layer"
           hidden
         />
+        {viewport ? (
+          <PdfEditLayer
+            pageNumber={pageNumber}
+            viewport={viewport}
+            edits={edits}
+            images={signatureImages}
+            selectedEditId={selectedEditId}
+            activeTool={activeTool}
+            pendingSignatureImage={pendingSignatureImage}
+            onAddText={(rect) => onAddText(pageNumber, rect)}
+            onPlaceSignature={(rect) => onPlaceSignature(pageNumber, rect)}
+            onSelect={onSelectEdit}
+            onUpdate={onUpdateEdit}
+            onDelete={onDeleteEdit}
+          />
+        ) : null}
       </div>
     </article>
   );
@@ -494,12 +570,39 @@ function PdfPageCanvas({ pdfDocument, pageNumber, zoom, scrollRootRef, registerP
 
 type PdfViewerProps = {
   document: OpenPdfDocument;
+  edits: PdfEdit[];
+  signatureImages: Record<string, SignatureImage>;
+  selectedEditId: string | null;
+  activeTool: EditingTool;
+  pendingSignatureImage: SignatureImage | null;
   onZoomChange: (documentId: string, delta: number) => void;
   onScrollPositionChange: (documentId: string, scrollLeft: number, scrollTop: number) => void;
+  onAddText: (pageNumber: number, rect: PdfRect) => void;
+  onPlaceSignature: (pageNumber: number, rect: PdfRect) => void;
+  onSelectEdit: (editId: string) => void;
+  onDeselectEdit: () => void;
+  onUpdateEdit: (edit: PdfEdit) => void;
+  onDeleteEdit: (editId: string) => void;
   focusRequest: number;
 };
 
-function PdfViewer({ document, onZoomChange, onScrollPositionChange, focusRequest }: PdfViewerProps) {
+function PdfViewer({
+  document,
+  edits,
+  signatureImages,
+  selectedEditId,
+  activeTool,
+  pendingSignatureImage,
+  onZoomChange,
+  onScrollPositionChange,
+  onAddText,
+  onPlaceSignature,
+  onSelectEdit,
+  onDeselectEdit,
+  onUpdateEdit,
+  onDeleteEdit,
+  focusRequest,
+}: PdfViewerProps) {
   const viewerRef = useRef<HTMLElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
   const lastFocusRequestRef = useRef<number | null>(null);
@@ -771,7 +874,13 @@ function PdfViewer({ document, onZoomChange, onScrollPositionChange, focusReques
       ref={viewerRef}
       data-testid="pdf-viewer"
       tabIndex={0}
-      className={isDragging ? "viewer viewer--pan-enabled is-panning" : "viewer viewer--pan-enabled"}
+      className={
+        isDragging
+          ? "viewer viewer--pan-enabled is-panning"
+          : activeTool !== "select"
+            ? "viewer viewer--text-tool"
+            : "viewer viewer--pan-enabled"
+      }
       aria-label={`Aperçu PDF ${document.fileName}`}
       onScroll={handleScroll}
       onKeyDown={handleKeyDown}
@@ -785,8 +894,19 @@ function PdfViewer({ document, onZoomChange, onScrollPositionChange, focusReques
             pdfDocument={document.pdfDocument}
             pageNumber={pageNumber}
             zoom={document.zoom}
+            edits={edits.filter((edit) => edit.page === pageNumber)}
+            signatureImages={signatureImages}
+            selectedEditId={selectedEditId}
+            activeTool={activeTool}
+            pendingSignatureImage={pendingSignatureImage}
             scrollRootRef={viewerRef}
             registerPageRef={registerPageRef}
+            onAddText={onAddText}
+            onPlaceSignature={onPlaceSignature}
+            onSelectEdit={onSelectEdit}
+            onDeselectEdit={onDeselectEdit}
+            onUpdateEdit={onUpdateEdit}
+            onDeleteEdit={onDeleteEdit}
           />
         ))}
       </div>
@@ -1655,6 +1775,20 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [documents, setDocuments] = useState<OpenPdfDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("read");
+  const [activeEditingTool, setActiveEditingTool] =
+    useState<EditingTool>("select");
+  const [pdfEditsByDocument, dispatchPdfEdits] = useReducer(
+    pdfEditsReducer,
+    {},
+  );
+  const [selectedEditId, setSelectedEditId] = useState<string | null>(null);
+  const [signatureImages, setSignatureImages] = useState<
+    Record<string, SignatureImage>
+  >({});
+  const [pendingSignatureImageId, setPendingSignatureImageId] = useState<
+    string | null
+  >(null);
+  const [isSignatureDialogOpen, setIsSignatureDialogOpen] = useState(false);
   const [organizationPlans, setOrganizationPlans] = useState<Record<string, OrganizePagePlan>>({});
   const [selectedPageIdsByDocument, setSelectedPageIdsByDocument] = useState<Record<string, string | null>>({});
   const [outputName, setOutputName] = useState("");
@@ -1669,6 +1803,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [viewerFocusRequest, setViewerFocusRequest] = useState(0);
   const nextOrganizedPageId = useRef(1);
+  const nextTextEditId = useRef(1);
+  const nextSignatureImageId = useRef(1);
+  const nextSignatureEditId = useRef(1);
   const [isRestoringDocuments, setIsRestoringDocuments] = useState(
     () => (storedPreferences?.documentOrder.length ?? 0) > 0,
   );
@@ -1693,10 +1830,22 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const selectedOrganizedPageId = activeDocument
     ? (selectedPageIdsByDocument[activeDocument.id] ?? null)
     : null;
+  const activePdfEdits = activeDocument
+    ? (pdfEditsByDocument[activeDocument.id] ?? [])
+    : [];
+  const selectedTextEdit =
+    activePdfEdits.find(
+      (edit): edit is AddTextEdit =>
+        edit.id === selectedEditId && edit.type === "add_text",
+    ) ?? null;
+  const pendingSignatureImage = pendingSignatureImageId
+    ? (signatureImages[pendingSignatureImageId] ?? null)
+    : null;
   const hasPendingOrganizationChanges =
     activeDocument !== null &&
     activeOrganizationPlan !== null &&
-    isPlanModified(activeOrganizationPlan, activeDocument.pageCount);
+    (isPlanModified(activeOrganizationPlan, activeDocument.pageCount) ||
+      activePdfEdits.length > 0);
 
   useEffect(() => {
     setOutputName(activeDocument ? getModifiedOutputName(activeDocument.fileName) : "");
@@ -1704,10 +1853,24 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, [activeDocumentId, activeDocument]);
 
   useEffect(() => {
+    setSelectedEditId(null);
+    setActiveEditingTool("select");
+    setPendingSignatureImageId(null);
+  }, [activeDocumentId]);
+
+  useEffect(() => {
     if (documents.length === 0) {
       setWorkspaceMode("read");
     }
   }, [documents.length]);
+
+  useEffect(() => {
+    if (workspaceMode !== "read") {
+      setActiveEditingTool("select");
+      setSelectedEditId(null);
+      setPendingSignatureImageId(null);
+    }
+  }, [workspaceMode]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -1943,6 +2106,114 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     [],
   );
 
+  const addTextEdit = useCallback(
+    (pageNumber: number, rect: PdfRect) => {
+      if (!activeDocument) {
+        return;
+      }
+
+      const edit: AddTextEdit = {
+        id: `text-${Date.now()}-${nextTextEditId.current++}`,
+        type: "add_text",
+        page: pageNumber,
+        rect,
+        text: "",
+        style: { ...DEFAULT_TEXT_STYLE },
+      };
+
+      dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
+      setSelectedEditId(edit.id);
+      setActiveEditingTool("select");
+      setExportFeedback(null);
+    },
+    [activeDocument],
+  );
+
+  const updatePdfEdit = useCallback(
+    (edit: PdfEdit) => {
+      if (!activeDocument) {
+        return;
+      }
+      dispatchPdfEdits({ type: "replace", documentId: activeDocument.id, edit });
+      setExportFeedback(null);
+    },
+    [activeDocument],
+  );
+
+  const deletePdfEdit = useCallback(
+    (editId: string) => {
+      if (!activeDocument) {
+        return;
+      }
+      dispatchPdfEdits({
+        type: "delete",
+        documentId: activeDocument.id,
+        editId,
+      });
+      setSelectedEditId((currentId) => (currentId === editId ? null : currentId));
+      setExportFeedback(null);
+    },
+    [activeDocument],
+  );
+
+  useEffect(() => {
+    function handleSelectedEditDeletion(event: globalThis.KeyboardEvent) {
+      if (
+        !selectedEditId ||
+        (event.key !== "Delete" && event.key !== "Backspace") ||
+        isEditableKeyboardTarget(event.target)
+      ) {
+        return;
+      }
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (!target?.closest(".viewer")) {
+        return;
+      }
+      event.preventDefault();
+      deletePdfEdit(selectedEditId);
+    }
+
+    window.addEventListener("keydown", handleSelectedEditDeletion);
+    return () => window.removeEventListener("keydown", handleSelectedEditDeletion);
+  }, [deletePdfEdit, selectedEditId]);
+
+  const prepareSignatureImage = useCallback((draft: SignatureImageDraft) => {
+    const image: SignatureImage = {
+      ...draft,
+      id: `signature-image-${Date.now()}-${nextSignatureImageId.current++}`,
+    };
+    setSignatureImages((currentImages) => ({
+      ...currentImages,
+      [image.id]: image,
+    }));
+    setPendingSignatureImageId(image.id);
+    setSelectedEditId(null);
+    setActiveEditingTool("signature");
+    setIsSignatureDialogOpen(false);
+    setExportFeedback(null);
+  }, []);
+
+  const placeSignature = useCallback(
+    (pageNumber: number, rect: PdfRect) => {
+      if (!activeDocument || !pendingSignatureImageId) {
+        return;
+      }
+      const edit: SignatureEdit = {
+        id: `signature-${Date.now()}-${nextSignatureEditId.current++}`,
+        type: "signature",
+        page: pageNumber,
+        rect,
+        imageId: pendingSignatureImageId,
+      };
+      dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
+      setSelectedEditId(edit.id);
+      setPendingSignatureImageId(null);
+      setActiveEditingTool("select");
+      setExportFeedback(null);
+    },
+    [activeDocument, pendingSignatureImageId],
+  );
+
   const closeDocument = useCallback(
     (documentId: string) => {
       const closingIndex = documents.findIndex((document) => document.id === documentId);
@@ -1974,6 +2245,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
       setExportFeedback(null);
       setDocuments(nextDocuments);
+      dispatchPdfEdits({ type: "remove_document", documentId });
+      setSelectedEditId(null);
+      setActiveEditingTool("select");
+      setPendingSignatureImageId(null);
       setOrganizationPlans((currentPlans) => {
         return Object.fromEntries(
           Object.entries(currentPlans).flatMap(([planDocumentId, plan]) => {
@@ -2088,6 +2363,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setActiveDocumentId(null);
     setOrganizationPlans({});
     setSelectedPageIdsByDocument({});
+    dispatchPdfEdits({ type: "clear" });
+    setSelectedEditId(null);
+    setActiveEditingTool("select");
+    setSignatureImages({});
+    setPendingSignatureImageId(null);
+    setIsSignatureDialogOpen(false);
     setOutputName("");
     setSaveToOutputDir(false);
     setIsExporting(false);
@@ -2103,6 +2384,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setIsRestoringDocuments(false);
     setTheme(getSystemTheme());
     nextDocumentId.current = 1;
+    nextTextEditId.current = 1;
+    nextSignatureImageId.current = 1;
+    nextSignatureEditId.current = 1;
     documentButtonRefs.current.clear();
     void clearViewerStorage().then((cleared) => {
       if (!cleared) {
@@ -2431,6 +2715,46 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       }
     });
     formData.append("documentIds", JSON.stringify(requiredDocumentIds));
+    const exportedPagesByDocument = new Map<string, Set<number>>();
+    activeOrganizationPlan.pages.forEach((page) => {
+      const exportedPages =
+        exportedPagesByDocument.get(page.sourceDocumentId) ?? new Set<number>();
+      exportedPages.add(page.sourcePageIndex + 1);
+      exportedPagesByDocument.set(page.sourceDocumentId, exportedPages);
+    });
+    const exportedPdfEdits = requiredDocumentIds.flatMap((documentId) =>
+      (pdfEditsByDocument[documentId] ?? []).flatMap((edit, order) => {
+        const pageIsExported = exportedPagesByDocument
+          .get(documentId)
+          ?.has(edit.page);
+        const editIsExportable =
+          edit.type === "add_text"
+            ? edit.text.length > 0
+            : signatureImages[edit.imageId] !== undefined;
+        return pageIsExported && editIsExportable
+          ? [{ ...edit, sourceDocumentId: documentId, order }]
+          : [];
+      }),
+    );
+    const exportedTextEdits = exportedPdfEdits.filter(
+      (edit): edit is AddTextEdit & { sourceDocumentId: string; order: number } =>
+        edit.type === "add_text",
+    );
+    const exportedSignatureEdits = exportedPdfEdits.filter(
+      (edit): edit is SignatureEdit & {
+        sourceDocumentId: string;
+        order: number;
+      } => edit.type === "signature",
+    );
+    const exportedSignatureImageIds = new Set(
+      exportedSignatureEdits.map((edit) => edit.imageId),
+    );
+    const exportedSignatureImages = [...exportedSignatureImageIds].flatMap(
+      (imageId) => {
+        const image = signatureImages[imageId];
+        return image ? [image] : [];
+      },
+    );
     formData.append(
       "plan",
       JSON.stringify({
@@ -2441,6 +2765,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           sourcePageIndex: page.sourcePageIndex,
           rotation: page.rotation,
         })),
+        ...(exportedTextEdits.length > 0
+          ? { edits: exportedTextEdits }
+          : {}),
+        ...(exportedSignatureEdits.length > 0
+          ? {
+              signatures: exportedSignatureEdits,
+              signatureImages: exportedSignatureImages,
+            }
+          : {}),
       }),
     );
 
@@ -2519,7 +2852,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     } finally {
       setIsExporting(false);
     }
-  }, [activeDocument, activeOrganizationPlan, backendUrl, documents, openGeneratedPdfDocument, outputName, saveToOutputDir]);
+  }, [activeDocument, activeOrganizationPlan, backendUrl, documents, openGeneratedPdfDocument, outputName, pdfEditsByDocument, saveToOutputDir, signatureImages]);
 
   const runOcrOnActiveDocument = useCallback(
     async (options: OcrOptions) => {
@@ -2748,6 +3081,54 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           >
             Convertir
           </button>
+          <div className="editing-tool-group" role="group" aria-label="Outils d'édition">
+            <span>Éditer</span>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveEditingTool("select");
+                setPendingSignatureImageId(null);
+                setExportFeedback(null);
+              }}
+              disabled={!activeDocument || workspaceMode !== "read"}
+              aria-label="Sélection"
+              aria-pressed={activeEditingTool === "select"}
+              title="Sélectionner un objet ajouté"
+            >
+              Sélection
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setExportFeedback(null);
+                setActiveEditingTool("add_text");
+                setPendingSignatureImageId(null);
+                setSelectedEditId(null);
+              }}
+              disabled={!activeDocument || workspaceMode !== "read"}
+              aria-label="Texte"
+              aria-pressed={activeEditingTool === "add_text"}
+              title="Ajouter un bloc de texte"
+            >
+              Texte
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setExportFeedback(null);
+                setActiveEditingTool("signature");
+                setSelectedEditId(null);
+                setPendingSignatureImageId(null);
+                setIsSignatureDialogOpen(true);
+              }}
+              disabled={!activeDocument || workspaceMode !== "read"}
+              aria-label="Signature"
+              aria-pressed={activeEditingTool === "signature"}
+              title="Ajouter une signature visuelle"
+            >
+              Signature
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => setWorkspaceMode((currentMode) => (currentMode === "read" ? "organize" : "read"))}
@@ -2787,6 +3168,26 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           </button>
         </div>
       </section>
+
+      {workspaceMode === "read" && selectedTextEdit ? (
+        <TextEditToolbar
+          edit={selectedTextEdit}
+          onUpdate={(patch) =>
+            updatePdfEdit({ ...selectedTextEdit, ...patch })
+          }
+          onDelete={() => deletePdfEdit(selectedTextEdit.id)}
+        />
+      ) : null}
+
+      {isSignatureDialogOpen ? (
+        <SignatureDialog
+          onCancel={() => {
+            setIsSignatureDialogOpen(false);
+            setActiveEditingTool("select");
+          }}
+          onConfirm={prepareSignatureImage}
+        />
+      ) : null}
 
       {isOcrDialogOpen && activeDocument ? (
         <OcrDialog
@@ -2876,8 +3277,19 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         {activeDocument && workspaceMode === "read" ? (
           <PdfViewer
             document={activeDocument}
+            edits={activePdfEdits}
+            signatureImages={signatureImages}
+            selectedEditId={selectedEditId}
+            activeTool={activeEditingTool}
+            pendingSignatureImage={pendingSignatureImage}
             onZoomChange={updateDocumentZoom}
             onScrollPositionChange={updateDocumentScrollPosition}
+            onAddText={addTextEdit}
+            onPlaceSignature={placeSignature}
+            onSelectEdit={setSelectedEditId}
+            onDeselectEdit={() => setSelectedEditId(null)}
+            onUpdateEdit={updatePdfEdit}
+            onDeleteEdit={deletePdfEdit}
             focusRequest={viewerFocusRequest}
           />
         ) : activeDocument && activeOrganizationPlan ? (
