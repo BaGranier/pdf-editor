@@ -16,7 +16,7 @@ test("EDIT-SIGN-001 @smoke dessine, place et exporte une signature visuelle", as
   await openApp(page);
   await openPdf(page, fixtures.onePage);
 
-  await page.getByRole("button", { name: "Signature" }).click();
+  await page.getByRole("button", { name: "Ajouter une signature" }).click();
   const drawingCanvas = page.getByLabel("Zone de dessin de la signature");
   const canvasBox = await drawingCanvas.boundingBox();
   expect(canvasBox).not.toBeNull();

@@ -50,6 +50,14 @@ function createPdfDocumentMock(pageCount = 1) {
   };
 }
 
+function selectInsertTool(tool: "Texte" | "Signature") {
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: tool === "Texte" ? "Ajouter du texte" : "Ajouter une signature",
+    }),
+  );
+}
+
 describe("App", () => {
   beforeEach(async () => {
     localStorage.clear();
@@ -368,8 +376,8 @@ describe("App", () => {
       expect(screen.getByLabelText("Couche d'édition de la page 1")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Texte" }));
-    expect(screen.getByRole("button", { name: "Texte" })).toHaveAttribute(
+    selectInsertTool("Texte");
+    expect(screen.getByRole("button", { name: "Ajouter du texte" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -425,6 +433,478 @@ describe("App", () => {
     expect(screen.queryByLabelText("Texte ajouté page 1")).not.toBeInTheDocument();
   });
 
+  it("renders a compact header and keeps selection implicit with Escape", async () => {
+    render(<App />);
+    const sidebar = screen.getByRole("complementary", {
+      name: "Documents ouverts",
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [
+          new File(["%PDF-1.4"], "cycle.pdf", {
+            type: "application/pdf",
+          }),
+        ],
+      },
+    });
+    const layer = await screen.findByLabelText("Couche d'édition de la page 1");
+    const toolbar = screen.getByRole("region", { name: "Contrôles PDF" });
+    const saveAsButton = screen.getByRole("button", { name: "Enregistrer sous…" });
+    const textButton = screen.getByRole("button", { name: "Ajouter du texte" });
+    const signatureButton = screen.getByRole("button", { name: "Ajouter une signature" });
+
+    expect(within(toolbar).queryByText("cycle.pdf")).not.toBeInTheDocument();
+    expect(within(toolbar).queryByText("1 page")).not.toBeInTheDocument();
+    expect(within(sidebar).getByText("cycle.pdf")).toBeInTheDocument();
+    expect(within(sidebar).getByText("1 page")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sélection" })).not.toBeInTheDocument();
+    expect(saveAsButton).toBeDisabled();
+    expect(saveAsButton).toHaveAttribute("title", "Enregistrer sous… (Ctrl+Shift+S)");
+    expect(textButton).toHaveAttribute("title", "Ajouter du texte");
+    expect(signatureButton).toHaveAttribute("title", "Ajouter une signature");
+    fireEvent.click(screen.getByRole("button", { name: "Augmenter le zoom" }));
+    expect(saveAsButton).toBeDisabled();
+    expect(screen.queryByTitle("Modifications non sauvegardées")).not.toBeInTheDocument();
+
+    fireEvent.click(textButton);
+    expect(layer).toHaveAttribute("data-active-editing-tool", "add_text");
+    expect(textButton).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(layer).toHaveAttribute("data-active-editing-tool", "select");
+    expect(textButton).toHaveAttribute("aria-pressed", "false");
+    expect(saveAsButton).toBeDisabled();
+
+    fireEvent.click(signatureButton);
+    expect(screen.getByRole("dialog", { name: /Ajouter une signature/ })).toBeInTheDocument();
+    expect(signatureButton).toHaveAttribute("aria-pressed", "true");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: /Ajouter une signature/ })).not.toBeInTheDocument();
+    expect(layer).toHaveAttribute("data-active-editing-tool", "select");
+    expect(signatureButton).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(textButton);
+
+    fireEvent.click(layer, { clientX: 80, clientY: 100 });
+    expect(layer).toHaveAttribute("data-active-editing-tool", "select");
+    expect(saveAsButton).toBeEnabled();
+    expect(screen.getByTitle("Modifications non sauvegardées")).toHaveTextContent("●");
+    expect(
+      screen.getByRole("button", { name: "cycle.pdf, document actif" }),
+    ).toHaveAccessibleDescription("Modifications non sauvegardées.");
+    const beforeUnloadEvent = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnloadEvent);
+    expect(beforeUnloadEvent.defaultPrevented).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: /Fichier/ }));
+    const fileMenu = screen.getByRole("menu", { name: "Fichier" });
+    expect(within(fileMenu).getAllByRole("menuitem")).toHaveLength(1);
+    expect(
+      within(fileMenu).getByRole("menuitem", { name: "Enregistrer sous…" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Sauvegarder")).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Fichier" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a failed save dirty and uses the same workflow for Ctrl+S", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("save failed"))
+      .mockResolvedValueOnce({
+        ok: true,
+        blob: vi.fn().mockResolvedValue(
+          new Blob(["saved-pdf"], { type: "application/pdf" }),
+        ),
+        headers: new Headers({
+          "content-disposition": 'attachment; filename="save-cycle-modifie.pdf"',
+        }),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        blob: vi.fn().mockResolvedValue(
+          new Blob(["saved-pdf-2"], { type: "application/pdf" }),
+        ),
+        headers: new Headers({
+          "content-disposition": 'attachment; filename="save-cycle-modifie-2.pdf"',
+        }),
+      } as unknown as Response);
+    const createObjectUrl = vi.fn(() => "blob:saved-pdf");
+    const revokeObjectUrl = vi.fn();
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("URL", {
+      createObjectURL: createObjectUrl,
+      revokeObjectURL: revokeObjectUrl,
+    });
+
+    render(<App />);
+    const sidebar = screen.getByRole("complementary", {
+      name: "Documents ouverts",
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [
+          new File(["%PDF-1.4"], "save-cycle.pdf", {
+            type: "application/pdf",
+          }),
+        ],
+      },
+    });
+    const layer = await screen.findByLabelText("Couche d'édition de la page 1");
+    selectInsertTool("Texte");
+    fireEvent.click(layer, { clientX: 70, clientY: 90 });
+    fireEvent.change(await screen.findByLabelText("Texte ajouté page 1"), {
+      target: { value: "À sauvegarder" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer sous…" }));
+    let saveAsDialog = screen.getByRole("dialog", { name: "Enregistrer sous" });
+    fireEvent.click(within(saveAsDialog).getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    saveAsDialog = screen.getByRole("dialog", { name: "Enregistrer sous" });
+    expect(within(saveAsDialog).getByRole("alert")).toHaveTextContent(
+      "Erreur du backend : save failed",
+    );
+    expect(screen.getByRole("button", { name: "Enregistrer sous…" })).toBeEnabled();
+    expect(screen.getByTitle("Modifications non sauvegardées")).toBeInTheDocument();
+    fireEvent.click(within(saveAsDialog).getByRole("button", { name: "Annuler" }));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    const shortcutWasNotCancelled = fireEvent.keyDown(window, {
+      key: "s",
+      ctrlKey: true,
+    });
+    expect(shortcutWasNotCancelled).toBe(false);
+    saveAsDialog = screen.getByRole("dialog", { name: "Enregistrer sous" });
+    fireEvent.click(within(saveAsDialog).getByRole("button", { name: "Enregistrer" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(
+        screen.getByRole("region", {
+          name: "Aperçu PDF save-cycle-modifie.pdf",
+        }),
+      ).toBeInTheDocument();
+    });
+    const originalButton = screen.getByRole("button", {
+      name: "save-cycle.pdf",
+    });
+    expect(originalButton).not.toHaveAttribute("aria-describedby");
+    expect(screen.getByRole("button", { name: "Enregistrer sous…" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "PDF sauvegardé avec succès",
+    );
+    const [, successfulRequest] = fetchMock.mock.calls[1] as [
+      string,
+      { body: FormData },
+    ];
+    const plan = JSON.parse(String(successfulRequest.body.get("plan"))) as {
+      edits: Array<{ text: string }>;
+      saveToOutputDir: boolean;
+    };
+    expect(plan.edits).toEqual([
+      expect.objectContaining({ text: "À sauvegarder" }),
+    ]);
+    expect(plan.saveToOutputDir).toBe(false);
+
+    const reopenedLayer = await screen.findByLabelText(
+      "Couche d'édition de la page 1",
+    );
+    selectInsertTool("Texte");
+    fireEvent.click(reopenedLayer, { clientX: 40, clientY: 60 });
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    const macShortcutWasNotCancelled = fireEvent.keyDown(window, {
+      key: "S",
+      metaKey: true,
+    });
+    expect(macShortcutWasNotCancelled).toBe(false);
+    saveAsDialog = screen.getByRole("dialog", { name: "Enregistrer sous" });
+    fireEvent.click(within(saveAsDialog).getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+    anchorClick.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("saves under a chosen normalized name and reuses it for the next save", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        blob: vi.fn().mockResolvedValue(
+          new Blob(["saved-as-pdf"], { type: "application/pdf" }),
+        ),
+        headers: new Headers(),
+      } as unknown as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        blob: vi.fn().mockResolvedValue(
+          new Blob(["saved-again-pdf"], { type: "application/pdf" }),
+        ),
+        headers: new Headers(),
+      } as unknown as Response);
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:saved-as-pdf"),
+      revokeObjectURL: vi.fn(),
+    });
+
+    render(<App />);
+    const sidebar = screen.getByRole("complementary", {
+      name: "Documents ouverts",
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [
+          new File(["%PDF-1.4"], "contrat.pdf", {
+            type: "application/pdf",
+          }),
+        ],
+      },
+    });
+    const layer = await screen.findByLabelText("Couche d'édition de la page 1");
+    selectInsertTool("Texte");
+    fireEvent.click(layer, { clientX: 70, clientY: 90 });
+    fireEvent.change(await screen.findByLabelText("Texte ajouté page 1"), {
+      target: { value: "Version client" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Fichier/ }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Enregistrer sous…" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Enregistrer sous" });
+    const nameInput = within(dialog).getByLabelText("Nom du fichier");
+    expect(nameInput).toHaveValue("contrat-modifie.pdf");
+
+    fireEvent.change(nameInput, { target: { value: ".pdf" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Enregistrer" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Saisissez un nom de fichier",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.change(nameInput, {
+      target: { value: "contrat client (été).PDF" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Enregistrer" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(
+        screen.getByRole("button", {
+          name: "contrat client (été).pdf, document actif",
+        }),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "Enregistrer sous" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enregistrer sous…" })).toBeDisabled();
+
+    const [, saveAsRequest] = fetchMock.mock.calls[0] as [
+      string,
+      { body: FormData },
+    ];
+    expect(
+      JSON.parse(String(saveAsRequest.body.get("plan"))).outputName,
+    ).toBe("contrat client (été).pdf");
+
+    const reopenedLayer = await screen.findByLabelText(
+      "Couche d'édition de la page 1",
+    );
+    selectInsertTool("Texte");
+    fireEvent.click(reopenedLayer, { clientX: 40, clientY: 60 });
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+    const nextSaveDialog = screen.getByRole("dialog", {
+      name: "Enregistrer sous",
+    });
+    expect(within(nextSaveDialog).getByLabelText("Nom du fichier")).toHaveValue(
+      "contrat client (été).pdf",
+    );
+    fireEvent.click(
+      within(nextSaveDialog).getByRole("button", { name: "Enregistrer" }),
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const [, nextSaveRequest] = fetchMock.mock.calls[1] as [
+      string,
+      { body: FormData },
+    ];
+    expect(
+      JSON.parse(String(nextSaveRequest.body.get("plan"))).outputName,
+    ).toBe("contrat client (été).pdf");
+
+    anchorClick.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the current dirty document unchanged when Save As is cancelled or fails", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("save as failed"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    const sidebar = screen.getByRole("complementary", {
+      name: "Documents ouverts",
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [new File(["%PDF-1.4"], "annulation.pdf", { type: "application/pdf" })],
+      },
+    });
+    const layer = await screen.findByLabelText("Couche d'édition de la page 1");
+    selectInsertTool("Texte");
+    fireEvent.click(layer, { clientX: 70, clientY: 90 });
+
+    fireEvent.keyDown(window, { key: "S", ctrlKey: true, shiftKey: true });
+    let dialog = screen.getByRole("dialog", { name: "Enregistrer sous" });
+    fireEvent.change(within(dialog).getByLabelText("Nom du fichier"), {
+      target: { value: "nom-annule.pdf" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Annuler" }));
+    expect(screen.queryByRole("dialog", { name: "Enregistrer sous" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "annulation.pdf, document actif" })).toHaveAccessibleDescription(
+      "Modifications non sauvegardées.",
+    );
+
+    const metaShortcutWasNotCancelled = fireEvent.keyDown(window, {
+      key: "s",
+      metaKey: true,
+      shiftKey: true,
+    });
+    expect(metaShortcutWasNotCancelled).toBe(false);
+    dialog = screen.getByRole("dialog", { name: "Enregistrer sous" });
+    fireEvent.change(within(dialog).getByLabelText("Nom du fichier"), {
+      target: { value: "échec final" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Enregistrer" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    dialog = screen.getByRole("dialog", { name: "Enregistrer sous" });
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Erreur du backend : save as failed",
+    );
+    expect(screen.getByRole("button", { name: "annulation.pdf, document actif" })).toHaveAccessibleDescription(
+      "Modifications non sauvegardées.",
+    );
+    expect(screen.queryByRole("button", { name: /échec final\.pdf/ })).not.toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+  });
+
+  it("protects dirty document closure with cancel and discard actions", async () => {
+    render(<App />);
+    const sidebar = screen.getByRole("complementary", {
+      name: "Documents ouverts",
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [
+          new File(["%PDF-1.4"], "dirty-close.pdf", {
+            type: "application/pdf",
+          }),
+        ],
+      },
+    });
+    const layer = await screen.findByLabelText("Couche d'édition de la page 1");
+    selectInsertTool("Texte");
+    fireEvent.click(layer, { clientX: 50, clientY: 70 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Fermer dirty-close.pdf" }));
+    let dialog = screen.getByRole("dialog", {
+      name: "Modifications non sauvegardées",
+    });
+    expect(dialog).toHaveTextContent(
+      "dirty-close.pdf contient des modifications non sauvegardées",
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Annuler" }));
+    expect(screen.queryByRole("dialog", { name: "Modifications non sauvegardées" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "dirty-close.pdf, document actif" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Fermer dirty-close.pdf" }));
+    dialog = screen.getByRole("dialog", {
+      name: "Modifications non sauvegardées",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Ignorer les modifications" }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "dirty-close.pdf" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("saves a dirty document before closing it when requested", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      blob: vi.fn().mockResolvedValue(
+        new Blob(["saved-before-close"], { type: "application/pdf" }),
+      ),
+      headers: new Headers({
+        "content-disposition": 'attachment; filename="close-save-modifie.pdf"',
+      }),
+    } as unknown as Response);
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn(() => "blob:saved-before-close"),
+      revokeObjectURL: vi.fn(),
+    });
+
+    render(<App />);
+    const sidebar = screen.getByRole("complementary", {
+      name: "Documents ouverts",
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [
+          new File(["%PDF-1.4"], "close-save.pdf", {
+            type: "application/pdf",
+          }),
+        ],
+      },
+    });
+    const layer = await screen.findByLabelText("Couche d'édition de la page 1");
+    selectInsertTool("Texte");
+    fireEvent.click(layer, { clientX: 60, clientY: 80 });
+    fireEvent.change(await screen.findByLabelText("Texte ajouté page 1"), {
+      target: { value: "Sauver avant fermeture" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Fermer close-save.pdf" }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Modifications non sauvegardées",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Enregistrer sous…" }),
+    );
+    const saveAsDialog = screen.getByRole("dialog", {
+      name: "Enregistrer sous",
+    });
+    fireEvent.click(
+      within(saveAsDialog).getByRole("button", { name: "Enregistrer" }),
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(screen.queryByRole("button", { name: "close-save.pdf" })).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", {
+          name: "close-save-modifie.pdf, document actif",
+        }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("dialog", { name: "Modifications non sauvegardées" })).not.toBeInTheDocument();
+
+    anchorClick.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
   it("exports text operations for several source pages", async () => {
     vi.mocked(pdfjsLib.getDocument).mockReturnValue({
       promise: Promise.resolve(createPdfDocumentMock(2)),
@@ -448,7 +928,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Couche d'édition de la page 2")).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Texte" }));
+    selectInsertTool("Texte");
     fireEvent.click(screen.getByLabelText("Couche d'édition de la page 1"), {
       clientX: 60,
       clientY: 80,
@@ -456,7 +936,7 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Texte ajouté page 1"), {
       target: { value: "Premier bloc" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Texte" }));
+    selectInsertTool("Texte");
     fireEvent.click(screen.getByLabelText("Couche d'édition de la page 2"), {
       clientX: 120,
       clientY: 140,
@@ -531,7 +1011,7 @@ describe("App", () => {
     });
     await screen.findByLabelText("Couche d'édition de la page 1");
 
-    fireEvent.click(screen.getByRole("button", { name: "Signature" }));
+    selectInsertTool("Signature");
     const canvas = screen.getByLabelText("Zone de dessin de la signature");
     fireEvent.pointerDown(canvas, {
       button: 0,
@@ -544,11 +1024,29 @@ describe("App", () => {
     fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 100, clientY: 40 });
     fireEvent.click(screen.getByRole("button", { name: "Valider la signature" }));
 
-    expect(screen.getByRole("button", { name: "Signature" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Ajouter une signature" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-    fireEvent.click(screen.getByLabelText("Couche d'édition de la page 1"), {
+    const editLayer = screen.getByLabelText("Couche d'édition de la page 1");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(editLayer).toHaveAttribute("data-active-editing-tool", "select");
+    expect(screen.queryByAltText("Signature visuelle page 1")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enregistrer sous…" })).toBeDisabled();
+
+    selectInsertTool("Signature");
+    const secondCanvas = screen.getByLabelText("Zone de dessin de la signature");
+    fireEvent.pointerDown(secondCanvas, {
+      button: 0,
+      pointerId: 2,
+      pointerType: "mouse",
+      clientX: 12,
+      clientY: 12,
+    });
+    fireEvent.pointerMove(secondCanvas, { pointerId: 2, clientX: 95, clientY: 38 });
+    fireEvent.pointerUp(secondCanvas, { pointerId: 2, clientX: 95, clientY: 38 });
+    fireEvent.click(screen.getByRole("button", { name: "Valider la signature" }));
+    fireEvent.click(editLayer, {
       clientX: 100,
       clientY: 150,
     });
@@ -624,7 +1122,7 @@ describe("App", () => {
       },
     });
     await screen.findByLabelText("Couche d'édition de la page 1");
-    fireEvent.click(screen.getByRole("button", { name: "Signature" }));
+    selectInsertTool("Signature");
     const canvas = screen.getByLabelText("Zone de dessin de la signature");
     fireEvent.pointerDown(canvas, { button: 0, pointerId: 1, pointerType: "mouse" });
     fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 40, clientY: 20 });
@@ -705,22 +1203,18 @@ describe("App", () => {
       },
     });
     const layer = await screen.findByLabelText("Couche d'édition de la page 1");
-    const selectTool = screen.getByRole("button", { name: "Sélection" });
-    const textTool = screen.getByRole("button", { name: "Texte" });
-    const signatureTool = screen.getByRole("button", { name: "Signature" });
-    expect(selectTool).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "Sélection" })).not.toBeInTheDocument();
+    expect(layer).toHaveAttribute("data-active-editing-tool", "select");
 
-    fireEvent.click(textTool);
-    expect(textTool).toHaveAttribute("aria-pressed", "true");
-    expect(signatureTool).toHaveAttribute("aria-pressed", "false");
+    selectInsertTool("Texte");
+    expect(layer).toHaveAttribute("data-active-editing-tool", "add_text");
     fireEvent.click(layer, { clientX: 100, clientY: 150 });
     const firstText = await screen.findByLabelText("Texte ajouté page 1");
     fireEvent.change(firstText, { target: { value: "Premier objet" } });
-    expect(selectTool).toHaveAttribute("aria-pressed", "true");
+    expect(layer).toHaveAttribute("data-active-editing-tool", "select");
 
-    fireEvent.click(signatureTool);
-    expect(signatureTool).toHaveAttribute("aria-pressed", "true");
-    expect(textTool).toHaveAttribute("aria-pressed", "false");
+    selectInsertTool("Signature");
+    expect(layer).toHaveAttribute("data-active-editing-tool", "signature");
     const canvas = screen.getByLabelText("Zone de dessin de la signature");
     fireEvent.pointerDown(canvas, { button: 0, pointerId: 1, pointerType: "mouse" });
     fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 40, clientY: 20 });
@@ -735,7 +1229,7 @@ describe("App", () => {
     expect(objectClasses).toEqual(["pdf-text-edit", "pdf-signature-edit"]);
     expect(signature.closest(".pdf-signature-edit")).toHaveClass("is-selected");
 
-    fireEvent.click(textTool);
+    selectInsertTool("Texte");
     fireEvent.click(layer, { clientX: 120, clientY: 170 });
     const textInputs = await screen.findAllByLabelText("Texte ajouté page 1");
     fireEvent.change(textInputs[1], { target: { value: "Objet au-dessus" } });
@@ -794,11 +1288,17 @@ describe("App", () => {
       },
     });
     let layer = await screen.findByLabelText("Couche d'édition de la page 1");
-    fireEvent.click(screen.getByRole("button", { name: "Texte" }));
+    selectInsertTool("Texte");
     fireEvent.click(layer, { clientX: 80, clientY: 100 });
     fireEvent.change(await screen.findByLabelText("Texte ajouté page 1"), {
       target: { value: "Texte B" },
     });
+    expect(
+      screen.getByRole("button", { name: "document-b.pdf, document actif" }),
+    ).toHaveAccessibleDescription("Modifications non sauvegardées.");
+    expect(
+      screen.getByRole("button", { name: "document-a.pdf" }),
+    ).not.toHaveAttribute("aria-describedby");
 
     fireEvent.click(screen.getByRole("button", { name: "document-a.pdf" }));
     await waitFor(() =>
@@ -808,7 +1308,7 @@ describe("App", () => {
     );
     expect(screen.queryByLabelText("Texte ajouté page 1")).not.toBeInTheDocument();
     layer = screen.getByLabelText("Couche d'édition de la page 1");
-    fireEvent.click(screen.getByRole("button", { name: "Signature" }));
+    selectInsertTool("Signature");
     const canvas = screen.getByLabelText("Zone de dessin de la signature");
     fireEvent.pointerDown(canvas, { button: 0, pointerId: 1, pointerType: "mouse" });
     fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 30, clientY: 20 });
@@ -816,6 +1316,9 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Valider la signature" }));
     fireEvent.click(layer, { clientX: 90, clientY: 110 });
     expect(await screen.findByAltText("Signature visuelle page 1")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "document-a.pdf, document actif" }),
+    ).toHaveAccessibleDescription("Modifications non sauvegardées.");
 
     fireEvent.click(screen.getByRole("button", { name: "document-b.pdf" }));
     await screen.findByRole("region", { name: "Aperçu PDF document-b.pdf" });
@@ -962,6 +1465,18 @@ describe("App", () => {
     );
     expect(screen.getByRole("button", { name: "Exporter le PDF" })).toBeEnabled();
     expect(screen.getByText("Ouvrez un autre PDF pour ajouter ses pages à la fin du plan.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enregistrer sous…" })).toBeDisabled();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Tourner la page 1 vers la droite",
+      }),
+    );
+
+    expect(screen.getByRole("button", { name: "Enregistrer sous…" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "organize.pdf, document actif" }),
+    ).toHaveAccessibleDescription("Modifications non sauvegardées.");
   });
 
   it("keeps the single-document export compatible with the multi-source API", async () => {
@@ -1130,7 +1645,7 @@ describe("App", () => {
       { sourceDocumentId: documentIds[1], sourcePageIndex: 1, rotation: 0 },
     ]);
     expect(new Set(plan.pages.map((page) => page.sourceDocumentId))).toEqual(new Set(documentIds));
-    expect(screen.getByRole("alert")).toHaveTextContent("Erreur du backend : Backend indisponible");
+    expect(screen.getByText("Erreur du backend : Backend indisponible")).toBeInTheDocument();
 
     vi.unstubAllGlobals();
   });

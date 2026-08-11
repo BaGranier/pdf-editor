@@ -16,7 +16,7 @@ test("EDIT-TEXT-001 @smoke ajoute, déplace et exporte du texte libre", async ({
   await openApp(page);
   await openPdf(page, fixtures.onePage);
 
-  await page.getByRole("button", { name: "Texte" }).click();
+  await page.getByRole("button", { name: "Ajouter du texte" }).click();
   const editLayer = page.getByLabel("Couche d'édition de la page 1");
   await expect(editLayer).toBeVisible();
   await editLayer.click({ position: { x: 80, y: 100 } });

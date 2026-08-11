@@ -54,6 +54,7 @@ describe("viewerStorage", () => {
     const snapshot: ViewerDocumentSnapshot = {
       id: "pdf-1",
       fileName: "sample.pdf",
+      workingSaveName: null,
       mimeType: "application/pdf",
       content: new Blob(["%PDF-1.4"], { type: "application/pdf" }),
       pageCount: 3,
@@ -80,6 +81,7 @@ describe("viewerStorage", () => {
     const snapshot: ViewerDocumentSnapshot = {
       id: "pdf-restore",
       fileName: "restore.pdf",
+      workingSaveName: "restore-final.pdf",
       mimeType: "application/pdf",
       content: new Blob(["%PDF-1.4"], { type: "application/pdf" }),
       pageCount: 1,
@@ -93,6 +95,7 @@ describe("viewerStorage", () => {
     await expect(loadStoredDocument("pdf-restore")).resolves.toMatchObject({
       id: "pdf-restore",
       fileName: "restore.pdf",
+      workingSaveName: "restore-final.pdf",
       pageCount: 1,
       zoom: 1.5,
       scrollLeft: 12,

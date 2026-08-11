@@ -17,13 +17,8 @@ test("EDIT-CORE-001 @smoke exporte ensemble texte et signature", async ({
   await openPdf(page, fixtures.onePage);
 
   const editLayer = page.getByLabel("Couche d'édition de la page 1");
-  await page.getByRole("button", { name: "Texte", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Texte", exact: true }),
-  ).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await page.getByRole("button", { name: "Ajouter du texte" }).click();
+  await expect(editLayer).toHaveAttribute("data-active-editing-tool", "add_text");
   await editLayer.click({ position: { x: 55, y: 80 } });
   const textInput = page.getByLabel("Texte ajouté page 1");
   await textInput.fill("Texte et signature réunis");
@@ -44,19 +39,8 @@ test("EDIT-CORE-001 @smoke exporte ensemble texte et signature", async ({
   await page.mouse.move(handleBox.x + 45, handleBox.y + 35, { steps: 4 });
   await page.mouse.up();
 
-  await page.getByRole("button", { name: "Signature", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Signature", exact: true }),
-  ).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await expect(
-    page.getByRole("button", { name: "Texte", exact: true }),
-  ).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
+  await page.getByRole("button", { name: "Ajouter une signature" }).click();
+  await expect(editLayer).toHaveAttribute("data-active-editing-tool", "signature");
   const canvas = page.getByLabel("Zone de dessin de la signature");
   const canvasBox = await canvas.boundingBox();
   expect(canvasBox).not.toBeNull();
@@ -71,10 +55,8 @@ test("EDIT-CORE-001 @smoke exporte ensemble texte et signature", async ({
   await page.getByRole("button", { name: "Valider la signature" }).click();
   await editLayer.click({ position: { x: 80, y: 145 } });
   await expect(page.locator(".pdf-signature-edit")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Sélection" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  await expect(editLayer).toHaveAttribute("data-active-editing-tool", "select");
+  await expect(page.getByRole("button", { name: "Sélection" })).toHaveCount(0);
 
   const objects = editLayer.locator(".pdf-text-edit, .pdf-signature-edit");
   await expect(objects).toHaveCount(2);

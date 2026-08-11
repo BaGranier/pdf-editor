@@ -65,6 +65,7 @@ import {
 import { getWebBackendBaseUrl } from "./api/backend";
 import { PdfEditLayer } from "./components/PdfEditLayer";
 import { TextEditToolbar } from "./components/TextEditToolbar";
+import { SaveAsDialog } from "./components/SaveAsDialog";
 import {
   SignatureDialog,
   type SignatureImageDraft,
@@ -78,7 +79,12 @@ import {
   type SignatureEdit,
   type SignatureImage,
 } from "./editing/types";
-import { pdfEditsReducer } from "./editing/state";
+import {
+  getDocumentEditingState,
+  pdfEditsReducer,
+} from "./editing/state";
+import { downloadPdfToBrowser } from "./saving/destination";
+import { getSuggestedPdfSaveName } from "./saving/fileName";
 import "./App.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -101,6 +107,7 @@ type ExportFeedback = {
 type OpenPdfDocument = {
   id: string;
   fileName: string;
+  workingSaveName: string | null;
   file: File;
   pdfDocument: PDFDocumentProxy;
   loadingTask: PDFDocumentLoadingTask;
@@ -114,6 +121,7 @@ type OpenPdfDocument = {
 type DocumentSidebarProps = {
   documents: OpenPdfDocument[];
   activeDocumentId: string | null;
+  dirtyDocumentIds: ReadonlySet<string>;
   theme: ThemeMode;
   openFileInputRef: RefObject<HTMLInputElement | null>;
   onSelectDocument: (documentId: string) => void;
@@ -179,11 +187,6 @@ function getDocumentUsageWarnings(file: File, pageCount: number, openDocumentCou
   return warnings;
 }
 
-function getModifiedOutputName(fileName: string) {
-  const baseName = fileName.replace(/\.pdf$/i, "") || "document";
-  return `${baseName}-modifie.pdf`;
-}
-
 function getUniqueFileName(fileName: string, existingFileNames: string[]) {
   if (!existingFileNames.includes(fileName)) {
     return fileName;
@@ -237,6 +240,7 @@ function buildViewerSnapshot(document: OpenPdfDocument): ViewerDocumentSnapshot 
   return {
     id: document.id,
     fileName: document.fileName,
+    workingSaveName: document.workingSaveName,
     mimeType: document.file.type,
     content: document.file,
     pageCount: document.pageCount,
@@ -262,6 +266,7 @@ async function restoreOpenDocument(storedDocument: StoredPdfDocument): Promise<O
     return {
       id: storedDocument.id,
       fileName: storedDocument.fileName,
+      workingSaveName: storedDocument.workingSaveName ?? null,
       file,
       pdfDocument,
       loadingTask,
@@ -1574,6 +1579,7 @@ function OrganizePages({
 function DocumentSidebar({
   documents,
   activeDocumentId,
+  dirtyDocumentIds,
   theme,
   openFileInputRef,
   onSelectDocument,
@@ -1617,6 +1623,8 @@ function DocumentSidebar({
             <ul className="document-list" aria-label="Liste des documents ouverts">
               {documents.map((document) => {
                 const isActive = document.id === activeDocumentId;
+                const isDirty = dirtyDocumentIds.has(document.id);
+                const dirtyDescriptionId = `document-dirty-${document.id}`;
 
                 return (
                   <li key={document.id} className={isActive ? "document-item is-active" : "document-item"}>
@@ -1628,11 +1636,28 @@ function DocumentSidebar({
                       onClick={() => onSelectDocument(document.id)}
                       aria-current={isActive ? "true" : undefined}
                       aria-selected={isActive}
+                      aria-describedby={isDirty ? dirtyDescriptionId : undefined}
                       tabIndex={isActive ? 0 : -1}
                       aria-label={`${document.fileName}${isActive ? ", document actif" : ""}`}
                       title={document.fileName}
                     >
-                      <span className="document-title">{document.fileName}</span>
+                      <span className="document-title">
+                        {document.fileName}
+                        {isDirty ? (
+                          <span
+                            className="document-dirty-indicator"
+                            aria-hidden="true"
+                            title="Modifications non sauvegardées"
+                          >
+                            ●
+                          </span>
+                        ) : null}
+                      </span>
+                      {isDirty ? (
+                        <span id={dirtyDescriptionId} className="visually-hidden">
+                          Modifications non sauvegardées.
+                        </span>
+                      ) : null}
                       <span className="document-meta-line">
                         {document.pageCount} page{document.pageCount > 1 ? "s" : ""}
                       </span>
@@ -1735,6 +1760,45 @@ function ResetIcon() {
   );
 }
 
+type ToolbarIconName = "save-as" | "text" | "signature";
+
+function ToolbarIcon({ name }: { name: ToolbarIconName }) {
+  return (
+    <svg
+      className="toolbar-icon"
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      focusable="false"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {name === "save-as" ? (
+        <>
+          <path d="M4 3h10l2 2v12H4z" />
+          <path d="M7 3v5h6V3" />
+          <path d="M7 17v-5h6v5" />
+        </>
+      ) : null}
+      {name === "text" ? (
+        <>
+          <path d="M4 6V3h12v3" />
+          <path d="M10 3v14" />
+          <path d="M7 17h6" />
+        </>
+      ) : null}
+      {name === "signature" ? (
+        <>
+          <path d="M3 14c2.4-4.8 3.9-7.2 5.1-7.2 1.9 0-.9 7.5.8 7.5 1.1 0 2.1-3.5 3.2-3.5.7 0 .2 3.2 1.2 3.2.6 0 1.4-1.4 2.1-1.4.6 0 .7.8 1.6.8" />
+          <path d="M3 17h14" />
+        </>
+      ) : null}
+    </svg>
+  );
+}
+
 type EmptyStateProps = {
   status: string;
   mode: WorkspaceMode;
@@ -1789,6 +1853,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     string | null
   >(null);
   const [isSignatureDialogOpen, setIsSignatureDialogOpen] = useState(false);
+  const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
+  const [saveAsDocumentId, setSaveAsDocumentId] = useState<string | null>(null);
+  const [pendingCloseDocumentId, setPendingCloseDocumentId] = useState<
+    string | null
+  >(null);
+  const [closeAfterSaveDocumentId, setCloseAfterSaveDocumentId] = useState<
+    string | null
+  >(null);
   const [organizationPlans, setOrganizationPlans] = useState<Record<string, OrganizePagePlan>>({});
   const [selectedPageIdsByDocument, setSelectedPageIdsByDocument] = useState<Record<string, string | null>>({});
   const [outputName, setOutputName] = useState("");
@@ -1830,9 +1902,27 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const selectedOrganizedPageId = activeDocument
     ? (selectedPageIdsByDocument[activeDocument.id] ?? null)
     : null;
-  const activePdfEdits = activeDocument
-    ? (pdfEditsByDocument[activeDocument.id] ?? [])
-    : [];
+  const activeDocumentEditingState = activeDocument
+    ? getDocumentEditingState(pdfEditsByDocument, activeDocument.id)
+    : null;
+  const activePdfEdits = activeDocumentEditingState?.edits ?? [];
+  const isActiveDocumentDirty = activeDocumentEditingState?.isDirty ?? false;
+  const dirtyDocumentIds = useMemo(
+    () =>
+      new Set(
+        Object.entries(pdfEditsByDocument).flatMap(
+          ([documentId, editingState]) =>
+            editingState.isDirty ? [documentId] : [],
+        ),
+      ),
+    [pdfEditsByDocument],
+  );
+  const pendingCloseDocument = pendingCloseDocumentId
+    ? documents.find((document) => document.id === pendingCloseDocumentId) ?? null
+    : null;
+  const saveAsDocument = saveAsDocumentId
+    ? documents.find((document) => document.id === saveAsDocumentId) ?? null
+    : null;
   const selectedTextEdit =
     activePdfEdits.find(
       (edit): edit is AddTextEdit =>
@@ -1848,7 +1938,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       activePdfEdits.length > 0);
 
   useEffect(() => {
-    setOutputName(activeDocument ? getModifiedOutputName(activeDocument.fileName) : "");
+    setOutputName(
+      activeDocument
+        ? getSuggestedPdfSaveName(
+            activeDocument.fileName,
+            activeDocument.workingSaveName,
+          )
+        : "",
+    );
     setSaveToOutputDir(false);
   }, [activeDocumentId, activeDocument]);
 
@@ -1856,6 +1953,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setSelectedEditId(null);
     setActiveEditingTool("select");
     setPendingSignatureImageId(null);
+    setIsFileMenuOpen(false);
   }, [activeDocumentId]);
 
   useEffect(() => {
@@ -1898,6 +1996,20 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   useEffect(() => {
     documentsRef.current = documents;
   }, [documents]);
+
+  useEffect(() => {
+    if (dirtyDocumentIds.size === 0) {
+      return;
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [dirtyDocumentIds]);
 
   useEffect(() => {
     return () => {
@@ -2214,7 +2326,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     [activeDocument, pendingSignatureImageId],
   );
 
-  const closeDocument = useCallback(
+  const performCloseDocument = useCallback(
     (documentId: string) => {
       const closingIndex = documents.findIndex((document) => document.id === documentId);
 
@@ -2236,6 +2348,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       ) {
         return;
       }
+
+      plansUsingDocument.forEach(([planDocumentId]) => {
+        dispatchPdfEdits({ type: "mark_dirty", documentId: planDocumentId });
+      });
 
       const closingDocument = documents[closingIndex];
       const nextDocuments = documents.filter((document) => document.id !== documentId);
@@ -2305,6 +2421,19 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     [documents, organizationPlans],
   );
 
+  const closeDocument = useCallback(
+    (documentId: string) => {
+      if (getDocumentEditingState(pdfEditsByDocument, documentId).isDirty) {
+        setPendingCloseDocumentId(documentId);
+        setCloseAfterSaveDocumentId(null);
+        return;
+      }
+
+      performCloseDocument(documentId);
+    },
+    [pdfEditsByDocument, performCloseDocument],
+  );
+
   const selectDocumentByKeyboard = useCallback(
     (nextIndex: number) => {
       const nextDocument = documents[nextIndex];
@@ -2369,6 +2498,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setSignatureImages({});
     setPendingSignatureImageId(null);
     setIsSignatureDialogOpen(false);
+    setIsFileMenuOpen(false);
+    setPendingCloseDocumentId(null);
+    setCloseAfterSaveDocumentId(null);
     setOutputName("");
     setSaveToOutputDir(false);
     setIsExporting(false);
@@ -2475,12 +2607,21 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   );
 
   const updateActiveOrganizationPlan = useCallback(
-    (updatePlan: (plan: OrganizePagePlan) => OrganizePagePlan) => {
+    (
+      updatePlan: (plan: OrganizePagePlan) => OrganizePagePlan,
+      marksDocumentDirty = true,
+    ) => {
       if (!activeDocument) {
         return;
       }
 
       setExportFeedback(null);
+      if (marksDocumentDirty) {
+        dispatchPdfEdits({
+          type: "mark_dirty",
+          documentId: activeDocument.id,
+        });
+      }
       setOrganizationPlans((currentPlans) => {
         const currentPlan =
           currentPlans[activeDocument.id] ??
@@ -2510,7 +2651,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         return;
       }
 
-      updateActiveOrganizationPlan((plan) => plan);
+      updateActiveOrganizationPlan((plan) => plan, false);
       setSelectedPageIdsByDocument((currentSelection) => ({
         ...currentSelection,
         [activeDocument.id]: currentSelection[activeDocument.id] === pageId ? null : pageId,
@@ -2575,6 +2716,16 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     }
 
     setExportFeedback(null);
+    const currentPlan = organizationPlans[activeDocument.id];
+    if (
+      currentPlan &&
+      isPlanModified(currentPlan, activeDocument.pageCount)
+    ) {
+      dispatchPdfEdits({
+        type: "mark_dirty",
+        documentId: activeDocument.id,
+      });
+    }
     setOrganizationPlans((currentPlans) => {
       const { [activeDocument.id]: _resetPlan, ...remainingPlans } = currentPlans;
       return remainingPlans;
@@ -2584,9 +2735,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       return remainingSelection;
     });
     removeOrganizationPlan(activeDocument.id);
-  }, [activeDocument]);
+  }, [activeDocument, organizationPlans]);
 
-  const loadOpenPdfDocument = useCallback(async (file: File): Promise<OpenPdfDocument> => {
+  const loadOpenPdfDocument = useCallback(async (
+    file: File,
+    workingSaveName: string | null = null,
+  ): Promise<OpenPdfDocument> => {
     const data = new Uint8Array(await file.arrayBuffer());
     const loadingTask = pdfjsLib.getDocument({ data });
 
@@ -2598,6 +2752,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       return {
         id: documentId,
         fileName: file.name,
+        workingSaveName,
         file,
         pdfDocument,
         loadingTask,
@@ -2614,7 +2769,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, []);
 
   const openGeneratedPdfDocument = useCallback(
-    async (file: File) => {
+    async (file: File, workingSaveName: string | null = null) => {
       const fileName = getUniqueFileName(
         file.name,
         documents.map((document) => document.fileName),
@@ -2625,7 +2780,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           : new File([file], fileName, {
               type: file.type || "application/pdf",
             });
-      const openedDocument = await loadOpenPdfDocument(uniqueFile);
+      const openedDocument = await loadOpenPdfDocument(
+        uniqueFile,
+        workingSaveName,
+      );
       const usageWarnings = getDocumentUsageWarnings(
         uniqueFile,
         openedDocument.pageCount,
@@ -2674,13 +2832,31 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     [documents, updateActiveOrganizationPlan],
   );
 
-  const exportActiveOrganizationPlan = useCallback(async () => {
-    if (!activeDocument || !activeOrganizationPlan || activeOrganizationPlan.pages.length === 0) {
+  const generatePdfForDocument = useCallback(async (
+    documentId: string,
+    operation: "export" | "save_as",
+    requestedOutputName?: string,
+  ): Promise<boolean> => {
+    const sourceDocument = documents.find(
+      (document) => document.id === documentId,
+    );
+    if (!sourceDocument) {
+      setExportFeedback({ kind: "error", message: "Le document à sauvegarder n'est plus ouvert." });
+      return false;
+    }
+    const organizationPlan =
+      organizationPlans[documentId] ??
+      createInitialPagePlan(
+        sourceDocument.id,
+        sourceDocument.fileName,
+        sourceDocument.pageCount,
+      );
+    if (organizationPlan.pages.length === 0) {
       setExportFeedback({ kind: "error", message: "Aucune page n'est disponible pour l'export." });
-      return;
+      return false;
     }
 
-    const requiredDocumentIds = [...new Set(activeOrganizationPlan.pages.map((page) => page.sourceDocumentId))];
+    const requiredDocumentIds = [...new Set(organizationPlan.pages.map((page) => page.sourceDocumentId))];
     const sourceFiles = requiredDocumentIds.map((documentId) =>
       documents.find((document) => document.id === documentId),
     );
@@ -2690,7 +2866,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         kind: "error",
         message: "Un PDF source requis par le plan n'est plus disponible. Retirez ses pages ou réinitialisez le plan.",
       });
-      return;
+      return false;
     }
 
     const sourceDocumentInfo = Object.fromEntries(
@@ -2699,15 +2875,27 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         { fileName: document.fileName, pageCount: document.pageCount },
       ]),
     );
-    if (!isValidPagePlanForDocument(activeOrganizationPlan, activeDocument.id, sourceDocumentInfo)) {
+    if (!isValidPagePlanForDocument(organizationPlan, sourceDocument.id, sourceDocumentInfo)) {
       setExportFeedback({
         kind: "error",
         message: "Le plan d'organisation est invalide. Réinitialisez-le avant d'exporter.",
       });
-      return;
+      return false;
     }
 
-    const resolvedOutputName = outputName.trim() || getModifiedOutputName(activeDocument.fileName);
+    const resolvedOutputName =
+      operation === "save_as" && requestedOutputName
+        ? requestedOutputName
+        : operation === "export" && sourceDocument.id === activeDocumentId
+          ? outputName.trim() ||
+            getSuggestedPdfSaveName(
+              sourceDocument.fileName,
+              sourceDocument.workingSaveName,
+            )
+          : getSuggestedPdfSaveName(
+              sourceDocument.fileName,
+              sourceDocument.workingSaveName,
+            );
     const formData = new FormData();
     sourceFiles.forEach((sourceDocument) => {
       if (sourceDocument) {
@@ -2716,14 +2904,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     });
     formData.append("documentIds", JSON.stringify(requiredDocumentIds));
     const exportedPagesByDocument = new Map<string, Set<number>>();
-    activeOrganizationPlan.pages.forEach((page) => {
+    organizationPlan.pages.forEach((page) => {
       const exportedPages =
         exportedPagesByDocument.get(page.sourceDocumentId) ?? new Set<number>();
       exportedPages.add(page.sourcePageIndex + 1);
       exportedPagesByDocument.set(page.sourceDocumentId, exportedPages);
     });
     const exportedPdfEdits = requiredDocumentIds.flatMap((documentId) =>
-      (pdfEditsByDocument[documentId] ?? []).flatMap((edit, order) => {
+      getDocumentEditingState(pdfEditsByDocument, documentId).edits.flatMap((edit, order) => {
         const pageIsExported = exportedPagesByDocument
           .get(documentId)
           ?.has(edit.page);
@@ -2759,8 +2947,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       "plan",
       JSON.stringify({
         outputName: resolvedOutputName,
-        saveToOutputDir,
-        pages: activeOrganizationPlan.pages.map((page) => ({
+        saveToOutputDir: operation === "export" ? saveToOutputDir : false,
+        pages: organizationPlan.pages.map((page) => ({
           sourceDocumentId: page.sourceDocumentId,
           sourcePageIndex: page.sourcePageIndex,
           rotation: page.rotation,
@@ -2805,27 +2993,21 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         resolvedOutputName,
       );
       const outputWarning = response.headers.get("x-pdf-output-warning");
-      const downloadUrl = URL.createObjectURL(pdfBlob);
-      const downloadLink = document.createElement("a");
-      downloadLink.href = downloadUrl;
-      downloadLink.download = downloadedName;
-      document.body.append(downloadLink);
-      downloadLink.click();
-      downloadLink.remove();
-      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
       const outputStatus = response.headers.get("x-pdf-output-status");
-      const exportedFile = new File([pdfBlob], downloadedName, {
-        type: pdfBlob.type || "application/pdf",
-      });
+      const exportedFile = downloadPdfToBrowser(pdfBlob, downloadedName);
+      const operationLabel = operation === "export" ? "exporté" : "sauvegardé";
       const exportMessage = outputWarning
-        ? `PDF exporté avec succès : ${downloadedName}. ${outputWarning}`
+        ? `PDF ${operationLabel} avec succès : ${downloadedName}. ${outputWarning}`
         : outputStatus === "saved"
-          ? `PDF exporté avec succès : ${downloadedName}. Copie enregistrée dans data/output.`
-          : `PDF exporté avec succès : ${downloadedName}.`;
+          ? `PDF ${operationLabel} avec succès : ${downloadedName}. Copie enregistrée dans data/output.`
+          : `PDF ${operationLabel} avec succès : ${downloadedName}.`;
 
       try {
         const { usageWarnings: exportUsageWarnings } =
-          await openGeneratedPdfDocument(exportedFile);
+          await openGeneratedPdfDocument(
+            exportedFile,
+            operation === "export" ? null : downloadedName,
+          );
         setExportFeedback({
           kind:
             outputWarning || exportUsageWarnings.length > 0
@@ -2841,6 +3023,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           message: `${exportMessage} Le téléchargement est disponible, mais l'ouverture dans l'application a échoué.`,
         });
       }
+      if (operation === "save_as") {
+        dispatchPdfEdits({ type: "mark_saved", documentId });
+      }
+      return true;
     } catch (error) {
       const message =
         error instanceof TypeError
@@ -2849,10 +3035,154 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             ? `Erreur du backend : ${error.message}`
             : "Le PDF n'a pas pu être exporté.";
       setExportFeedback({ kind: "error", message });
+      return false;
     } finally {
       setIsExporting(false);
     }
-  }, [activeDocument, activeOrganizationPlan, backendUrl, documents, openGeneratedPdfDocument, outputName, pdfEditsByDocument, saveToOutputDir, signatureImages]);
+  }, [activeDocumentId, backendUrl, documents, openGeneratedPdfDocument, organizationPlans, outputName, pdfEditsByDocument, saveToOutputDir, signatureImages]);
+
+  const exportActiveOrganizationPlan = useCallback(() => {
+    if (!activeDocument) {
+      return;
+    }
+    void generatePdfForDocument(activeDocument.id, "export");
+  }, [activeDocument, generatePdfForDocument]);
+
+  const openSaveAsDialog = useCallback(
+    (documentId: string) => {
+      if (isExporting || !documents.some((document) => document.id === documentId)) {
+        return;
+      }
+
+      setExportFeedback(null);
+      setIsFileMenuOpen(false);
+      setSaveAsDocumentId(documentId);
+    },
+    [documents, isExporting],
+  );
+
+  const openActiveSaveAsDialog = useCallback(() => {
+    if (!activeDocument || !isActiveDocumentDirty || isExporting) {
+      return;
+    }
+
+    openSaveAsDialog(activeDocument.id);
+  }, [activeDocument, isActiveDocumentDirty, isExporting, openSaveAsDialog]);
+
+  const saveDocumentAs = useCallback(
+    async (fileName: string) => {
+      if (!saveAsDocumentId || isExporting) {
+        return false;
+      }
+
+      const documentId = saveAsDocumentId;
+      const didSave = await generatePdfForDocument(
+        documentId,
+        "save_as",
+        fileName,
+      );
+      if (didSave) {
+        setSaveAsDocumentId(null);
+      }
+      return didSave;
+    },
+    [generatePdfForDocument, isExporting, saveAsDocumentId],
+  );
+
+  const savePendingCloseDocument = useCallback(() => {
+    if (!pendingCloseDocumentId || isExporting) {
+      return;
+    }
+
+    const documentId = pendingCloseDocumentId;
+    setPendingCloseDocumentId(null);
+    setCloseAfterSaveDocumentId(documentId);
+    openSaveAsDialog(documentId);
+  }, [isExporting, openSaveAsDialog, pendingCloseDocumentId]);
+
+  const cancelSaveAsDialog = useCallback(() => {
+    const documentId = saveAsDocumentId;
+    setSaveAsDocumentId(null);
+
+    if (documentId && closeAfterSaveDocumentId === documentId) {
+      setCloseAfterSaveDocumentId(null);
+      setPendingCloseDocumentId(documentId);
+    }
+  }, [closeAfterSaveDocumentId, saveAsDocumentId]);
+
+  useEffect(() => {
+    if (!closeAfterSaveDocumentId || isExporting) {
+      return;
+    }
+    if (
+      getDocumentEditingState(pdfEditsByDocument, closeAfterSaveDocumentId)
+        .isDirty
+    ) {
+      return;
+    }
+
+    setPendingCloseDocumentId(null);
+    setCloseAfterSaveDocumentId(null);
+    performCloseDocument(closeAfterSaveDocumentId);
+  }, [
+    closeAfterSaveDocumentId,
+    isExporting,
+    pdfEditsByDocument,
+    performCloseDocument,
+  ]);
+
+  useEffect(() => {
+    const handleApplicationShortcut = (event: globalThis.KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() === "s" &&
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey
+      ) {
+        event.preventDefault();
+        openActiveSaveAsDialog();
+        return;
+      }
+
+      if (event.key !== "Escape") {
+        return;
+      }
+
+      if (saveAsDocumentId) {
+        event.preventDefault();
+        cancelSaveAsDialog();
+        return;
+      }
+
+      const shouldHandleEscape =
+        isFileMenuOpen ||
+        isSignatureDialogOpen ||
+        activeEditingTool !== "select" ||
+        pendingSignatureImageId !== null ||
+        selectedEditId !== null;
+      if (!shouldHandleEscape) {
+        return;
+      }
+
+      event.preventDefault();
+      setIsFileMenuOpen(false);
+      setIsSignatureDialogOpen(false);
+      setActiveEditingTool("select");
+      setPendingSignatureImageId(null);
+      setSelectedEditId(null);
+    };
+
+    window.addEventListener("keydown", handleApplicationShortcut);
+    return () => window.removeEventListener("keydown", handleApplicationShortcut);
+  }, [
+    activeEditingTool,
+    cancelSaveAsDialog,
+    isFileMenuOpen,
+    isSignatureDialogOpen,
+    openActiveSaveAsDialog,
+    pendingSignatureImageId,
+    saveAsDocumentId,
+    selectedEditId,
+  ]);
 
   const runOcrOnActiveDocument = useCallback(
     async (options: OcrOptions) => {
@@ -3044,61 +3374,86 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           <h1>PDF Editor MVP</h1>
         </div>
 
-        <div className="document-meta" aria-live="polite">
-          {activeDocument ? (
-            <>
-              <strong>{activeDocument.fileName}</strong>
-              <span>
-                {activeDocument.pageCount} page{activeDocument.pageCount > 1 ? "s" : ""}
-              </span>
-            </>
-          ) : (
-            <span>Aucun PDF sélectionné</span>
-          )}
-        </div>
-
-        <div className="toolbar-actions" aria-label="Mode d'affichage">
-          <button
-            type="button"
-            onClick={() => {
-              setExportFeedback(null);
-              setIsOcrDialogOpen(true);
-            }}
-            disabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
-            aria-label="OCR"
-            aria-busy={isOcrProcessing}
-            title="Reconnaissance de texte (OCR)"
-          >
-            OCR
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setExportFeedback(null);
-              setIsConversionDialogOpen(true);
-            }}
-            disabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
-          >
-            Convertir
-          </button>
-          <div className="editing-tool-group" role="group" aria-label="Outils d'édition">
-            <span>Éditer</span>
+        <div className="toolbar-actions" aria-label="Actions PDF">
+          <div className="toolbar-action-group" aria-label="Fichier">
+            <div className="insert-menu file-menu">
+              <button
+                type="button"
+                onClick={() => setIsFileMenuOpen((isOpen) => !isOpen)}
+                disabled={!activeDocument}
+                aria-haspopup="menu"
+                aria-expanded={isFileMenuOpen}
+              >
+                Fichier <span aria-hidden="true">▾</span>
+              </button>
+              {isFileMenuOpen && activeDocument ? (
+                <div
+                  className="insert-menu__items file-menu__items"
+                  role="menu"
+                  aria-label="Fichier"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={openActiveSaveAsDialog}
+                    disabled={!isActiveDocumentDirty || isExporting}
+                  >
+                    Enregistrer sous…
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className="toolbar-icon-button save-as-button"
+              onClick={openActiveSaveAsDialog}
+              disabled={!activeDocument || !isActiveDocumentDirty || isExporting}
+              aria-label="Enregistrer sous…"
+              aria-keyshortcuts="Control+S Meta+S Control+Shift+S Meta+Shift+S"
+              title="Enregistrer sous… (Ctrl+Shift+S)"
+            >
+              <ToolbarIcon name="save-as" />
+            </button>
+          </div>
+          <div className="toolbar-action-group" aria-label="Outils du document">
             <button
               type="button"
               onClick={() => {
-                setActiveEditingTool("select");
-                setPendingSignatureImageId(null);
                 setExportFeedback(null);
+                setIsOcrDialogOpen(true);
               }}
-              disabled={!activeDocument || workspaceMode !== "read"}
-              aria-label="Sélection"
-              aria-pressed={activeEditingTool === "select"}
-              title="Sélectionner un objet ajouté"
+              disabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
+              aria-label="OCR"
+              aria-busy={isOcrProcessing}
+              title="Reconnaissance de texte (OCR)"
             >
-              Sélection
+              OCR
             </button>
             <button
               type="button"
+              onClick={() => {
+                setExportFeedback(null);
+                setIsConversionDialogOpen(true);
+              }}
+              disabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
+              title="Convertir le document"
+            >
+              Convertir
+            </button>
+            <button
+              type="button"
+              onClick={() => setWorkspaceMode((currentMode) => (currentMode === "read" ? "organize" : "read"))}
+              aria-pressed={workspaceMode === "organize"}
+              aria-label={workspaceMode === "organize" ? "Revenir à la lecture" : "Organiser"}
+              title={workspaceMode === "organize" ? "Revenir à la lecture" : "Organiser les pages"}
+            >
+              {workspaceMode === "organize" ? "Lecture" : "Organiser"}
+            </button>
+          </div>
+          <div className="toolbar-action-group editing-tool-group" role="group" aria-label="Outils d'édition">
+            <button
+              type="button"
+              className="toolbar-icon-button"
               onClick={() => {
                 setExportFeedback(null);
                 setActiveEditingTool("add_text");
@@ -3106,14 +3461,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 setSelectedEditId(null);
               }}
               disabled={!activeDocument || workspaceMode !== "read"}
-              aria-label="Texte"
+              aria-label="Ajouter du texte"
               aria-pressed={activeEditingTool === "add_text"}
-              title="Ajouter un bloc de texte"
+              title="Ajouter du texte"
             >
-              Texte
+              <ToolbarIcon name="text" />
             </button>
             <button
               type="button"
+              className="toolbar-icon-button"
               onClick={() => {
                 setExportFeedback(null);
                 setActiveEditingTool("signature");
@@ -3122,20 +3478,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 setIsSignatureDialogOpen(true);
               }}
               disabled={!activeDocument || workspaceMode !== "read"}
-              aria-label="Signature"
+              aria-label="Ajouter une signature"
               aria-pressed={activeEditingTool === "signature"}
-              title="Ajouter une signature visuelle"
+              title="Ajouter une signature"
             >
-              Signature
+              <ToolbarIcon name="signature" />
             </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setWorkspaceMode((currentMode) => (currentMode === "read" ? "organize" : "read"))}
-            aria-pressed={workspaceMode === "organize"}
-          >
-            {workspaceMode === "organize" ? "Revenir à la lecture" : "Organiser"}
-          </button>
         </div>
 
         <div className="page-controls">
@@ -3148,6 +3497,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             }}
             disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom <= MIN_ZOOM}
             aria-label="Réduire le zoom"
+            title="Réduire le zoom"
           >
             -
           </button>
@@ -3163,6 +3513,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             }}
             disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom >= MAX_ZOOM}
             aria-label="Augmenter le zoom"
+            title="Augmenter le zoom"
           >
             +
           </button>
@@ -3187,6 +3538,69 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           }}
           onConfirm={prepareSignatureImage}
         />
+      ) : null}
+
+      {saveAsDocument ? (
+        <SaveAsDialog
+          suggestedName={getSuggestedPdfSaveName(
+            saveAsDocument.fileName,
+            saveAsDocument.workingSaveName,
+          )}
+          isSaving={isExporting}
+          errorMessage={
+            exportFeedback?.kind === "error" ? exportFeedback.message : null
+          }
+          onCancel={cancelSaveAsDialog}
+          onSave={saveDocumentAs}
+        />
+      ) : null}
+
+      {pendingCloseDocument ? (
+        <div className="unsaved-dialog-backdrop" role="presentation">
+          <section
+            className="unsaved-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unsaved-dialog-title"
+          >
+            <h2 id="unsaved-dialog-title">Modifications non sauvegardées</h2>
+            <p>
+              {pendingCloseDocument.fileName} contient des modifications non
+              sauvegardées.
+            </p>
+            <div className="unsaved-dialog__actions">
+              <button
+                type="button"
+                onClick={savePendingCloseDocument}
+                disabled={isExporting}
+              >
+                Enregistrer sous…
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const documentId = pendingCloseDocument.id;
+                  setPendingCloseDocumentId(null);
+                  setCloseAfterSaveDocumentId(null);
+                  performCloseDocument(documentId);
+                }}
+                disabled={isExporting}
+              >
+                Ignorer les modifications
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingCloseDocumentId(null);
+                  setCloseAfterSaveDocumentId(null);
+                }}
+                disabled={isExporting}
+              >
+                Annuler
+              </button>
+            </div>
+          </section>
+        </div>
       ) : null}
 
       {isOcrDialogOpen && activeDocument ? (
@@ -3229,6 +3643,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           <DocumentSidebar
             documents={documents}
             activeDocumentId={activeDocumentId}
+            dirtyDocumentIds={dirtyDocumentIds}
             theme={theme}
             openFileInputRef={openFileInputRef}
             onSelectDocument={selectDocumentFromSidebar}

@@ -8,6 +8,7 @@ import logging
 import re
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import quote
 
 import fitz
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -115,7 +116,11 @@ class OrganizeExportPlan(BaseModel):
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_DIR = PROJECT_ROOT / "data" / "output"
-SAFE_OUTPUT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._ -]*")
+FORBIDDEN_OUTPUT_NAME_CHARACTERS = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f]')
+WINDOWS_RESERVED_OUTPUT_NAME = re.compile(
+    r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$",
+    re.IGNORECASE,
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="PDF Engine MVP")
@@ -200,21 +205,42 @@ def parse_organize_plan(serialized_plan: str) -> OrganizeExportPlan:
 
 def build_output_name(upload_name: str | None, requested_name: str | None) -> str:
     if requested_name is not None:
-        if not requested_name or "/" in requested_name or "\\" in requested_name:
-            raise HTTPException(status_code=422, detail="Le nom de sortie est invalide.")
-
-        name = re.sub(r"[^A-Za-z0-9._ -]", "-", Path(requested_name).name)
+        if "/" in requested_name or "\\" in requested_name:
+            raise HTTPException(
+                status_code=422, detail="Le nom de sortie est invalide."
+            )
+        requested_stem = re.sub(
+            r"(?:\.pdf)+$", "", requested_name, flags=re.IGNORECASE
+        )
+        stem = FORBIDDEN_OUTPUT_NAME_CHARACTERS.sub("-", requested_stem)
     else:
-        source_stem = re.sub(r"[^A-Za-z0-9._ -]", "-", Path(upload_name or "document").stem)
-        name = f"{source_stem.strip('. ') or 'document'}-modifie.pdf"
+        stem = FORBIDDEN_OUTPUT_NAME_CHARACTERS.sub(
+            "-", Path(upload_name or "document").stem
+        )
 
-    if not name.lower().endswith(".pdf"):
-        name = f"{name}.pdf"
-
-    if not SAFE_OUTPUT_NAME.fullmatch(name):
+    stem = stem.strip().rstrip(". ")
+    if not stem:
         raise HTTPException(status_code=422, detail="Le nom de sortie est invalide.")
+    if WINDOWS_RESERVED_OUTPUT_NAME.fullmatch(stem):
+        stem = f"_{stem}"
 
-    return name
+    suffix = "" if requested_name is not None else "-modifie"
+    return f"{stem}{suffix}.pdf"
+
+
+def build_content_disposition(output_name: str) -> str:
+    encoded_name = quote(output_name, safe="")
+    if encoded_name == output_name:
+        return f'attachment; filename="{output_name}"'
+
+    ascii_name = (
+        re.sub(r"[^A-Za-z0-9._ ()-]", "-", output_name).strip(". ")
+        or "document.pdf"
+    )
+    return (
+        f'attachment; filename="{ascii_name}"; '
+        f"filename*=UTF-8''{encoded_name}"
+    )
 
 
 def parse_document_ids(serialized_ids: str | None, file_count: int) -> list[str]:
@@ -566,5 +592,8 @@ async def export_organize_pdf(
     return Response(
         content=result,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{output_name}"', **output_headers},
+        headers={
+            "Content-Disposition": build_content_disposition(output_name),
+            **output_headers,
+        },
     )

@@ -12,6 +12,7 @@ export type ViewerPreferences = {
 export type StoredPdfDocument = {
   id: string;
   fileName: string;
+  workingSaveName?: string | null;
   mimeType: string;
   content: Blob;
   pageCount: number | null;
@@ -24,6 +25,7 @@ export type StoredPdfDocument = {
 export type ViewerDocumentSnapshot = {
   id: string;
   fileName: string;
+  workingSaveName?: string | null;
   mimeType: string;
   content: Blob;
   pageCount: number | null;
@@ -335,6 +337,7 @@ export function toStoredPdfDocument(snapshot: ViewerDocumentSnapshot): StoredPdf
   return {
     id: snapshot.id,
     fileName: snapshot.fileName,
+    workingSaveName: snapshot.workingSaveName ?? null,
     mimeType: snapshot.mimeType,
     content: snapshot.content,
     pageCount: snapshot.pageCount,

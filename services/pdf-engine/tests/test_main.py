@@ -85,14 +85,37 @@ def test_conversion_error_response_exposes_code_and_stage_without_diagnostic() -
 
 
 def test_build_output_name_rejects_empty_and_path_values() -> None:
-    for value in ("", "../document.pdf", "/tmp/document.pdf", r"C:\\document.pdf"):
+    for value in (
+        "",
+        "   ",
+        ".pdf",
+        "...",
+        "../document.pdf",
+        "/tmp/document.pdf",
+        r"C:\\document.pdf",
+    ):
         with pytest.raises(HTTPException, match="nom de sortie"):
             main.build_output_name("source.pdf", value)
 
 
 def test_build_output_name_normalizes_missing_extension() -> None:
     assert main.build_output_name("source.pdf", "export final") == "export final.pdf"
+    assert main.build_output_name("source.pdf", "export final.PDF") == "export final.pdf"
+    assert main.build_output_name("source.pdf", "export final.pdf.pdf") == "export final.pdf"
+    assert main.build_output_name("source.pdf", "été 2026 (signé).pdf") == "été 2026 (signé).pdf"
+    assert main.build_output_name("source.pdf", "rapport?.pdf") == "rapport-.pdf"
+    assert main.build_output_name("source.pdf", "CON.pdf") == "_CON.pdf"
     assert main.build_output_name("source.pdf", None) == "source-modifie.pdf"
+
+
+def test_build_content_disposition_encodes_unicode_names() -> None:
+    assert main.build_content_disposition("contrat-final.pdf") == (
+        'attachment; filename="contrat-final.pdf"'
+    )
+    assert main.build_content_disposition("été signé.pdf") == (
+        'attachment; filename="-t- sign-.pdf"; '
+        "filename*=UTF-8''%C3%A9t%C3%A9%20sign%C3%A9.pdf"
+    )
 
 
 def test_parse_document_ids_rejects_invalid_collections() -> None:
