@@ -11,6 +11,18 @@ type Point = {
   y: number;
 };
 
+export type ResizeHandle = "nw" | "ne" | "sw" | "se";
+
+export const MINIMUM_TEXT_RECT_WIDTH = 8;
+export const MINIMUM_TEXT_RECT_HEIGHT = 9;
+
+export function getMinimumTextRectSize(fontSize: number) {
+  return {
+    width: MINIMUM_TEXT_RECT_WIDTH,
+    height: Math.max(MINIMUM_TEXT_RECT_HEIGHT, fontSize),
+  };
+}
+
 export type ViewportRectStyle = {
   left: number;
   top: number;
@@ -54,6 +66,28 @@ export function clampPdfRectToPage(
   const height = Math.min(normalized.y1 - normalized.y0, pageY1 - pageY0);
   const x0 = clamp(normalized.x0, pageX0, pageX1 - width);
   const y0 = clamp(normalized.y0, pageY0, pageY1 - height);
+
+  return { x0, y0, x1: x0 + width, y1: y0 + height };
+}
+
+export function offsetPdfRectWithinPage(
+  rect: PdfRect,
+  pageView: readonly number[],
+  offset: Point,
+): PdfRect {
+  if (pageView.length < 4) {
+    return normalizePdfRect(rect);
+  }
+  const pageX0 = Math.min(pageView[0], pageView[2]);
+  const pageY0 = Math.min(pageView[1], pageView[3]);
+  const pageX1 = Math.max(pageView[0], pageView[2]);
+  const pageY1 = Math.max(pageView[1], pageView[3]);
+  const normalized = normalizePdfRect(rect);
+  const width = Math.min(normalized.x1 - normalized.x0, pageX1 - pageX0);
+  const height = Math.min(normalized.y1 - normalized.y0, pageY1 - pageY0);
+  const x0 = clamp(normalized.x0 + offset.x, pageX0, pageX1 - width);
+  // A positive visual Y offset moves downward, which is negative in native PDF Y.
+  const y0 = clamp(normalized.y0 - offset.y, pageY0, pageY1 - height);
 
   return { x0, y0, x1: x0 + width, y1: y0 + height };
 }
@@ -144,6 +178,44 @@ export function resizePdfRectByScreenDelta(
     x1: normalized.x0 + width,
     y1: normalized.y1,
   };
+}
+
+export function resizeFreeformPdfRectByScreenDelta(
+  viewport: PdfViewport,
+  rect: PdfRect,
+  delta: Point,
+  handle: ResizeHandle,
+  minimumWidth = MINIMUM_TEXT_RECT_WIDTH,
+  minimumHeight = MINIMUM_TEXT_RECT_HEIGHT,
+): PdfRect {
+  const normalized = normalizePdfRect(rect);
+  const origin = screenPointToPdf(viewport, { x: 0, y: 0 });
+  const destination = screenPointToPdf(viewport, delta);
+  const deltaX = destination.x - origin.x;
+  const deltaY = destination.y - origin.y;
+  const [viewX0, viewY0, viewX1, viewY1] = viewport.viewBox;
+  const pageX0 = Math.min(viewX0, viewX1);
+  const pageY0 = Math.min(viewY0, viewY1);
+  const pageX1 = Math.max(viewX0, viewX1);
+  const pageY1 = Math.max(viewY0, viewY1);
+  const effectiveMinimumWidth = Math.min(minimumWidth, pageX1 - pageX0);
+  const effectiveMinimumHeight = Math.min(minimumHeight, pageY1 - pageY0);
+  let { x0, y0, x1, y1 } = normalized;
+
+  if (handle.endsWith("w")) {
+    x0 = clamp(x0 + deltaX, pageX0, x1 - effectiveMinimumWidth);
+  } else {
+    x1 = clamp(x1 + deltaX, x0 + effectiveMinimumWidth, pageX1);
+  }
+
+  // CSS top maps to the native PDF y1 edge; CSS bottom maps to y0.
+  if (handle.startsWith("n")) {
+    y1 = clamp(y1 + deltaY, y0 + effectiveMinimumHeight, pageY1);
+  } else {
+    y0 = clamp(y0 + deltaY, pageY0, y1 - effectiveMinimumHeight);
+  }
+
+  return { x0, y0, x1, y1 };
 }
 
 export function pdfRectToViewportStyle(

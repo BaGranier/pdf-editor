@@ -1,4 +1,9 @@
-import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import type { PageViewport } from "pdfjs-dist";
 import {
   pdfRectToViewportStyle,
@@ -36,8 +41,17 @@ export function SignatureEditBlock({
     clientY: number;
     rect: PdfRect;
   } | null>(null);
-  const style = pdfRectToViewportStyle(viewport, edit.rect);
+  const [draftRect, setDraftRect] = useState(edit.rect);
+  const interactionRectRef = useRef(edit.rect);
+  const style = pdfRectToViewportStyle(viewport, draftRect);
   const aspectRatio = image.width / image.height;
+
+  useEffect(() => {
+    if (!interactionRef.current) {
+      interactionRectRef.current = edit.rect;
+      setDraftRect(edit.rect);
+    }
+  }, [edit.id, edit.rect]);
 
   useEffect(() => {
     function handleMouseMove(event: globalThis.MouseEvent) {
@@ -50,7 +64,7 @@ export function SignatureEditBlock({
         x: event.clientX - interaction.clientX,
         y: event.clientY - interaction.clientY,
       };
-      onMove(
+      const rect =
         interaction.kind === "move"
           ? translatePdfRectByScreenDelta(viewport, interaction.rect, delta)
           : resizePdfRectByScreenDelta(
@@ -58,12 +72,17 @@ export function SignatureEditBlock({
               interaction.rect,
               delta,
               aspectRatio,
-            ),
-      );
+            );
+      interactionRectRef.current = rect;
+      setDraftRect(rect);
     }
 
     function finishInteraction() {
+      if (!interactionRef.current) {
+        return;
+      }
       interactionRef.current = null;
+      onMove(interactionRectRef.current);
     }
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -86,6 +105,7 @@ export function SignatureEditBlock({
     event.preventDefault();
     event.stopPropagation();
     onSelect();
+    interactionRectRef.current = edit.rect;
     interactionRef.current = {
       kind,
       clientX: event.clientX,

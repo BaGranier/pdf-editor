@@ -1,8 +1,21 @@
 import type { PdfEdit } from "./types";
 
+export type EditingSnapshot = {
+  edits: PdfEdit[];
+  revision: number;
+};
+
 export type DocumentEditingState = {
   edits: PdfEdit[];
   isDirty: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  past: EditingSnapshot[];
+  future: EditingSnapshot[];
+  revision: number;
+  savedRevision: number;
+  nextRevision: number;
+  externalDirty: boolean;
 };
 
 export type PdfEditsByDocument = Record<string, DocumentEditingState>;
@@ -11,14 +24,26 @@ export type PdfEditsAction =
   | { type: "add"; documentId: string; edit: PdfEdit }
   | { type: "replace"; documentId: string; edit: PdfEdit }
   | { type: "delete"; documentId: string; editId: string }
+  | { type: "undo"; documentId: string }
+  | { type: "redo"; documentId: string }
   | { type: "mark_dirty"; documentId: string }
   | { type: "mark_saved"; documentId: string }
   | { type: "remove_document"; documentId: string }
   | { type: "clear" };
 
+const HISTORY_LIMIT = 100;
+
 const EMPTY_DOCUMENT_EDITING_STATE: DocumentEditingState = {
   edits: [],
   isDirty: false,
+  canUndo: false,
+  canRedo: false,
+  past: [],
+  future: [],
+  revision: 0,
+  savedRevision: 0,
+  nextRevision: 1,
+  externalDirty: false,
 };
 
 export function getDocumentEditingState(
@@ -58,30 +83,53 @@ function editsAreEqual(left: PdfEdit, right: PdfEdit) {
   return false;
 }
 
+function withDerivedState(
+  state: Omit<DocumentEditingState, "isDirty" | "canUndo" | "canRedo">,
+): DocumentEditingState {
+  return {
+    ...state,
+    isDirty: state.externalDirty || state.revision !== state.savedRevision,
+    canUndo: state.past.length > 0,
+    canRedo: state.future.length > 0,
+  };
+}
+
+function commitEdits(
+  current: DocumentEditingState,
+  edits: PdfEdit[],
+): DocumentEditingState {
+  const present: EditingSnapshot = {
+    edits: current.edits,
+    revision: current.revision,
+  };
+  const past = [...current.past, present].slice(-HISTORY_LIMIT);
+
+  return withDerivedState({
+    edits,
+    past,
+    future: [],
+    revision: current.nextRevision,
+    savedRevision: current.savedRevision,
+    nextRevision: current.nextRevision + 1,
+    externalDirty: current.externalDirty,
+  });
+}
+
 export function pdfEditsReducer(
   state: PdfEditsByDocument,
   action: PdfEditsAction,
 ): PdfEditsByDocument {
   switch (action.type) {
-    case "add":
+    case "add": {
+      const current = getDocumentEditingState(state, action.documentId);
       return {
         ...state,
-        [action.documentId]: {
-          edits: [
-            ...getDocumentEditingState(state, action.documentId).edits,
-            action.edit,
-          ],
-          isDirty: true,
-        },
+        [action.documentId]: commitEdits(current, [...current.edits, action.edit]),
       };
+    }
     case "replace": {
-      const currentDocumentState = getDocumentEditingState(
-        state,
-        action.documentId,
-      );
-      const currentEdit = currentDocumentState.edits.find(
-        (edit) => edit.id === action.edit.id,
-      );
+      const current = getDocumentEditingState(state, action.documentId);
+      const currentEdit = current.edits.find((edit) => edit.id === action.edit.id);
 
       if (!currentEdit || editsAreEqual(currentEdit, action.edit)) {
         return state;
@@ -89,62 +137,106 @@ export function pdfEditsReducer(
 
       return {
         ...state,
-        [action.documentId]: {
-          edits: currentDocumentState.edits.map((edit) =>
+        [action.documentId]: commitEdits(
+          current,
+          current.edits.map((edit) =>
             edit.id === action.edit.id ? action.edit : edit,
           ),
-          isDirty: true,
-        },
+        ),
       };
     }
     case "delete": {
-      const currentDocumentState = getDocumentEditingState(
-        state,
-        action.documentId,
-      );
+      const current = getDocumentEditingState(state, action.documentId);
 
-      if (!currentDocumentState.edits.some((edit) => edit.id === action.editId)) {
+      if (!current.edits.some((edit) => edit.id === action.editId)) {
         return state;
       }
 
       return {
         ...state,
-        [action.documentId]: {
-          edits: currentDocumentState.edits.filter(
-            (edit) => edit.id !== action.editId,
-          ),
-          isDirty: true,
-        },
+        [action.documentId]: commitEdits(
+          current,
+          current.edits.filter((edit) => edit.id !== action.editId),
+        ),
+      };
+    }
+    case "undo": {
+      const current = getDocumentEditingState(state, action.documentId);
+      const previous = current.past[current.past.length - 1];
+
+      if (!previous) {
+        return state;
+      }
+
+      return {
+        ...state,
+        [action.documentId]: withDerivedState({
+          edits: previous.edits,
+          past: current.past.slice(0, -1),
+          future: [
+            { edits: current.edits, revision: current.revision },
+            ...current.future,
+          ],
+          revision: previous.revision,
+          savedRevision: current.savedRevision,
+          nextRevision: current.nextRevision,
+          externalDirty: current.externalDirty,
+        }),
+      };
+    }
+    case "redo": {
+      const current = getDocumentEditingState(state, action.documentId);
+      const [next, ...remainingFuture] = current.future;
+
+      if (!next) {
+        return state;
+      }
+
+      return {
+        ...state,
+        [action.documentId]: withDerivedState({
+          edits: next.edits,
+          past: [
+            ...current.past,
+            { edits: current.edits, revision: current.revision },
+          ].slice(-HISTORY_LIMIT),
+          future: remainingFuture,
+          revision: next.revision,
+          savedRevision: current.savedRevision,
+          nextRevision: current.nextRevision,
+          externalDirty: current.externalDirty,
+        }),
       };
     }
     case "mark_dirty": {
-      const currentDocumentState = getDocumentEditingState(
-        state,
-        action.documentId,
-      );
+      const current = getDocumentEditingState(state, action.documentId);
 
-      if (currentDocumentState.isDirty) {
+      if (current.externalDirty) {
         return state;
       }
 
       return {
         ...state,
-        [action.documentId]: { ...currentDocumentState, isDirty: true },
+        [action.documentId]: withDerivedState({
+          ...current,
+          externalDirty: true,
+        }),
       };
     }
     case "mark_saved": {
-      const currentDocumentState = getDocumentEditingState(
-        state,
-        action.documentId,
-      );
+      const current = getDocumentEditingState(state, action.documentId);
 
-      if (!currentDocumentState.isDirty) {
+      if (!current.isDirty) {
         return state;
       }
 
       return {
         ...state,
-        [action.documentId]: { ...currentDocumentState, isDirty: false },
+        [action.documentId]: withDerivedState({
+          ...current,
+          savedRevision: current.revision,
+          externalDirty: false,
+        }),
       };
     }
     case "remove_document": {

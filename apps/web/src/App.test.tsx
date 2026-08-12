@@ -26,6 +26,7 @@ vi.mock("pdfjs-dist/build/pdf.worker.mjs?url", () => ({
 
 function createPdfDocumentMock(pageCount = 1) {
   const page = {
+    view: [0, 0, 800, 1000],
     getViewport: vi.fn(({ scale = 1 }: { scale?: number } = {}) => ({
       width: 800 * scale,
       height: 1000 * scale,
@@ -1969,6 +1970,105 @@ describe("App", () => {
     });
 
     expect(screen.getByRole("button", { name: "persist-a.pdf" })).toBeInTheDocument();
+  });
+
+  it("groups move and resize history and supports object clipboard shortcuts", async () => {
+    render(<App />);
+    const sidebar = screen.getByRole("complementary", {
+      name: "Documents ouverts",
+    });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: {
+        files: [new File(["%PDF-1.4"], "history.pdf", { type: "application/pdf" })],
+      },
+    });
+    const layer = await screen.findByLabelText("Couche d'édition de la page 1");
+    const undoButton = screen.getByRole("button", { name: "Annuler" });
+    const redoButton = screen.getByRole("button", { name: "Rétablir" });
+    expect(undoButton).toBeDisabled();
+    expect(redoButton).toBeDisabled();
+
+    selectInsertTool("Texte");
+    fireEvent.click(layer, { clientX: 100, clientY: 150 });
+    const input = await screen.findByLabelText("Texte ajouté page 1");
+    fireEvent.change(input, {
+      target: { value: "Un texte suffisamment long pour revenir à la ligne" },
+    });
+    fireEvent.blur(input);
+    const block = input.closest<HTMLElement>(".pdf-text-edit");
+    expect(block).not.toBeNull();
+    expect(undoButton).toBeEnabled();
+
+    fireEvent.click(undoButton);
+    expect(input).toHaveValue("");
+    fireEvent.click(redoButton);
+    expect(input).toHaveValue(
+      "Un texte suffisamment long pour revenir à la ligne",
+    );
+
+    const moveHandle = screen.getByRole("button", {
+      name: "Déplacer le bloc de texte page 1",
+    });
+    fireEvent.mouseDown(moveHandle, { button: 0, clientX: 100, clientY: 150 });
+    fireEvent.mouseMove(window, { clientX: 110, clientY: 155 });
+    fireEvent.mouseMove(window, { clientX: 125, clientY: 162 });
+    fireEvent.mouseMove(window, { clientX: 140, clientY: 170 });
+    fireEvent.mouseUp(window);
+    expect(block).toHaveStyle({ left: "140px", top: "170px" });
+
+    fireEvent.click(undoButton);
+    expect(block).toHaveStyle({ left: "100px", top: "150px" });
+    expect(redoButton).toBeEnabled();
+    fireEvent.keyDown(window, { key: "y", ctrlKey: true });
+    expect(block).toHaveStyle({ left: "140px", top: "170px" });
+
+    const resizeHandle = screen.getByRole("button", {
+      name: "Redimensionner le bloc de texte depuis se",
+    });
+    fireEvent.mouseDown(resizeHandle, { button: 0, clientX: 360, clientY: 242 });
+    fireEvent.mouseMove(window, { clientX: 220, clientY: 190 });
+    fireEvent.mouseMove(window, { clientX: 120, clientY: 160 });
+    fireEvent.mouseUp(window);
+    expect(block).toHaveStyle({ width: "8px", height: "18px" });
+    expect(input).toHaveStyle({ fontSize: "18px" });
+    expect(input).toHaveValue(
+      "Un texte suffisamment long pour revenir à la ligne",
+    );
+
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    expect(block).toHaveStyle({ width: "220px", height: "72px" });
+    fireEvent.keyDown(window, { key: "Z", ctrlKey: true, shiftKey: true });
+    expect(block).toHaveStyle({ width: "8px", height: "18px" });
+
+    fireEvent.click(block as HTMLElement);
+    expect(fireEvent.keyDown(window, { key: "c", ctrlKey: true })).toBe(false);
+    expect(fireEvent.keyDown(window, { key: "v", ctrlKey: true })).toBe(false);
+    await waitFor(() => {
+      expect(screen.getAllByLabelText("Texte ajouté page 1")).toHaveLength(2);
+    });
+    const copiedInputs = screen.getAllByLabelText("Texte ajouté page 1");
+    const copyBlock = copiedInputs[1].closest<HTMLElement>(".pdf-text-edit");
+    expect(copiedInputs[1]).toHaveValue(
+      "Un texte suffisamment long pour revenir à la ligne",
+    );
+    expect(copyBlock).toHaveStyle({
+      left: "152px",
+      top: "182px",
+      width: "8px",
+      height: "18px",
+    });
+    expect(copiedInputs[1]).toHaveStyle({ fontSize: "18px" });
+
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    expect(screen.getAllByLabelText("Texte ajouté page 1")).toHaveLength(1);
+    fireEvent.keyDown(window, { key: "y", ctrlKey: true });
+    expect(screen.getAllByLabelText("Texte ajouté page 1")).toHaveLength(2);
+
+    const nativeInput = screen.getAllByLabelText("Texte ajouté page 1")[1];
+    nativeInput.focus();
+    expect(fireEvent.keyDown(nativeInput, { key: "c", ctrlKey: true })).toBe(true);
+    expect(fireEvent.keyDown(nativeInput, { key: "v", ctrlKey: true })).toBe(true);
+    expect(screen.getAllByLabelText("Texte ajouté page 1")).toHaveLength(2);
   });
 
   it("clears local data after confirmation", async () => {

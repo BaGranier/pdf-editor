@@ -1,12 +1,17 @@
 import {
+  useCallback,
   useEffect,
   useRef,
+  useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import type { PageViewport } from "pdfjs-dist";
 import {
+  getMinimumTextRectSize,
   pdfRectToViewportStyle,
+  resizeFreeformPdfRectByScreenDelta,
   translatePdfRectByScreenDelta,
+  type ResizeHandle,
 } from "../editing/coordinates";
 import type { AddTextEdit, PdfRect } from "../editing/types";
 
@@ -19,6 +24,9 @@ type TextEditBlockProps = {
   onMove: (rect: PdfRect) => void;
 };
 
+const TEXT_COMMIT_DELAY_MS = 600;
+const RESIZE_HANDLES: ResizeHandle[] = ["nw", "ne", "sw", "se"];
+
 export function TextEditBlock({
   edit,
   viewport,
@@ -28,59 +36,140 @@ export function TextEditBlock({
   onMove,
 }: TextEditBlockProps) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const dragRef = useRef<{
+  const [draftText, setDraftText] = useState(edit.text);
+  const [draftRect, setDraftRect] = useState(edit.rect);
+  const [hasOverflow, setHasOverflow] = useState(false);
+  const draftTextRef = useRef(edit.text);
+  const committedTextRef = useRef(edit.text);
+  const textDirtyRef = useRef(false);
+  const textTimerRef = useRef<number | null>(null);
+  const onChangeTextRef = useRef(onChangeText);
+  const interactionRef = useRef<{
+    kind: "move" | "resize";
+    handle?: ResizeHandle;
     clientX: number;
     clientY: number;
     rect: PdfRect;
   } | null>(null);
-  const style = pdfRectToViewportStyle(viewport, edit.rect);
+  const interactionRectRef = useRef(edit.rect);
+  const style = pdfRectToViewportStyle(viewport, draftRect);
+  const minimumSize = getMinimumTextRectSize(edit.style.fontSize);
+
+  onChangeTextRef.current = onChangeText;
+
+  const commitText = useCallback(() => {
+    if (textTimerRef.current !== null) {
+      window.clearTimeout(textTimerRef.current);
+      textTimerRef.current = null;
+    }
+    if (!textDirtyRef.current || draftTextRef.current === committedTextRef.current) {
+      textDirtyRef.current = false;
+      return;
+    }
+    textDirtyRef.current = false;
+    committedTextRef.current = draftTextRef.current;
+    onChangeTextRef.current(draftTextRef.current);
+  }, []);
 
   useEffect(() => {
-    if (selected) {
+    if (!textDirtyRef.current) {
+      draftTextRef.current = edit.text;
+      committedTextRef.current = edit.text;
+      setDraftText(edit.text);
+    }
+  }, [edit.id, edit.text]);
+
+  useEffect(() => {
+    if (!interactionRef.current) {
+      interactionRectRef.current = edit.rect;
+      setDraftRect(edit.rect);
+    }
+  }, [edit.id, edit.rect]);
+
+  useEffect(() => {
+    if (selected && edit.text.length === 0) {
       inputRef.current?.focus();
     }
-  }, [selected]);
+  }, [edit.id, edit.text.length, selected]);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (input) {
+      setHasOverflow(input.scrollHeight > input.clientHeight + 1);
+    }
+  }, [draftRect, draftText, edit.style, viewport]);
 
   useEffect(() => {
     function handleMouseMove(event: globalThis.MouseEvent) {
-      const drag = dragRef.current;
-
-      if (!drag) {
+      const interaction = interactionRef.current;
+      if (!interaction) {
         return;
       }
-
-      onMove(
-        translatePdfRectByScreenDelta(viewport, drag.rect, {
-          x: event.clientX - drag.clientX,
-          y: event.clientY - drag.clientY,
-        }),
-      );
+      const delta = {
+        x: event.clientX - interaction.clientX,
+        y: event.clientY - interaction.clientY,
+      };
+      const rect =
+        interaction.kind === "move"
+          ? translatePdfRectByScreenDelta(viewport, interaction.rect, delta)
+          : resizeFreeformPdfRectByScreenDelta(
+              viewport,
+              interaction.rect,
+              delta,
+              interaction.handle ?? "se",
+              minimumSize.width,
+              minimumSize.height,
+            );
+      interactionRectRef.current = rect;
+      setDraftRect(rect);
     }
 
-    function finishMove() {
-      dragRef.current = null;
+    function finishInteraction() {
+      if (!interactionRef.current) {
+        return;
+      }
+      interactionRef.current = null;
+      onMove(interactionRectRef.current);
     }
 
     window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", finishMove);
-    window.addEventListener("blur", finishMove);
-
+    window.addEventListener("mouseup", finishInteraction);
+    window.addEventListener("blur", finishInteraction);
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", finishMove);
-      window.removeEventListener("blur", finishMove);
+      window.removeEventListener("mouseup", finishInteraction);
+      window.removeEventListener("blur", finishInteraction);
     };
-  }, [onMove, viewport]);
+  }, [minimumSize.height, minimumSize.width, onMove, viewport]);
 
-  const startMove = (event: ReactMouseEvent<HTMLButtonElement>) => {
+  useEffect(
+    () => () => {
+      if (textTimerRef.current !== null) {
+        window.clearTimeout(textTimerRef.current);
+      }
+      if (textDirtyRef.current && draftTextRef.current !== committedTextRef.current) {
+        onChangeTextRef.current(draftTextRef.current);
+      }
+    },
+    [],
+  );
+
+  const startInteraction = (
+    kind: "move" | "resize",
+    event: ReactMouseEvent<HTMLElement>,
+    handle?: ResizeHandle,
+  ) => {
     if (event.button !== 0) {
       return;
     }
-
     event.preventDefault();
     event.stopPropagation();
+    inputRef.current?.blur();
     onSelect();
-    dragRef.current = {
+    interactionRectRef.current = edit.rect;
+    interactionRef.current = {
+      kind,
+      handle,
       clientX: event.clientX,
       clientY: event.clientY,
       rect: edit.rect,
@@ -89,8 +178,9 @@ export function TextEditBlock({
 
   return (
     <div
-      className={selected ? "pdf-text-edit is-selected" : "pdf-text-edit"}
+      className={`${selected ? "pdf-text-edit is-selected" : "pdf-text-edit"}${hasOverflow ? " has-overflow" : ""}`}
       data-text-edit-id={edit.id}
+      data-text-overflow={hasOverflow ? "true" : "false"}
       style={{
         left: style.left,
         top: style.top,
@@ -109,14 +199,14 @@ export function TextEditBlock({
         className="pdf-text-edit__drag-handle"
         aria-label={`Déplacer le bloc de texte page ${edit.page}`}
         title="Déplacer le bloc"
-        onMouseDown={startMove}
+        onMouseDown={(event) => startInteraction("move", event)}
       >
         ⋮⋮
       </button>
       <textarea
         ref={inputRef}
         aria-label={`Texte ajouté page ${edit.page}`}
-        value={edit.text}
+        value={draftText}
         placeholder="Saisissez votre texte"
         spellCheck
         style={{
@@ -125,10 +215,37 @@ export function TextEditBlock({
           fontSize: `${Math.round(edit.style.fontSize * Math.hypot(viewport.transform[0], viewport.transform[1]) * 1_000) / 1_000}px`,
           fontWeight: edit.style.bold ? 700 : 400,
         }}
-        onChange={(event) => onChangeText(event.target.value)}
+        onChange={(event) => {
+          const text = event.target.value;
+          draftTextRef.current = text;
+          textDirtyRef.current = true;
+          setDraftText(text);
+          if (textTimerRef.current !== null) {
+            window.clearTimeout(textTimerRef.current);
+          }
+          textTimerRef.current = window.setTimeout(commitText, TEXT_COMMIT_DELAY_MS);
+        }}
+        onBlur={commitText}
         onFocus={onSelect}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.currentTarget.blur();
+          }
+        }}
         onMouseDown={(event) => event.stopPropagation()}
       />
+      {selected
+        ? RESIZE_HANDLES.map((handle) => (
+            <button
+              key={handle}
+              type="button"
+              className={`pdf-text-edit__resize pdf-text-edit__resize--${handle}`}
+              aria-label={`Redimensionner le bloc de texte depuis ${handle}`}
+              data-resize-handle={handle}
+              onMouseDown={(event) => startInteraction("resize", event, handle)}
+            />
+          ))
+        : null}
     </div>
   );
 }

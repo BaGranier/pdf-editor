@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getDocumentEditingState, pdfEditsReducer } from "./state";
-import type { AddTextEdit, SignatureEdit } from "./types";
+import {
+  getDocumentEditingState,
+  pdfEditsReducer,
+  type PdfEditsByDocument,
+} from "./state";
+import type { AddTextEdit, PdfEdit, SignatureEdit } from "./types";
 
 const textEdit: AddTextEdit = {
   id: "text-1",
@@ -24,18 +28,17 @@ const signatureEdit: SignatureEdit = {
   imageId: "image-1",
 };
 
-describe("pdfEditsReducer", () => {
-  it("keeps heterogeneous edits ordered and isolated by document", () => {
-    let state = pdfEditsReducer({}, {
-      type: "add",
-      documentId: "doc-a",
-      edit: textEdit,
-    });
-    state = pdfEditsReducer(state, {
-      type: "add",
-      documentId: "doc-a",
-      edit: signatureEdit,
-    });
+function addEdits(documentId: string, edits: PdfEdit[]) {
+  return edits.reduce<PdfEditsByDocument>(
+    (state, edit) =>
+      pdfEditsReducer(state, { type: "add", documentId, edit }),
+    {},
+  );
+}
+
+describe("pdfEditsReducer history", () => {
+  it("keeps heterogeneous edits ordered and histories isolated by document", () => {
+    let state = addEdits("doc-a", [textEdit, signatureEdit]);
     state = pdfEditsReducer(state, {
       type: "add",
       documentId: "doc-b",
@@ -49,38 +52,88 @@ describe("pdfEditsReducer", () => {
     expect(state["doc-b"].edits).toEqual([
       expect.objectContaining({ id: "text-b", page: 3 }),
     ]);
-    expect(state["doc-a"].isDirty).toBe(true);
-    expect(state["doc-b"].isDirty).toBe(true);
+
+    const undone = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(undone["doc-a"].edits).toEqual([textEdit]);
+    expect(undone["doc-b"].edits).toEqual(state["doc-b"].edits);
   });
 
-  it("replaces without changing stacking order and supports deletion", () => {
-    const initial = {
-      "doc-a": { edits: [textEdit, signatureEdit], isDirty: false },
+  it("undoes and redoes creation, replacement, resize and deletion", () => {
+    let state = addEdits("doc-a", [textEdit]);
+    const moved = {
+      ...textEdit,
+      rect: { ...textEdit.rect, x0: 25, x1: 115 },
     };
-    const updatedText = { ...textEdit, text: "Texte modifié" };
-    const replaced = pdfEditsReducer(initial, {
+    state = pdfEditsReducer(state, {
       type: "replace",
       documentId: "doc-a",
-      edit: updatedText,
+      edit: moved,
     });
+    expect(state["doc-a"].edits[0]).toEqual(moved);
 
-    expect(replaced["doc-a"]).toEqual({
-      edits: [updatedText, signatureEdit],
-      isDirty: true,
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"].edits[0]).toEqual(textEdit);
+    state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
+    expect(state["doc-a"].edits[0]).toEqual(moved);
+
+    state = pdfEditsReducer(state, {
+      type: "delete",
+      documentId: "doc-a",
+      editId: textEdit.id,
     });
-    expect(
-      pdfEditsReducer(replaced, {
-        type: "delete",
-        documentId: "doc-a",
-        editId: signatureEdit.id,
-      })["doc-a"].edits,
-    ).toEqual([updatedText]);
+    expect(state["doc-a"].edits).toEqual([]);
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toEqual([moved]);
   });
 
-  it("marks only effective edit mutations as dirty and can mark a document saved", () => {
-    const cleanState = {
-      "doc-a": { edits: [textEdit, signatureEdit], isDirty: false },
-    };
+  it("clears redo after a new edit branch", () => {
+    let state = addEdits("doc-a", [textEdit]);
+    state = pdfEditsReducer(state, {
+      type: "replace",
+      documentId: "doc-a",
+      edit: { ...textEdit, text: "B" },
+    });
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"].canRedo).toBe(true);
+
+    state = pdfEditsReducer(state, {
+      type: "replace",
+      documentId: "doc-a",
+      edit: { ...textEdit, text: "D" },
+    });
+    expect(state["doc-a"].canRedo).toBe(false);
+    expect(state["doc-a"].edits[0]).toEqual({ ...textEdit, text: "D" });
+  });
+
+  it("returns to the saved revision as clean and keeps redo across save", () => {
+    let state = addEdits("doc-a", [textEdit]);
+    state = pdfEditsReducer(state, { type: "mark_saved", documentId: "doc-a" });
+    const savedRevision = state["doc-a"].revision;
+    state = pdfEditsReducer(state, {
+      type: "replace",
+      documentId: "doc-a",
+      edit: { ...textEdit, style: { ...textEdit.style, bold: true } },
+    });
+    expect(state["doc-a"].isDirty).toBe(true);
+
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"]).toMatchObject({
+      revision: savedRevision,
+      savedRevision,
+      isDirty: false,
+      canRedo: true,
+    });
+
+    state = pdfEditsReducer(state, { type: "mark_saved", documentId: "doc-a" });
+    expect(state["doc-a"].canRedo).toBe(true);
+    state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
+    expect(state["doc-a"].isDirty).toBe(true);
+  });
+
+  it("does not record no-op replacements and tracks external dirty state", () => {
+    let state = addEdits("doc-a", [textEdit, signatureEdit]);
+    state = pdfEditsReducer(state, { type: "mark_saved", documentId: "doc-a" });
+    const cleanState = state;
 
     expect(
       pdfEditsReducer(cleanState, {
@@ -97,59 +150,16 @@ describe("pdfEditsReducer", () => {
       }),
     ).toBe(cleanState);
 
-    const moved = pdfEditsReducer(cleanState, {
-      type: "replace",
-      documentId: "doc-a",
-      edit: { ...textEdit, rect: { ...textEdit.rect, x0: 12 } },
-    });
-    expect(moved["doc-a"].isDirty).toBe(true);
-
-    const saved = pdfEditsReducer(moved, {
-      type: "mark_saved",
-      documentId: "doc-a",
-    });
-    expect(saved["doc-a"].isDirty).toBe(false);
-    expect(saved["doc-a"].edits).toEqual(moved["doc-a"].edits);
-
-    const textMutations: AddTextEdit[] = [
-      { ...textEdit, text: "Autre texte" },
-      { ...textEdit, style: { ...textEdit.style, fontSize: 18 } },
-      { ...textEdit, style: { ...textEdit.style, fontFamily: "Times" } },
-      { ...textEdit, style: { ...textEdit.style, color: "#123456" } },
-      { ...textEdit, style: { ...textEdit.style, bold: true } },
-    ];
-    textMutations.forEach((edit) => {
-      expect(
-        pdfEditsReducer(cleanState, {
-          type: "replace",
-          documentId: "doc-a",
-          edit,
-        })["doc-a"].isDirty,
-      ).toBe(true);
-    });
-
-    expect(
-      pdfEditsReducer(cleanState, {
-        type: "replace",
-        documentId: "doc-a",
-        edit: {
-          ...signatureEdit,
-          rect: { ...signatureEdit.rect, x1: 140, y1: 70 },
-        },
-      })["doc-a"].isDirty,
-    ).toBe(true);
-  });
-
-  it("tracks explicit non-edit document changes without affecting other documents", () => {
-    const state = pdfEditsReducer({}, {
+    state = pdfEditsReducer(cleanState, {
       type: "mark_dirty",
       documentId: "doc-a",
     });
-
-    expect(getDocumentEditingState(state, "doc-a").isDirty).toBe(true);
-    expect(getDocumentEditingState(state, "doc-b")).toEqual({
+    expect(state["doc-a"].isDirty).toBe(true);
+    expect(getDocumentEditingState(state, "doc-b")).toMatchObject({
       edits: [],
       isDirty: false,
+      canUndo: false,
+      canRedo: false,
     });
   });
 });

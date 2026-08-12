@@ -79,6 +79,7 @@ import {
   type SignatureEdit,
   type SignatureImage,
 } from "./editing/types";
+import { offsetPdfRectWithinPage } from "./editing/coordinates";
 import {
   getDocumentEditingState,
   pdfEditsReducer,
@@ -296,6 +297,18 @@ function isEditableKeyboardTarget(target: EventTarget | null) {
   }
 
   return target.type === "file" || target.type === "text" || target.type === "search" || target.type === "email" || target.type === "url" || target.type === "tel" || target.type === "password" || target.type === "number";
+}
+
+function clonePdfEdit(edit: PdfEdit): PdfEdit {
+  if (edit.type === "add_text") {
+    return {
+      ...edit,
+      rect: { ...edit.rect },
+      style: { ...edit.style },
+    };
+  }
+
+  return { ...edit, rect: { ...edit.rect } };
 }
 
 function isInteractiveElement(target: EventTarget | null) {
@@ -588,6 +601,7 @@ type PdfViewerProps = {
   onDeselectEdit: () => void;
   onUpdateEdit: (edit: PdfEdit) => void;
   onDeleteEdit: (editId: string) => void;
+  onActivePageChange: (documentId: string, pageNumber: number) => void;
   focusRequest: number;
 };
 
@@ -606,6 +620,7 @@ function PdfViewer({
   onDeselectEdit,
   onUpdateEdit,
   onDeleteEdit,
+  onActivePageChange,
   focusRequest,
 }: PdfViewerProps) {
   const viewerRef = useRef<HTMLElement | null>(null);
@@ -664,6 +679,10 @@ function PdfViewer({
 
     return currentPageNumber;
   }, [pages]);
+
+  useEffect(() => {
+    onActivePageChange(document.id, getCurrentPageNumber());
+  }, [document.id, getCurrentPageNumber, onActivePageChange]);
 
   const scrollPageIntoView = useCallback((pageNumber: number) => {
     const viewer = viewerRef.current;
@@ -790,8 +809,9 @@ function PdfViewer({
     scrollFrameRef.current = window.requestAnimationFrame(() => {
       scrollFrameRef.current = null;
       onScrollPositionChange(document.id, viewer.scrollLeft, viewer.scrollTop);
+      onActivePageChange(document.id, getCurrentPageNumber());
     });
-  }, [document.id, onScrollPositionChange]);
+  }, [document.id, getCurrentPageNumber, onActivePageChange, onScrollPositionChange]);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
@@ -1760,7 +1780,7 @@ function ResetIcon() {
   );
 }
 
-type ToolbarIconName = "save-as" | "text" | "signature";
+type ToolbarIconName = "save-as" | "text" | "signature" | "undo" | "redo";
 
 function ToolbarIcon({ name }: { name: ToolbarIconName }) {
   return (
@@ -1794,6 +1814,12 @@ function ToolbarIcon({ name }: { name: ToolbarIconName }) {
           <path d="M3 14c2.4-4.8 3.9-7.2 5.1-7.2 1.9 0-.9 7.5.8 7.5 1.1 0 2.1-3.5 3.2-3.5.7 0 .2 3.2 1.2 3.2.6 0 1.4-1.4 2.1-1.4.6 0 .7.8 1.6.8" />
           <path d="M3 17h14" />
         </>
+      ) : null}
+      {name === "undo" ? (
+        <path d="M7 6 3.5 9.5 7 13M4 9.5h6a5 5 0 0 1 5 5" />
+      ) : null}
+      {name === "redo" ? (
+        <path d="m13 6 3.5 3.5L13 13m3-3.5h-6a5 5 0 0 0-5 5" />
       ) : null}
     </svg>
   );
@@ -1846,6 +1872,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     {},
   );
   const [selectedEditId, setSelectedEditId] = useState<string | null>(null);
+  const clipboardEditRef = useRef<PdfEdit | null>(null);
+  const pasteSequenceRef = useRef(0);
+  const activePageByDocumentRef = useRef<Record<string, number>>({});
   const [signatureImages, setSignatureImages] = useState<
     Record<string, SignatureImage>
   >({});
@@ -1928,6 +1957,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       (edit): edit is AddTextEdit =>
         edit.id === selectedEditId && edit.type === "add_text",
     ) ?? null;
+  const selectedPdfEdit =
+    activePdfEdits.find((edit) => edit.id === selectedEditId) ?? null;
   const pendingSignatureImage = pendingSignatureImageId
     ? (signatureImages[pendingSignatureImageId] ?? null)
     : null;
@@ -1955,6 +1986,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setPendingSignatureImageId(null);
     setIsFileMenuOpen(false);
   }, [activeDocumentId]);
+
+  useEffect(() => {
+    if (
+      selectedEditId &&
+      !activePdfEdits.some((edit) => edit.id === selectedEditId)
+    ) {
+      setSelectedEditId(null);
+    }
+  }, [activePdfEdits, selectedEditId]);
 
   useEffect(() => {
     if (documents.length === 0) {
@@ -2200,6 +2240,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     );
   }, []);
 
+  const recordActivePage = useCallback(
+    (documentId: string, pageNumber: number) => {
+      activePageByDocumentRef.current[documentId] = pageNumber;
+    },
+    [],
+  );
+
   const updateDocumentScrollPosition = useCallback(
     (documentId: string, scrollLeft: number, scrollTop: number) => {
       setDocuments((currentDocuments) =>
@@ -2268,6 +2315,73 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     [activeDocument],
   );
 
+  const undoPdfEdit = useCallback(() => {
+    if (!activeDocument) {
+      return;
+    }
+    dispatchPdfEdits({ type: "undo", documentId: activeDocument.id });
+    setExportFeedback(null);
+  }, [activeDocument]);
+
+  const redoPdfEdit = useCallback(() => {
+    if (!activeDocument) {
+      return;
+    }
+    dispatchPdfEdits({ type: "redo", documentId: activeDocument.id });
+    setExportFeedback(null);
+  }, [activeDocument]);
+
+  const copySelectedPdfEdit = useCallback(() => {
+    if (!selectedPdfEdit) {
+      return;
+    }
+    clipboardEditRef.current = clonePdfEdit(selectedPdfEdit);
+    pasteSequenceRef.current = 0;
+  }, [selectedPdfEdit]);
+
+  const pastePdfEdit = useCallback(async () => {
+    const sourceEdit = clipboardEditRef.current;
+    const targetDocument = activeDocument;
+    if (!sourceEdit || !targetDocument) {
+      return;
+    }
+
+    const pageNumber = Math.min(
+      targetDocument.pageCount,
+      Math.max(1, activePageByDocumentRef.current[targetDocument.id] ?? 1),
+    );
+    const page = await targetDocument.pdfDocument.getPage(pageNumber);
+    if (documentsRef.current.every((document) => document.id !== targetDocument.id)) {
+      return;
+    }
+
+    pasteSequenceRef.current += 1;
+    const offset = pasteSequenceRef.current * 12;
+    const rect = offsetPdfRectWithinPage(sourceEdit.rect, page.view, {
+      x: offset,
+      y: offset,
+    });
+    const edit: PdfEdit =
+      sourceEdit.type === "add_text"
+        ? {
+            ...clonePdfEdit(sourceEdit),
+            id: `text-${Date.now()}-${nextTextEditId.current++}`,
+            page: pageNumber,
+            rect,
+          }
+        : {
+            ...clonePdfEdit(sourceEdit),
+            id: `signature-${Date.now()}-${nextSignatureEditId.current++}`,
+            page: pageNumber,
+            rect,
+          };
+
+    dispatchPdfEdits({ type: "add", documentId: targetDocument.id, edit });
+    setSelectedEditId(edit.id);
+    setActiveEditingTool("select");
+    setExportFeedback(null);
+  }, [activeDocument]);
+
   useEffect(() => {
     function handleSelectedEditDeletion(event: globalThis.KeyboardEvent) {
       if (
@@ -2288,6 +2402,65 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     window.addEventListener("keydown", handleSelectedEditDeletion);
     return () => window.removeEventListener("keydown", handleSelectedEditDeletion);
   }, [deletePdfEdit, selectedEditId]);
+
+  useEffect(() => {
+    function handleEditingShortcuts(event: globalThis.KeyboardEvent) {
+      if (
+        !activeDocument ||
+        workspaceMode !== "read" ||
+        isEditableKeyboardTarget(event.target) ||
+        (!event.ctrlKey && !event.metaKey) ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === "z" && event.shiftKey) {
+        if (activeDocumentEditingState?.canRedo) {
+          event.preventDefault();
+          redoPdfEdit();
+        }
+        return;
+      }
+      if (key === "z") {
+        if (activeDocumentEditingState?.canUndo) {
+          event.preventDefault();
+          undoPdfEdit();
+        }
+        return;
+      }
+      if (key === "y") {
+        if (activeDocumentEditingState?.canRedo) {
+          event.preventDefault();
+          redoPdfEdit();
+        }
+        return;
+      }
+      if (key === "c" && selectedPdfEdit) {
+        event.preventDefault();
+        copySelectedPdfEdit();
+        return;
+      }
+      if (key === "v" && clipboardEditRef.current) {
+        event.preventDefault();
+        void pastePdfEdit();
+      }
+    }
+
+    window.addEventListener("keydown", handleEditingShortcuts);
+    return () => window.removeEventListener("keydown", handleEditingShortcuts);
+  }, [
+    activeDocument,
+    activeDocumentEditingState?.canRedo,
+    activeDocumentEditingState?.canUndo,
+    copySelectedPdfEdit,
+    pastePdfEdit,
+    redoPdfEdit,
+    selectedPdfEdit,
+    undoPdfEdit,
+    workspaceMode,
+  ]);
 
   const prepareSignatureImage = useCallback((draft: SignatureImageDraft) => {
     const image: SignatureImage = {
@@ -3415,6 +3588,30 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               <ToolbarIcon name="save-as" />
             </button>
           </div>
+          <div className="toolbar-action-group" role="group" aria-label="Historique">
+            <button
+              type="button"
+              className="toolbar-icon-button"
+              onClick={undoPdfEdit}
+              disabled={!activeDocumentEditingState?.canUndo}
+              aria-label="Annuler"
+              aria-keyshortcuts="Control+Z Meta+Z"
+              title="Annuler (Ctrl+Z)"
+            >
+              <ToolbarIcon name="undo" />
+            </button>
+            <button
+              type="button"
+              className="toolbar-icon-button"
+              onClick={redoPdfEdit}
+              disabled={!activeDocumentEditingState?.canRedo}
+              aria-label="Rétablir"
+              aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z"
+              title="Rétablir (Ctrl+Y)"
+            >
+              <ToolbarIcon name="redo" />
+            </button>
+          </div>
           <div className="toolbar-action-group" aria-label="Outils du document">
             <button
               type="button"
@@ -3705,6 +3902,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onDeselectEdit={() => setSelectedEditId(null)}
             onUpdateEdit={updatePdfEdit}
             onDeleteEdit={deletePdfEdit}
+            onActivePageChange={recordActivePage}
             focusRequest={viewerFocusRequest}
           />
         ) : activeDocument && activeOrganizationPlan ? (
