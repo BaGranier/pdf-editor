@@ -7,7 +7,7 @@ import statistics
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import fitz
 from docx import Document
@@ -18,7 +18,24 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
 
+from app.conversion.header_footer import (
+    ImageLayoutBlock,
+    LayoutBlock,
+    PageLayout,
+    PageLayoutInput,
+    PageNumberCandidate,
+    TextOrigin,
+    detect_document_layout,
+)
 from app.conversion.models import ConversionArtifact, DocxMode
+from app.conversion.logical_lines import LogicalLine, canonicalize_visual_lines
+from app.conversion.paragraph_layout import (
+    LIST_MARKER,
+    ParagraphLayout,
+    analyze_paragraph_layouts,
+    is_list_line,
+    normalize_paragraph_gap,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -35,11 +52,6 @@ DOCX_EDITABLE_DEGRADED_WARNING = (
     "La conversion Word éditable est dégradée : moins de 50 % du texte "
     "source a été reconstruit. Utilisez le PDF source pour vérifier le contenu."
 )
-LIST_MARKER = re.compile(
-    r"^\s*(?P<marker>[-–—•▪‣●○\uf0b7]|\d+[.)])\s+"
-)
-
-
 @dataclass(frozen=True)
 class CoverPageAnalysis:
     is_cover_page: bool
@@ -68,7 +80,14 @@ class PdfToDocxConverter:
         output_docx: Path,
         *,
         mode: DocxMode = DocxMode.EDITABLE,
+        text_origin: TextOrigin = "native",
     ) -> ConversionArtifact:
+        self.last_flow_metrics = {
+            "raw_text_fragments": 0,
+            "logical_lines": 0,
+            "same_baseline_fragments_merged": 0,
+            "paragraphs": 0,
+        }
         document = Document()
         with fitz.open(input_pdf) as pdf:
             if mode == DocxMode.VISUAL:
@@ -76,9 +95,14 @@ class PdfToDocxConverter:
                 warnings = (DOCX_VISUAL_WARNING,)
             else:
                 source_text = "\n".join(
-                    page.get_text("text", sort=True) for page in pdf
+                    " ".join(
+                        str(word[4])
+                        for word in page.get_text("words", sort=True)
+                    )
+                    for page in pdf
                 )
                 self._configure_styles(document)
+                self._text_origin = text_origin
                 self._append_editable_pages(document, pdf)
                 converted_text = self._document_text(document)
                 retention_ratio = text_retention_ratio(
@@ -104,35 +128,84 @@ class PdfToDocxConverter:
 
     @staticmethod
     def _document_text(document: DocumentType) -> str:
-        return "\n".join(
-            [
-                *(paragraph.text for paragraph in document.paragraphs),
-                *(
-                    cell.text
-                    for table in document.tables
-                    for row in table.rows
-                    for cell in row.cells
-                ),
-            ]
-        )
+        paragraphs = [paragraph.text for paragraph in document.paragraphs]
+        tables = [
+            cell.text
+            for table in document.tables
+            for row in table.rows
+            for cell in row.cells
+        ]
+        stories = [
+            element.text or ""
+            for section in document.sections
+            for story in (section.header, section.footer)
+            for element in story._element.xpath(".//w:t")
+        ]
+        return "\n".join([*paragraphs, *tables, *stories])
 
     def _append_editable_pages(
         self,
         document: DocumentType,
         pdf: fitz.Document,
     ) -> None:
-        for page_index, page in enumerate(pdf):
+        text_origin = getattr(self, "_text_origin", "native")
+        pages = tuple(pdf)
+        page_blocks = tuple(
+            page.get_text("dict", sort=True).get("blocks", []) for page in pages
+        )
+        layout = detect_document_layout(
+            tuple(
+                PageLayoutInput(
+                    page_index=page_index,
+                    width=page.rect.width,
+                    height=page.rect.height,
+                    blocks=blocks,
+                    origin=text_origin,
+                )
+                for page_index, (page, blocks) in enumerate(
+                    zip(pages, page_blocks, strict=True)
+                )
+            )
+        )
+        # A section is created exactly once at its final body boundary. Its
+        # stories are then populated before that page's body; no later step
+        # replaces its sectPr, headerReference, or footerReference.
+        for page_index, (page, blocks, page_layout) in enumerate(
+            zip(pages, page_blocks, layout.pages, strict=True)
+        ):
             section = (
                 document.sections[0]
                 if page_index == 0
                 else document.add_section(WD_SECTION.NEW_PAGE)
             )
-            self._configure_editable_section(section, page)
+            self._configure_editable_section(
+                section,
+                page,
+                blocks,
+                page_layout,
+            )
+            self._configure_header_footer(
+                section,
+                page,
+                page_layout,
+            )
             self._append_page_content(
                 document,
                 page,
+                blocks,
+                page_layout,
                 allow_cover_page=page_index == 0,
             )
+        for page_layout, section in zip(
+            layout.pages,
+            document.sections,
+            strict=True,
+        ):
+            if page_layout.page_number_candidate is not None:
+                self._set_page_number_start(
+                    section,
+                    page_layout.page_number_candidate.format.current,
+                )
 
     def _append_visual_pages(
         self,
@@ -169,6 +242,11 @@ class PdfToDocxConverter:
 
     @staticmethod
     def _configure_styles(document: DocumentType) -> None:
+        update_fields = document.settings._element.find(qn("w:updateFields"))
+        if update_fields is None:
+            update_fields = OxmlElement("w:updateFields")
+            document.settings._element.append(update_fields)
+        update_fields.set(qn("w:val"), "true")
         styles = document.styles
         styles["Normal"].font.name = "Arial"
         styles["Normal"].font.size = Pt(11)
@@ -198,12 +276,19 @@ class PdfToDocxConverter:
             else WD_ORIENT.PORTRAIT
         )
 
-    def _configure_editable_section(self, section: Any, page: fitz.Page) -> None:
+    def _configure_editable_section(
+        self,
+        section: Any,
+        page: fitz.Page,
+        blocks: Sequence[dict[str, Any]],
+        page_layout: PageLayout,
+    ) -> None:
         self._configure_page_size(section, page.rect)
-        blocks = page.get_text("dict", sort=True).get("blocks", [])
+        classified_indexes = page_layout.classified_source_indexes
         content_rectangles = [
             fitz.Rect(block["bbox"])
-            for block in blocks
+            for block_index, block in enumerate(blocks)
+            if block_index not in classified_indexes
             if block.get("bbox") and block.get("type") in {0, 1}
         ]
         if content_rectangles:
@@ -219,10 +304,330 @@ class PdfToDocxConverter:
             left = right = top = bottom = 36
         section.left_margin = Pt(self._bounded_margin(left))
         section.right_margin = Pt(self._bounded_margin(right))
-        section.top_margin = Pt(self._bounded_margin(top))
+        header_blocks = [
+            *page_layout.header_candidates,
+            *page_layout.header_images,
+        ]
+        header_bottom = max(
+            (block.bbox[3] for block in header_blocks),
+            default=0,
+        )
+        section.top_margin = Pt(
+            max(
+                self._bounded_margin(top),
+                min(top, header_bottom + 8),
+            )
+        )
         section.bottom_margin = Pt(self._bounded_margin(bottom))
-        section.header_distance = Pt(0)
-        section.footer_distance = Pt(0)
+        section.header_distance = Pt(
+            min(
+                36,
+                max(
+                    0,
+                    min(
+                        (block.bbox[1] for block in header_blocks),
+                        default=0,
+                    ),
+                ),
+            )
+        )
+        footer_blocks = [*page_layout.footer_candidates]
+        footer_blocks.extend(page_layout.footer_images)
+        if (
+            page_layout.page_number_candidate is not None
+            and page_layout.page_number_candidate.block.bbox[1]
+            >= page_layout.height / 2
+        ):
+            footer_blocks.append(page_layout.page_number_candidate.block)
+        section.footer_distance = Pt(
+            min(
+                36,
+                max(
+                    0,
+                    min(
+                        (
+                            page_layout.height - block.bbox[3]
+                            for block in footer_blocks
+                        ),
+                        default=0,
+                    ),
+                ),
+            )
+        )
+
+    def _configure_header_footer(
+        self,
+        section: Any,
+        page: fitz.Page,
+        page_layout: PageLayout,
+    ) -> None:
+        section.header.is_linked_to_previous = False
+        section.footer.is_linked_to_previous = False
+        self._clear_story(section.header)
+        self._clear_story(section.footer)
+
+        self._append_story_content(
+            section,
+            section.header,
+            page,
+            page_layout.header_candidates,
+            page_layout.header_images,
+        )
+        self._append_story_content(
+            section,
+            section.footer,
+            page,
+            page_layout.footer_candidates,
+            page_layout.footer_images,
+        )
+
+        page_number = page_layout.page_number_candidate
+        if page_number is not None:
+            story = (
+                section.header
+                if page_number.block.bbox[3] <= page_layout.height / 2
+                else section.footer
+            )
+            self._append_page_number(story, page_number)
+
+        if not section.header.paragraphs:
+            section.header.add_paragraph()
+        if not section.footer.paragraphs:
+            section.footer.add_paragraph()
+
+    @staticmethod
+    def _clear_story(story: Any) -> None:
+        for paragraph in list(story.paragraphs):
+            paragraph._element.getparent().remove(paragraph._element)
+
+    def _append_story_content(
+        self,
+        section: Any,
+        story: Any,
+        page: fitz.Page,
+        blocks: Sequence[LayoutBlock],
+        images: Sequence[ImageLayoutBlock],
+    ) -> None:
+        entries: list[tuple[float, float, str, Any]] = [
+            (image.bbox[1], image.bbox[0], "image", image)
+            for image in images
+        ]
+        raw_lines = [line for block in blocks for line in block.raw_lines]
+        canonicalized = canonicalize_visual_lines(
+            raw_lines,
+            page.rect.width,
+            origin=getattr(self, "_text_origin", "native"),
+        )
+        self.last_flow_metrics["raw_text_fragments"] += (
+            canonicalized.raw_fragment_count
+        )
+        self.last_flow_metrics["logical_lines"] += len(canonicalized.lines)
+        self.last_flow_metrics["same_baseline_fragments_merged"] += (
+            canonicalized.same_baseline_fragments_merged
+        )
+        layouts = analyze_paragraph_layouts(
+            canonicalized.lines,
+            page.rect,
+            page.rect,
+            origin=getattr(self, "_text_origin", "native"),
+        )
+        self.last_flow_metrics["paragraphs"] += len(layouts)
+        entries.extend(
+            (
+                layout.bbox[1],
+                layout.bbox[0],
+                "paragraph",
+                (
+                    layout,
+                    self._story_layout_alignment(layout, blocks),
+                ),
+            )
+            for layout in layouts
+        )
+        for _top, _left, entry_type, payload in sorted(
+            entries,
+            key=lambda entry: entry[:2],
+        ):
+            if entry_type == "image":
+                self._append_story_image(section, story, page, payload)
+            else:
+                layout, alignment = payload
+                self._append_story_paragraph_layout(story, layout, alignment)
+
+    @staticmethod
+    def _story_layout_alignment(
+        layout: ParagraphLayout,
+        blocks: Sequence[LayoutBlock],
+    ) -> str:
+        source_indexes = {
+            source_index
+            for line in layout.lines
+            for source_index in line.source_block_indexes
+        }
+        alignments = [
+            block.alignment
+            for block in blocks
+            if block.source_index in source_indexes
+        ]
+        return Counter(alignments).most_common(1)[0][0] if alignments else layout.alignment
+
+    def _append_story_paragraph_layout(
+        self,
+        story: Any,
+        layout: ParagraphLayout,
+        alignment: str,
+    ) -> None:
+        paragraph = story.add_paragraph()
+        paragraph.alignment = {
+            "left": WD_ALIGN_PARAGRAPH.LEFT,
+            "center": WD_ALIGN_PARAGRAPH.CENTER,
+            "right": WD_ALIGN_PARAGRAPH.RIGHT,
+            "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+        }[alignment]
+        paragraph.paragraph_format.space_before = Pt(layout.space_before)
+        paragraph.paragraph_format.space_after = Pt(layout.space_after)
+        paragraph.paragraph_format.line_spacing = layout.line_spacing_ratio
+        paragraph.paragraph_format.widow_control = True
+        previous_text = ""
+        for line_index, line in enumerate(layout.lines):
+            if line_index and not previous_text.rstrip().endswith("-"):
+                paragraph.add_run(" ")
+            for span in line.spans:
+                text = str(span.get("text", ""))
+                self._append_styled_run(
+                    paragraph,
+                    span,
+                    text,
+                    highlighted=False,
+                )
+                previous_text = text
+
+    def _append_story_image(
+        self,
+        section: Any,
+        story: Any,
+        page: fitz.Page,
+        image: ImageLayoutBlock,
+    ) -> None:
+        rectangle = fitz.Rect(image.bbox)
+        try:
+            rendered_image = self._render_image(
+                page,
+                image.source_block,
+                rectangle,
+            )
+            available_width = (
+                section.page_width - section.left_margin - section.right_margin
+            ) / 12700
+            scale = min(1.0, available_width / rectangle.width)
+            paragraph = story.add_paragraph()
+            paragraph.paragraph_format.space_before = Pt(0)
+            paragraph.paragraph_format.space_after = Pt(0)
+            self._apply_story_alignment(paragraph, image.alignment)
+            if image.alignment == "left":
+                paragraph.paragraph_format.left_indent = Pt(
+                    max(0, rectangle.x0 - section.left_margin.pt)
+                )
+            paragraph.add_run().add_picture(
+                io.BytesIO(rendered_image),
+                width=Pt(rectangle.width * scale),
+                height=Pt(rectangle.height * scale),
+            )
+        except Exception:
+            LOGGER.warning(
+                "DOCX header/footer image insertion failed; preserving a marker",
+                exc_info=True,
+            )
+            story.add_paragraph("[Image non convertible]")
+
+    def _append_page_number(
+        self,
+        story: Any,
+        candidate: PageNumberCandidate,
+    ) -> None:
+        paragraph = story.add_paragraph()
+        self._apply_story_alignment(paragraph, candidate.block.alignment)
+        paragraph.paragraph_format.space_before = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(0)
+        page_format = candidate.format
+        if page_format.prefix:
+            prefix_run = paragraph.add_run(page_format.prefix)
+            self._apply_layout_style(prefix_run, candidate.block)
+        self._append_word_field(
+            paragraph,
+            "PAGE",
+            str(page_format.current),
+            candidate.block,
+        )
+        if page_format.uses_total:
+            separator_run = paragraph.add_run(page_format.separator)
+            self._apply_layout_style(separator_run, candidate.block)
+            self._append_word_field(
+                paragraph,
+                "NUMPAGES",
+                str(page_format.total),
+                candidate.block,
+            )
+        if page_format.suffix:
+            suffix_run = paragraph.add_run(page_format.suffix)
+            self._apply_layout_style(suffix_run, candidate.block)
+
+    def _append_word_field(
+        self,
+        paragraph: Any,
+        instruction: str,
+        displayed_value: str,
+        block: LayoutBlock,
+    ) -> None:
+        run = paragraph.add_run()
+        self._apply_layout_style(run, block)
+        begin = OxmlElement("w:fldChar")
+        begin.set(qn("w:fldCharType"), "begin")
+        instruction_text = OxmlElement("w:instrText")
+        instruction_text.set(
+            "{http://www.w3.org/XML/1998/namespace}space",
+            "preserve",
+        )
+        instruction_text.text = f" {instruction} "
+        separate = OxmlElement("w:fldChar")
+        separate.set(qn("w:fldCharType"), "separate")
+        display = OxmlElement("w:t")
+        display.text = displayed_value
+        end = OxmlElement("w:fldChar")
+        end.set(qn("w:fldCharType"), "end")
+        run._r.extend((begin, instruction_text, separate, display, end))
+
+    @staticmethod
+    def _apply_story_alignment(paragraph: Any, alignment: str) -> None:
+        paragraph.alignment = {
+            "left": WD_ALIGN_PARAGRAPH.LEFT,
+            "center": WD_ALIGN_PARAGRAPH.CENTER,
+            "right": WD_ALIGN_PARAGRAPH.RIGHT,
+        }[alignment]
+
+    @staticmethod
+    def _apply_layout_style(run: Any, block: LayoutBlock) -> None:
+        run.bold = block.style.bold
+        run.italic = block.style.italic
+        run.font.name = block.style.font_family
+        run.font.size = Pt(min(40, max(6, block.style.font_size)))
+        run.font.color.rgb = RGBColor(
+            (block.style.color >> 16) & 0xFF,
+            (block.style.color >> 8) & 0xFF,
+            block.style.color & 0xFF,
+        )
+
+    @staticmethod
+    def _set_page_number_start(
+        section: Any,
+        start_number: int,
+    ) -> None:
+        section_properties = section._sectPr
+        page_number_type = section_properties.find(qn("w:pgNumType"))
+        if page_number_type is None:
+            page_number_type = OxmlElement("w:pgNumType")
+            section_properties.append(page_number_type)
+        page_number_type.set(qn("w:start"), str(start_number))
 
     def _configure_visual_section(
         self,
@@ -245,17 +650,33 @@ class PdfToDocxConverter:
         self,
         document: DocumentType,
         page: fitz.Page,
+        blocks: Sequence[dict[str, Any]],
+        page_layout: PageLayout,
         *,
         allow_cover_page: bool = False,
     ) -> None:
-        page_dictionary = page.get_text("dict", sort=True)
-        blocks = page_dictionary.get("blocks", [])
+        classified_indexes = page_layout.classified_source_indexes
+        body_source_blocks = [
+            {
+                **block,
+                "_source_index": block_index,
+                "_page_index": page_layout.page_index,
+                "_story_type": "body",
+                "_origin": getattr(self, "_text_origin", "native"),
+            }
+            for block_index, block in enumerate(blocks)
+            if block_index not in classified_indexes
+        ]
         cover_analysis = self._analyze_cover_page(
             page,
-            blocks,
+            body_source_blocks,
             allow_cover_page=allow_cover_page,
         )
-        regular_size = self._regular_font_size(blocks)
+        regular_size = self._regular_font_size(body_source_blocks)
+        text_content_rectangle = self._text_content_rectangle(
+            body_source_blocks,
+            page.rect,
+        )
         yellow_rectangles, border_rectangles = self._drawing_rectangles(page)
         table_entries, table_rectangles = self._table_entries(page)
         page_has_text = any(
@@ -265,17 +686,36 @@ class PdfToDocxConverter:
                 for line in block.get("lines", [])
                 for span in line.get("spans", [])
             )
-            for block in blocks
+            for block in body_source_blocks
         )
         seen_images: set[tuple[int, tuple[int, int, int, int]]] = set()
 
         entries: list[tuple[float, float, str, Any]] = list(table_entries)
-        for block in blocks:
+        raw_text_lines: list[dict[str, Any]] = []
+        for block in body_source_blocks:
+            source_block_index = int(block["_source_index"])
             block_rectangle = fitz.Rect(block.get("bbox", (0, 0, 0, 0)))
             if block.get("type") == 0 and any(
                 rectangle.contains(block_rectangle)
                 for rectangle in table_rectangles
             ):
+                continue
+            if block.get("type") == 0:
+                raw_text_lines.extend(
+                    {
+                        **line,
+                        "_source_block_index": source_block_index,
+                        "_page_index": page_layout.page_index,
+                        "_story_type": "body",
+                        "_story_confidence": 1,
+                        "_origin": getattr(self, "_text_origin", "native"),
+                    }
+                    for line in block.get("lines", [])
+                    if any(
+                        str(span.get("text", "")).strip()
+                        for span in line.get("spans", [])
+                    )
+                )
                 continue
             if block.get("type") == 1:
                 if (
@@ -292,20 +732,54 @@ class PdfToDocxConverter:
                 if image_key in seen_images:
                     continue
                 seen_images.add(image_key)
+                entries.append(
+                    (
+                        block_rectangle.y0,
+                        block_rectangle.x0,
+                        "image",
+                        block,
+                    )
+                )
+
+        canonicalized = canonicalize_visual_lines(
+            raw_text_lines,
+            page.rect.width,
+            origin=getattr(self, "_text_origin", "native"),
+        )
+        self.last_flow_metrics["raw_text_fragments"] += (
+            canonicalized.raw_fragment_count
+        )
+        self.last_flow_metrics["logical_lines"] += len(canonicalized.lines)
+        self.last_flow_metrics["same_baseline_fragments_merged"] += (
+            canonicalized.same_baseline_fragments_merged
+        )
+        paragraph_layouts = analyze_paragraph_layouts(
+            canonicalized.lines,
+            page.rect,
+            text_content_rectangle,
+            origin=getattr(self, "_text_origin", "native"),
+        )
+        self.last_flow_metrics["paragraphs"] += len(paragraph_layouts)
+        for layout_index, paragraph_layout in enumerate(paragraph_layouts):
+            rectangle = fitz.Rect(paragraph_layout.bbox)
+            previous_is_list = (
+                layout_index > 0
+                and self._is_list_line(paragraph_layouts[layout_index - 1].lines[0])
+            )
+            next_is_list = (
+                layout_index + 1 < len(paragraph_layouts)
+                and self._is_list_line(paragraph_layouts[layout_index + 1].lines[0])
+            )
             entries.append(
                 (
+                    rectangle.y0,
+                    rectangle.x0,
+                    "paragraph",
                     (
-                        self._first_text_rectangle(block).y0
-                        if block.get("type") == 0
-                        else block_rectangle.y0
+                        paragraph_layout,
+                        not previous_is_list,
+                        not next_is_list,
                     ),
-                    (
-                        self._first_text_rectangle(block).x0
-                        if block.get("type") == 0
-                        else block_rectangle.x0
-                    ),
-                    "image" if block.get("type") == 1 else "text",
-                    block,
                 )
             )
 
@@ -320,15 +794,17 @@ class PdfToDocxConverter:
                 self._append_table(document, payload)
             elif entry_type == "image":
                 self._append_image_block(document, page, payload)
-            elif payload.get("type") == 0:
-                self._append_text_block(
+            elif entry_type == "paragraph":
+                paragraph_layout, starts_list, ends_list = payload
+                self._append_paragraph_layout(
                     document,
                     page,
-                    payload,
+                    paragraph_layout,
                     regular_size=regular_size,
                     yellow_rectangles=yellow_rectangles,
                     border_rectangles=border_rectangles,
-                    preserve_vertical_spacing=cover_analysis.is_cover_page,
+                    starts_list=starts_list,
+                    ends_list=ends_list,
                 )
             if (
                 cover_analysis.is_cover_page
@@ -344,6 +820,23 @@ class PdfToDocxConverter:
                     entry_rectangle.y0 - previous_source_position,
                     page.rect.height,
                 )
+            elif (
+                previous_bottom is not None
+                and entry_type == "paragraph"
+                and len(document.paragraphs) > paragraph_count
+            ):
+                source_gap = max(0, entry_rectangle.y0 - previous_bottom)
+                space_before = normalize_paragraph_gap(
+                    source_gap,
+                    regular_size,
+                )
+                if space_before:
+                    first_paragraph = document.paragraphs[paragraph_count]
+                    existing = first_paragraph.paragraph_format.space_before
+                    existing_points = existing.pt if existing is not None else 0
+                    first_paragraph.paragraph_format.space_before = Pt(
+                        max(existing_points, space_before)
+                    )
             previous_bottom = (
                 entry_rectangle.y1
                 if previous_bottom is None
@@ -477,6 +970,8 @@ class PdfToDocxConverter:
     def _entry_rectangle(entry_type: str, payload: Any) -> fitz.Rect:
         if entry_type == "table":
             return fitz.Rect(payload.bbox)
+        if entry_type == "paragraph":
+            return fitz.Rect(payload[0].bbox)
         return fitz.Rect(payload.get("bbox", (0, 0, 0, 0)))
 
     @staticmethod
@@ -496,6 +991,23 @@ class PdfToDocxConverter:
         paragraph.paragraph_format.space_before = Pt(
             max(existing_points, preserved_gap),
         )
+
+    @staticmethod
+    def _text_content_rectangle(
+        blocks: Sequence[dict[str, Any]],
+        page_rectangle: fitz.Rect,
+    ) -> fitz.Rect:
+        rectangles = [
+            fitz.Rect(block["bbox"])
+            for block in blocks
+            if block.get("type") == 0 and block.get("bbox")
+        ]
+        if not rectangles:
+            return fitz.Rect(page_rectangle)
+        content_rectangle = fitz.Rect(rectangles[0])
+        for rectangle in rectangles[1:]:
+            content_rectangle |= rectangle
+        return content_rectangle
 
     @staticmethod
     def _first_text_rectangle(block: dict[str, Any]) -> fitz.Rect:
@@ -769,6 +1281,7 @@ class PdfToDocxConverter:
         page: fitz.Page,
         block: dict[str, Any],
         *,
+        content_rectangle: fitz.Rect,
         regular_size: float,
         yellow_rectangles: list[fitz.Rect],
         border_rectangles: list[fitz.Rect],
@@ -781,41 +1294,35 @@ class PdfToDocxConverter:
         ]
         if not lines:
             return
-        line_groups = self._group_lines(lines, page.rect)
+        paragraph_layouts = analyze_paragraph_layouts(
+            lines,
+            page.rect,
+            content_rectangle,
+            origin=getattr(self, "_text_origin", "native"),
+        )
         previous_bottom: float | None = None
-        for group_index, line_group in enumerate(line_groups):
-            group_rectangle = fitz.Rect(line_group[0]["bbox"])
-            for line in line_group[1:]:
-                group_rectangle |= fitz.Rect(line["bbox"])
+        for group_index, paragraph_layout in enumerate(paragraph_layouts):
+            group_rectangle = fitz.Rect(paragraph_layout.bbox)
             paragraph_count = len(document.paragraphs)
-            is_list = self._is_list_line(line_group[0])
-            if is_list:
-                self._append_list_lines(
-                    document,
-                    line_group,
-                    yellow_rectangles=yellow_rectangles,
-                    starts_list=(
-                        group_index == 0
-                        or not self._is_list_line(
-                            line_groups[group_index - 1][0]
-                        )
-                    ),
-                    ends_list=(
-                        group_index == len(line_groups) - 1
-                        or not self._is_list_line(
-                            line_groups[group_index + 1][0]
-                        )
-                    ),
-                )
-                previous_bottom = group_rectangle.y1
-                continue
-            self._append_text_paragraph(
+            self._append_paragraph_layout(
                 document,
                 page,
-                line_group,
+                paragraph_layout,
                 regular_size=regular_size,
                 yellow_rectangles=yellow_rectangles,
                 border_rectangles=border_rectangles,
+                starts_list=(
+                    group_index == 0
+                    or not self._is_list_line(
+                        paragraph_layouts[group_index - 1].lines[0]
+                    )
+                ),
+                ends_list=(
+                    group_index == len(paragraph_layouts) - 1
+                    or not self._is_list_line(
+                        paragraph_layouts[group_index + 1].lines[0]
+                    )
+                ),
             )
             if (
                 preserve_vertical_spacing
@@ -829,19 +1336,49 @@ class PdfToDocxConverter:
                 )
             previous_bottom = group_rectangle.y1
 
+    def _append_paragraph_layout(
+        self,
+        document: DocumentType,
+        page: fitz.Page,
+        layout: ParagraphLayout,
+        *,
+        regular_size: float,
+        yellow_rectangles: list[fitz.Rect],
+        border_rectangles: list[fitz.Rect],
+        starts_list: bool,
+        ends_list: bool,
+    ) -> None:
+        line_group = list(layout.lines)
+        if self._is_list_line(line_group[0]):
+            self._append_list_lines(
+                document,
+                line_group,
+                yellow_rectangles=yellow_rectangles,
+                starts_list=starts_list,
+                ends_list=ends_list,
+            )
+            return
+        self._append_text_paragraph(
+            document,
+            page,
+            layout,
+            regular_size=regular_size,
+            yellow_rectangles=yellow_rectangles,
+            border_rectangles=border_rectangles,
+        )
+
     def _append_text_paragraph(
         self,
         document: DocumentType,
         page: fitz.Page,
-        lines: list[dict[str, Any]],
+        layout: ParagraphLayout,
         *,
         regular_size: float,
         yellow_rectangles: list[fitz.Rect],
         border_rectangles: list[fitz.Rect],
     ) -> None:
-        block_rectangle = fitz.Rect(lines[0]["bbox"])
-        for line in lines[1:]:
-            block_rectangle |= fitz.Rect(line["bbox"])
+        lines = list(layout.lines)
+        block_rectangle = fitz.Rect(layout.bbox)
         largest_size = max(
             float(span.get("size", 0))
             for line in lines
@@ -853,12 +1390,7 @@ class PdfToDocxConverter:
             for span in line.get("spans", [])
         )
         bold_ratio = self._bold_text_ratio(lines)
-        is_wide = block_rectangle.width > page.rect.width * 0.6
-        centered = (
-            text_length <= 100
-            and not is_wide
-            and self._is_centered(block_rectangle, page.rect)
-        )
+        centered = layout.alignment == "center"
         style = self._paragraph_style(
             largest_size,
             regular_size,
@@ -867,28 +1399,47 @@ class PdfToDocxConverter:
             bold_ratio=bold_ratio,
         )
         paragraph = document.add_paragraph(style=style)
-        if centered:
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        elif text_length >= 120 and is_wide:
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        else:
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        paragraph.alignment = {
+            "left": WD_ALIGN_PARAGRAPH.LEFT,
+            "center": WD_ALIGN_PARAGRAPH.CENTER,
+            "right": WD_ALIGN_PARAGRAPH.RIGHT,
+            "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+        }[layout.alignment]
         paragraph.paragraph_format.keep_together = style != "Normal"
         paragraph.paragraph_format.keep_with_next = style != "Normal"
         paragraph.paragraph_format.widow_control = True
+        if layout.left_indent:
+            paragraph.paragraph_format.left_indent = Pt(layout.left_indent)
+        if layout.right_indent:
+            paragraph.paragraph_format.right_indent = Pt(layout.right_indent)
+        if layout.first_line_indent:
+            paragraph.paragraph_format.first_line_indent = Pt(
+                layout.first_line_indent
+            )
         if style == "Title":
-            paragraph.paragraph_format.space_before = Pt(0)
-            paragraph.paragraph_format.space_after = Pt(3)
-            paragraph.paragraph_format.line_spacing = 1.04
+            paragraph.paragraph_format.space_before = Pt(layout.space_before)
+            paragraph.paragraph_format.space_after = Pt(
+                max(3, layout.space_after)
+            )
+            paragraph.paragraph_format.line_spacing = 1.05
         elif style.startswith("Heading"):
-            paragraph.paragraph_format.space_before = Pt(4.5)
-            paragraph.paragraph_format.space_after = Pt(2.5)
-            paragraph.paragraph_format.line_spacing = 1.06
+            paragraph.paragraph_format.space_before = Pt(
+                max(3, layout.space_before)
+            )
+            paragraph.paragraph_format.space_after = Pt(
+                max(2.5, layout.space_after)
+            )
+            paragraph.paragraph_format.line_spacing = max(
+                1.05,
+                layout.line_spacing_ratio,
+            )
         else:
-            paragraph.paragraph_format.space_before = Pt(0)
-            paragraph.paragraph_format.space_after = Pt(2)
+            paragraph.paragraph_format.space_before = Pt(layout.space_before)
+            paragraph.paragraph_format.space_after = Pt(layout.space_after)
             paragraph.paragraph_format.line_spacing = (
-                1.14 if text_length >= 120 else 1.1
+                1.15
+                if len(lines) < 2 and text_length >= 120
+                else layout.line_spacing_ratio
             )
 
         previous_text = ""
@@ -918,7 +1469,7 @@ class PdfToDocxConverter:
             self._add_paragraph_border(paragraph)
 
     @staticmethod
-    def _bold_text_ratio(lines: list[dict[str, Any]]) -> float:
+    def _bold_text_ratio(lines: list[LogicalLine]) -> float:
         bold_characters = 0
         total_characters = 0
         for line in lines:
@@ -938,106 +1489,14 @@ class PdfToDocxConverter:
             else 0
         )
 
-    @classmethod
-    def _group_lines(
-        cls,
-        lines: list[dict[str, Any]],
-        page_rectangle: fitz.Rect,
-    ) -> list[list[dict[str, Any]]]:
-        groups: list[list[dict[str, Any]]] = []
-        current_group: list[dict[str, Any]] = []
-        for line in lines:
-            if cls._is_list_line(line):
-                if current_group:
-                    groups.append(current_group)
-                current_group = [line]
-                continue
-            if current_group and cls._line_starts_new_paragraph(
-                current_group[-1],
-                line,
-                page_rectangle,
-            ):
-                groups.append(current_group)
-                current_group = []
-            current_group.append(line)
-        if current_group:
-            groups.append(current_group)
-        return groups
-
     @staticmethod
-    def _is_list_line(line: dict[str, Any]) -> bool:
-        text = "".join(
-            str(span.get("text", "")) for span in line.get("spans", [])
-        )
-        return LIST_MARKER.match(text) is not None
-
-    @staticmethod
-    def _line_starts_new_paragraph(
-        previous_line: dict[str, Any],
-        current_line: dict[str, Any],
-        page_rectangle: fitz.Rect,
-    ) -> bool:
-        previous_rectangle = fitz.Rect(previous_line["bbox"])
-        current_rectangle = fitz.Rect(current_line["bbox"])
-        vertical_gap = current_rectangle.y0 - previous_rectangle.y1
-        line_height = min(
-            previous_rectangle.height,
-            current_rectangle.height,
-        )
-        previous_sizes = [
-            float(span.get("size", 0))
-            for span in previous_line.get("spans", [])
-            if span.get("text", "").strip()
-        ]
-        current_sizes = [
-            float(span.get("size", 0))
-            for span in current_line.get("spans", [])
-            if span.get("text", "").strip()
-        ]
-        previous_size = max(previous_sizes, default=0)
-        current_size = max(current_sizes, default=0)
-        size_changed = (
-            min(previous_size, current_size) > 0
-            and max(previous_size, current_size)
-            / min(previous_size, current_size)
-            >= 1.3
-        )
-        distinct_centered_lines = (
-            PdfToDocxConverter._line_is_short_centered(
-                previous_line,
-                page_rectangle,
-            )
-            and PdfToDocxConverter._line_is_short_centered(
-                current_line,
-                page_rectangle,
-            )
-        )
-        return (
-            vertical_gap > max(4, line_height * 0.45)
-            or size_changed
-            or distinct_centered_lines
-        )
-
-    @staticmethod
-    def _line_is_short_centered(
-        line: dict[str, Any],
-        page_rectangle: fitz.Rect,
-    ) -> bool:
-        text = "".join(
-            str(span.get("text", "")) for span in line.get("spans", [])
-        ).strip()
-        rectangle = fitz.Rect(line["bbox"])
-        return (
-            bool(text)
-            and len(text) <= 100
-            and rectangle.width <= page_rectangle.width * 0.6
-            and PdfToDocxConverter._is_centered(rectangle, page_rectangle)
-        )
+    def _is_list_line(line: LogicalLine | dict[str, Any]) -> bool:
+        return is_list_line(line)
 
     def _append_list_lines(
         self,
         document: DocumentType,
-        lines: list[dict[str, Any]],
+        lines: list[LogicalLine],
         *,
         yellow_rectangles: list[fitz.Rect],
         starts_list: bool,

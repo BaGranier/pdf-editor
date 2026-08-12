@@ -389,11 +389,17 @@ def test_editable_docx_preserves_fidelity_markers(tmp_path: Path) -> None:
     assert zipfile.is_zipfile(output)
     document = Document(output)
     assert len(document.sections) == 3
-    assert len(document.inline_shapes) == 3
+    assert len(document.inline_shapes) == 0
+    header_image_extents = [
+        extent
+        for section in document.sections
+        for extent in section.header._element.xpath(".//wp:extent")
+    ]
+    assert len(header_image_extents) == 3
     assert all(
-        100 <= image.width.pt <= 140
-        and 25 <= image.height.pt <= 50
-        for image in document.inline_shapes
+        100 <= int(extent.get("cx")) / 12700 <= 140
+        and 25 <= int(extent.get("cy")) / 12700 <= 50
+        for extent in header_image_extents
     )
 
     title = next(
@@ -454,12 +460,10 @@ def test_editable_docx_preserves_fidelity_markers(tmp_path: Path) -> None:
         and not paragraph.text.strip()
         for paragraph in document.paragraphs
     )
-    first_drawing_index = next(
-        index
-        for index, paragraph in enumerate(document.paragraphs)
-        if paragraph._p.xpath(".//w:drawing")
+    assert all(
+        section.header._element.xpath(".//w:drawing")
+        for section in document.sections
     )
-    assert first_drawing_index < title_index
     assert isinstance(title.paragraph_format.line_spacing, float)
     assert title.paragraph_format.line_spacing >= 1.03
     assert title.paragraph_format.space_after is not None

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from app.conversion.docx_converter import PdfToDocxConverter
+from app.conversion.header_footer import TextOrigin
 from app.conversion.image_converter import PdfToImageConverter
 from app.conversion.models import DocxMode, TargetFormat
 from app.conversion.text_converter import (
@@ -20,12 +21,14 @@ def run_worker(
     dpi: int,
     quality: int,
     docx_mode: DocxMode,
+    text_origin: TextOrigin = "native",
 ) -> dict[str, object]:
     if target_format == TargetFormat.DOCX:
         artifact = PdfToDocxConverter().convert(
             input_pdf,
             output_directory / "conversion.docx",
             mode=docx_mode,
+            text_origin=text_origin,
         )
     elif target_format == TargetFormat.TXT:
         artifact = PdfToTextConverter().convert(
@@ -65,6 +68,11 @@ def main() -> None:
         type=DocxMode,
         default=DocxMode.EDITABLE,
     )
+    parser.add_argument(
+        "--text-origin",
+        choices=("native", "ocr"),
+        default="native",
+    )
     parser.add_argument("--manifest", type=Path, required=True)
     arguments = parser.parse_args()
     result = run_worker(
@@ -74,6 +82,7 @@ def main() -> None:
         arguments.dpi,
         arguments.quality,
         arguments.docx_mode,
+        arguments.text_origin,
     )
     arguments.manifest.write_text(json.dumps(result), encoding="utf-8")
 

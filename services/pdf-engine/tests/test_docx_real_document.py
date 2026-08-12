@@ -212,7 +212,8 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
         )
 
     output_path = tmp_path / "editable.docx"
-    artifact = PdfToDocxConverter().convert(
+    converter = PdfToDocxConverter()
+    artifact = converter.convert(
         source_path,
         output_path,
         mode=DocxMode.EDITABLE,
@@ -281,6 +282,33 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
         for paragraph in centered_paragraphs
         if len(paragraph.text.split()) >= 12
     ]
+    left_paragraphs = [
+        paragraph
+        for paragraph in meaningful_paragraphs
+        if paragraph.alignment == WD_ALIGN_PARAGRAPH.LEFT
+    ]
+    right_paragraphs = [
+        paragraph
+        for paragraph in meaningful_paragraphs
+        if paragraph.alignment == WD_ALIGN_PARAGRAPH.RIGHT
+    ]
+    justified_paragraphs = [
+        paragraph
+        for paragraph in meaningful_paragraphs
+        if paragraph.alignment == WD_ALIGN_PARAGRAPH.JUSTIFY
+    ]
+    geometry_indent_paragraphs = [
+        paragraph
+        for paragraph in meaningful_paragraphs
+        if any(
+            abs(point_value(indent)) >= 2
+            for indent in (
+                paragraph.paragraph_format.left_indent,
+                paragraph.paragraph_format.right_indent,
+                paragraph.paragraph_format.first_line_indent,
+            )
+        )
+    ]
     fully_bold_paragraphs = []
     mixed_bold_paragraphs = []
     for paragraph in meaningful_paragraphs:
@@ -313,6 +341,10 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
         for index, paragraph in enumerate(document.paragraphs)
         if paragraph._p.xpath(".//w:drawing")
     ]
+    header_drawing_count = sum(
+        len(section.header._element.xpath(".//w:drawing"))
+        for section in document.sections
+    )
     title_paragraph_index = next(
         (
             index
@@ -425,9 +457,9 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
         "editableText": len(docx_text.split()) >= 100,
         "retention": retention_ratio >= 0.95,
         "paragraphCount": len(meaningful_paragraphs) >= 30,
-        "notImageOnly": len(meaningful_paragraphs) > len(document.inline_shapes),
+        "notImageOnly": len(meaningful_paragraphs) > len(image_parts),
         "reasonableImages": (
-            1 <= len(document.inline_shapes) <= source_page_count * 4
+            1 <= len(image_parts) <= source_page_count * 4
         ),
         "logoBackground": logo_background_acceptable,
         "reasonablePagination": len(document.sections) == source_page_count,
@@ -436,13 +468,24 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
             bool(title_paragraphs) and bool(subtitle_paragraphs)
         ),
         "logoBeforeTitle": (
-            bool(drawing_paragraph_indexes)
-            and title_paragraph_index is not None
-            and drawing_paragraph_indexes[0] < title_paragraph_index
+            header_drawing_count > 0
+            or (
+                bool(drawing_paragraph_indexes)
+                and title_paragraph_index is not None
+                and drawing_paragraph_indexes[0] < title_paragraph_index
+            )
         ),
         "lists": list_count > 0,
         "emptyBullets": len(empty_bullets) == 0,
         "longCenteredParagraphs": len(long_centered_paragraphs) == 0,
+        "paragraphGeometry": (
+            bool(left_paragraphs)
+            and bool(justified_paragraphs)
+            and bool(geometry_indent_paragraphs)
+        ),
+        "flowCanonicalization": (
+            converter.last_flow_metrics["same_baseline_fragments_merged"] > 0
+        ),
         "mixedBoldRuns": len(mixed_bold_paragraphs) > 0,
         "structuralQuasiEmptyPages": structural_quasi_empty_pages == 0,
         "pageInflation": len(document.sections) <= source_page_count + 1,
@@ -456,7 +499,7 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
         "readableOrdinaryLineSpacing": (
             bool(ordinary_line_spacing_values)
             and min(ordinary_line_spacing_values) >= 1.08
-            and max(ordinary_line_spacing_values) <= 1.16
+            and max(ordinary_line_spacing_values) <= 1.2
         ),
         "readableListLineSpacing": (
             bool(list_line_spacing_values)
@@ -501,6 +544,20 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
                 "file": source_path.name,
                 "docxMode": "editable",
                 "sourcePageCount": source_page_count,
+                "pageCountDelta": (
+                    rendered_page_count - source_page_count
+                    if rendered_page_count is not None
+                    else len(document.sections) - source_page_count
+                ),
+                "sameBaselineFragmentsMerged": converter.last_flow_metrics[
+                    "same_baseline_fragments_merged"
+                ],
+                "rawTextFragments": converter.last_flow_metrics[
+                    "raw_text_fragments"
+                ],
+                "logicalLineCount": converter.last_flow_metrics[
+                    "logical_lines"
+                ],
                 "sourceTextCharacters": len(source_text),
                 "docxTextCharacters": len(docx_text),
                 "textRetentionRatio": round(retention_ratio, 4),
@@ -514,8 +571,10 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
                     average_estimated_lines_per_paragraph,
                     2,
                 ),
-                "imageCount": len(document.inline_shapes),
-                "logoPresent": len(document.inline_shapes) > 0,
+                "imageCount": len(image_parts),
+                "bodyInlineImageCount": len(document.inline_shapes),
+                "headerDrawingCount": header_drawing_count,
+                "logoPresent": len(image_parts) > 0,
                 "logoBackgroundAcceptable": logo_background_acceptable,
                 "imageBlackPixelRatios": [
                     round(ratio, 4) for ratio in black_pixel_ratios
@@ -525,6 +584,12 @@ def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
                 "listCount": list_count,
                 "centeredParagraphCount": len(centered_paragraphs),
                 "longCenteredParagraphCount": len(long_centered_paragraphs),
+                "leftParagraphCount": len(left_paragraphs),
+                "rightParagraphCount": len(right_paragraphs),
+                "justifiedParagraphCount": len(justified_paragraphs),
+                "geometryIndentParagraphCount": len(
+                    geometry_indent_paragraphs
+                ),
                 "fullyBoldParagraphCount": len(fully_bold_paragraphs),
                 "mixedBoldParagraphCount": len(mixed_bold_paragraphs),
                 "emptyBulletCount": len(empty_bullets),

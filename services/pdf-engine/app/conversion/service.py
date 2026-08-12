@@ -184,6 +184,8 @@ async def execute_conversion_worker(
     input_pdf: Path,
     output_directory: Path,
     options: ConversionOptions,
+    *,
+    ocr_used: bool = False,
 ) -> ConversionArtifact:
     manifest_path = output_directory / "conversion-manifest.json"
     command = [
@@ -202,6 +204,8 @@ async def execute_conversion_worker(
         str(options.image_quality),
         "--docx-mode",
         options.docx_mode.value,
+        "--text-origin",
+        "ocr" if ocr_used else "native",
         "--manifest",
         str(manifest_path),
     ]
@@ -316,6 +320,7 @@ async def prepare_conversion(
             searchable_path,
             temporary_directory,
             options,
+            ocr_used=ocr_used,
         )
         stage = "response_preparation"
         warnings = list(artifact.warnings)
