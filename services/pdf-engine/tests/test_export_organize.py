@@ -543,7 +543,11 @@ def test_rejects_a_signature_with_a_missing_or_invalid_image() -> None:
     assert "format" in invalid_error.value.detail
 
 
-def test_rejects_an_add_text_rectangle_that_cannot_contain_its_text() -> None:
+def test_exports_a_text_rectangle_that_cannot_contain_its_text_with_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    source = create_source_pdf([100])
+    original = bytes(source)
     plan = main.OrganizeExportPlan.model_validate(
         {
             "pages": [{"sourceDocumentId": "doc-a", "sourcePageIndex": 0}],
@@ -565,11 +569,189 @@ def test_rejects_an_add_text_rectangle_that_cannot_contain_its_text() -> None:
         }
     )
 
-    with pytest.raises(HTTPException) as error:
-        main.export_organized_pdf({"doc-a": create_source_pdf([100])}, plan)
+    warnings: list[main.ExportWarning] = []
+    result = main.export_organized_pdf({"doc-a": source}, plan, warnings)
 
-    assert error.value.status_code == 422
-    assert "trop petit" in error.value.detail
+    with fitz.open(stream=result, filetype="pdf") as document:
+        assert document.page_count == 1
+        assert document[0].get_text().strip()
+    assert warnings == [
+        main.ExportWarning(
+            editId="too-small",
+            page=1,
+            rendering="partial",
+        )
+    ]
+    assert "Text overflow: edit_id=too-small page=1 rendering=partial" in caplog.text
+    assert source == original
+
+
+def test_expands_an_overflowing_textbox_vertically_without_changing_x_or_font() -> None:
+    source = create_source_pdf([220])
+    text = "Tout le texte doit être conservé avec la taille choisie."
+    plan = main.OrganizeExportPlan.model_validate(
+        {
+            "pages": [{"sourceDocumentId": "doc-a", "sourcePageIndex": 0}],
+            "edits": [
+                {
+                    "id": "expand-down",
+                    "type": "add_text",
+                    "sourceDocumentId": "doc-a",
+                    "page": 1,
+                    "rect": {"x0": 20, "y0": 70, "x1": 200, "y1": 80},
+                    "text": text,
+                    "style": {
+                        "fontFamily": "Helvetica",
+                        "fontSize": 12,
+                        "color": "#000000",
+                    },
+                }
+            ],
+        }
+    )
+    warnings: list[main.ExportWarning] = []
+
+    result = main.export_organized_pdf({"doc-a": source}, plan, warnings)
+
+    with fitz.open(stream=result, filetype="pdf") as document:
+        text_dict = document[0].get_text("dict")
+        spans = [
+            span
+            for block in text_dict["blocks"]
+            for line in block.get("lines", [])
+            for span in line["spans"]
+        ]
+    assert " ".join(document_text for document_text in text.split()) == " ".join(
+        span_text
+        for span_text in " ".join(span["text"] for span in spans).split()
+    )
+    assert all(span["bbox"][0] == pytest.approx(20, abs=0.05) for span in spans)
+    assert all(span["size"] == pytest.approx(12, abs=0.05) for span in spans)
+    assert warnings == [
+        main.ExportWarning(editId="expand-down", page=1, rendering="expanded")
+    ]
+
+
+def test_overflow_warning_is_returned_in_the_binary_endpoint_headers() -> None:
+    response = export_pdf(
+        {
+            "pages": [{"sourceDocumentId": "doc-a", "sourcePageIndex": 0}],
+            "edits": [
+                {
+                    "id": "header-warning",
+                    "type": "add_text",
+                    "sourceDocumentId": "doc-a",
+                    "page": 1,
+                    "rect": {"x0": 10, "y0": 80, "x1": 20, "y1": 90},
+                    "text": "Texte beaucoup trop long",
+                    "style": {
+                        "fontFamily": "Helvetica",
+                        "fontSize": 18,
+                        "color": "#000000",
+                    },
+                }
+            ],
+        },
+        {"doc-a": [100]},
+    )
+
+    assert response.status_code == 200
+    assert json.loads(response.headers["x-pdf-export-warnings"]) == [
+        {
+            "type": "text_overflow",
+            "editId": "header-warning",
+            "page": 1,
+            "rendering": "partial",
+        }
+    ]
+    assert read_exported_pdf(response.body).pages
+
+
+def test_one_overflowing_textbox_does_not_drop_other_text_or_signature() -> None:
+    source = create_source_pdf([300])
+    original = bytes(source)
+    plan = main.OrganizeExportPlan.model_validate(
+        {
+            "pages": [{"sourceDocumentId": "doc-a", "sourcePageIndex": 0}],
+            "edits": [
+                {
+                    "id": "text-a",
+                    "type": "add_text",
+                    "sourceDocumentId": "doc-a",
+                    "page": 1,
+                    "order": 0,
+                    "rect": {"x0": 10, "y0": 60, "x1": 90, "y1": 90},
+                    "text": "TEXTE A",
+                    "style": {
+                        "fontFamily": "Helvetica",
+                        "fontSize": 10,
+                        "color": "#000000",
+                    },
+                },
+                {
+                    "id": "text-b",
+                    "type": "add_text",
+                    "sourceDocumentId": "doc-a",
+                    "page": 1,
+                    "order": 1,
+                    "rect": {"x0": 100, "y0": 80, "x1": 108, "y1": 90},
+                    "text": "B déborde énormément " * 20,
+                    "style": {
+                        "fontFamily": "Helvetica",
+                        "fontSize": 12,
+                        "color": "#000000",
+                    },
+                },
+                {
+                    "id": "text-c",
+                    "type": "add_text",
+                    "sourceDocumentId": "doc-a",
+                    "page": 1,
+                    "order": 2,
+                    "rect": {"x0": 120, "y0": 60, "x1": 200, "y1": 90},
+                    "text": "TEXTE C",
+                    "style": {
+                        "fontFamily": "Helvetica",
+                        "fontSize": 10,
+                        "color": "#000000",
+                    },
+                },
+            ],
+            "signatures": [
+                {
+                    "id": "signature",
+                    "type": "signature",
+                    "sourceDocumentId": "doc-a",
+                    "page": 1,
+                    "order": 3,
+                    "rect": {"x0": 210, "y0": 50, "x1": 290, "y1": 90},
+                    "imageId": "signature-image",
+                }
+            ],
+            "signatureImages": [
+                {
+                    "id": "signature-image",
+                    "mimeType": "image/png",
+                    "dataUrl": create_signature_data_url("image/png"),
+                    "width": 2,
+                    "height": 1,
+                }
+            ],
+        }
+    )
+    warnings: list[main.ExportWarning] = []
+
+    result = main.export_organized_pdf({"doc-a": source}, plan, warnings)
+
+    with fitz.open(stream=result, filetype="pdf") as document:
+        exported_text = document[0].get_text()
+        assert len(document[0].get_images(full=True)) == 1
+    assert "TEXTE A" in exported_text
+    assert "TEXTE C" in exported_text
+    assert [(warning.edit_id, warning.rendering) for warning in warnings] == [
+        ("text-b", "partial")
+    ]
+    assert source == original
 
 
 def test_rejects_an_empty_plan() -> None:

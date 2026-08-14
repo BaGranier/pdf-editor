@@ -1,6 +1,8 @@
 import {
   useCallback,
   useEffect,
+  useId,
+  useLayoutEffect,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -25,7 +27,15 @@ type TextEditBlockProps = {
 };
 
 const TEXT_COMMIT_DELAY_MS = 600;
+export const TEXT_OVERFLOW_TOLERANCE_CSS_PX = 1;
 const RESIZE_HANDLES: ResizeHandle[] = ["nw", "ne", "sw", "se"];
+
+export function textAreaHasOverflow(input: HTMLTextAreaElement): boolean {
+  return (
+    input.scrollHeight - input.clientHeight > TEXT_OVERFLOW_TOLERANCE_CSS_PX ||
+    input.scrollWidth - input.clientWidth > TEXT_OVERFLOW_TOLERANCE_CSS_PX
+  );
+}
 
 export function TextEditBlock({
   edit,
@@ -36,6 +46,7 @@ export function TextEditBlock({
   onMove,
 }: TextEditBlockProps) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const overflowTooltipId = useId();
   const [draftText, setDraftText] = useState(edit.text);
   const [draftRect, setDraftRect] = useState(edit.rect);
   const [hasOverflow, setHasOverflow] = useState(false);
@@ -92,12 +103,43 @@ export function TextEditBlock({
     }
   }, [edit.id, edit.text.length, selected]);
 
-  useEffect(() => {
+  const measureOverflow = useCallback(() => {
     const input = inputRef.current;
     if (input) {
-      setHasOverflow(input.scrollHeight > input.clientHeight + 1);
+      const nextHasOverflow = textAreaHasOverflow(input);
+      setHasOverflow((currentHasOverflow) =>
+        currentHasOverflow === nextHasOverflow
+          ? currentHasOverflow
+          : nextHasOverflow,
+      );
     }
-  }, [draftRect, draftText, edit.style, viewport]);
+  }, []);
+
+  useLayoutEffect(() => {
+    measureOverflow();
+  }, [draftRect, draftText, edit.style, measureOverflow, viewport]);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) {
+      return;
+    }
+
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measureOverflow);
+    resizeObserver?.observe(input);
+
+    const fonts = document.fonts;
+    fonts?.addEventListener("loadingdone", measureOverflow);
+    void fonts?.ready.then(measureOverflow);
+
+    return () => {
+      resizeObserver?.disconnect();
+      fonts?.removeEventListener("loadingdone", measureOverflow);
+    };
+  }, [measureOverflow]);
 
   useEffect(() => {
     function handleMouseMove(event: globalThis.MouseEvent) {
@@ -181,6 +223,12 @@ export function TextEditBlock({
       className={`${selected ? "pdf-text-edit is-selected" : "pdf-text-edit"}${hasOverflow ? " has-overflow" : ""}`}
       data-text-edit-id={edit.id}
       data-text-overflow={hasOverflow ? "true" : "false"}
+      aria-describedby={hasOverflow ? overflowTooltipId : undefined}
+      title={
+        hasOverflow
+          ? "Le texte dépasse de cette zone. Agrandissez la zone ou réduisez la taille du texte."
+          : undefined
+      }
       style={{
         left: style.left,
         top: style.top,
@@ -234,6 +282,16 @@ export function TextEditBlock({
         }}
         onMouseDown={(event) => event.stopPropagation()}
       />
+      {hasOverflow ? (
+        <span
+          id={overflowTooltipId}
+          className="pdf-text-edit__overflow-tooltip"
+          role="tooltip"
+        >
+          Le texte dépasse de cette zone. Agrandissez la zone ou réduisez la
+          taille du texte.
+        </span>
+      ) : null}
       {selected
         ? RESIZE_HANDLES.map((handle) => (
             <button

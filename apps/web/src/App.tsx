@@ -105,6 +105,37 @@ type ExportFeedback = {
   message: string;
 };
 
+type PdfExportWarning = {
+  type: "text_overflow";
+  editId: string;
+  page: number;
+  rendering: "expanded" | "partial";
+};
+
+function parsePdfExportWarnings(value: string | null): PdfExportWarning[] {
+  if (!value) {
+    return [];
+  }
+  try {
+    const warnings: unknown = JSON.parse(value);
+    return Array.isArray(warnings)
+      ? warnings.filter(
+          (warning): warning is PdfExportWarning =>
+            typeof warning === "object" &&
+            warning !== null &&
+            (warning as Partial<PdfExportWarning>).type === "text_overflow" &&
+            typeof (warning as Partial<PdfExportWarning>).editId === "string" &&
+            typeof (warning as Partial<PdfExportWarning>).page === "number" &&
+            ["expanded", "partial"].includes(
+              String((warning as Partial<PdfExportWarning>).rendering),
+            ),
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 type OpenPdfDocument = {
   id: string;
   fileName: string;
@@ -3167,6 +3198,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       );
       const outputWarning = response.headers.get("x-pdf-output-warning");
       const outputStatus = response.headers.get("x-pdf-output-status");
+      const exportWarnings = parsePdfExportWarnings(
+        response.headers.get("x-pdf-export-warnings"),
+      );
+      const textOverflowWarningCount = exportWarnings.filter(
+        (warning) => warning.type === "text_overflow",
+      ).length;
+      const textOverflowMessage = textOverflowWarningCount
+        ? ` ${textOverflowWarningCount} zone${textOverflowWarningCount > 1 ? "s" : ""} de texte dépassai${textOverflowWarningCount > 1 ? "ent" : "t"} de ${textOverflowWarningCount > 1 ? "leur" : "son"} cadre. ${textOverflowWarningCount > 1 ? "Leur export a" : "Son export a"} été réalisé en mode best effort.`
+        : "";
       const exportedFile = downloadPdfToBrowser(pdfBlob, downloadedName);
       const operationLabel = operation === "export" ? "exporté" : "sauvegardé";
       const exportMessage = outputWarning
@@ -3183,17 +3223,19 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           );
         setExportFeedback({
           kind:
-            outputWarning || exportUsageWarnings.length > 0
+            outputWarning ||
+            textOverflowWarningCount > 0 ||
+            exportUsageWarnings.length > 0
               ? "warning"
               : "success",
-          message: `${exportMessage} Ouvert dans l'application en mode lecture.${exportUsageWarnings
+          message: `${exportMessage}${textOverflowMessage} Ouvert dans l'application en mode lecture.${exportUsageWarnings
             .map((warning) => ` Avertissement: ${warning}`)
             .join("")}`,
         });
       } catch {
         setExportFeedback({
           kind: "warning",
-          message: `${exportMessage} Le téléchargement est disponible, mais l'ouverture dans l'application a échoué.`,
+          message: `${exportMessage}${textOverflowMessage} Le téléchargement est disponible, mais l'ouverture dans l'application a échoué.`,
         });
       }
       if (operation === "save_as") {

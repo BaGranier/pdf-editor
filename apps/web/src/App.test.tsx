@@ -1495,7 +1495,17 @@ describe("App", () => {
     const exportResponse = {
       ok: true,
       blob: vi.fn().mockResolvedValue(new Blob(["exported"], { type: "application/pdf" })),
-      headers: new Headers({ "content-disposition": 'attachment; filename="edited.pdf"' }),
+      headers: new Headers({
+        "content-disposition": 'attachment; filename="edited.pdf"',
+        "x-pdf-export-warnings": JSON.stringify([
+          {
+            type: "text_overflow",
+            editId: "technical-id-hidden-from-feedback",
+            page: 1,
+            rendering: "expanded",
+          },
+        ]),
+      }),
     } as unknown as Response;
     const createObjectUrl = vi.fn(() => "blob:exported-pdf");
     const revokeObjectUrl = vi.fn();
@@ -1561,6 +1571,12 @@ describe("App", () => {
     );
     expect(screen.getByRole("button", { name: "Organiser" })).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("status")).toHaveTextContent("PDF exporté avec succès : edited.pdf");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "1 zone de texte dépassait de son cadre. Son export a été réalisé en mode best effort.",
+    );
+    expect(screen.getByRole("status")).not.toHaveTextContent(
+      "technical-id-hidden-from-feedback",
+    );
 
     anchorClick.mockRestore();
     vi.unstubAllGlobals();

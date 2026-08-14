@@ -1823,6 +1823,7 @@ button:disabled {
 }
 
 .pdf-text-edit textarea {
+  appearance: none;
   display: block;
   width: 100%;
   height: 100%;
@@ -1830,24 +1831,71 @@ button:disabled {
   min-height: 0;
   resize: none;
   overflow: auto;
-  padding: 0.2rem 0.3rem;
+  padding: 0;
   line-height: 1.2;
-  border: 1px dashed rgb(21 94 239 / 48%);
+  border: 0;
   border-radius: 3px;
   outline: none;
   background: rgb(255 255 255 / 72%);
   caret-color: currentColor;
 }
 
-.pdf-text-edit.has-overflow textarea {
-  border-color: #d97706;
-  box-shadow: inset 0 -3px 0 rgb(217 119 6 / 55%);
+.pdf-text-edit::after {
+  position: absolute;
+  inset: 0;
+  border: 1px dashed rgb(21 94 239 / 48%);
+  border-radius: 3px;
+  content: "";
+  pointer-events: none;
 }
 
-.pdf-text-edit.is-selected textarea {
+.pdf-text-edit.has-overflow::after {
+  border-color: #dc2626;
+  border-style: solid;
+  box-shadow: inset 0 0 0 1px rgb(220 38 38 / 28%);
+}
+
+.pdf-text-edit.is-selected::after {
   border-style: solid;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.pdf-text-edit.has-overflow textarea {
+  background: rgb(220 38 38 / 7%);
+}
+
+.pdf-text-edit.is-selected.has-overflow::after {
+  border: 2px solid #dc2626;
+  box-shadow:
+    0 0 0 2px rgb(220 38 38 / 18%),
+    inset 0 0 0 1px rgb(255 255 255 / 70%);
+}
+
+.pdf-text-edit__overflow-tooltip {
+  position: absolute;
+  z-index: 5;
+  bottom: calc(100% + 0.45rem);
+  left: 0;
+  display: none;
+  width: max-content;
+  max-width: min(22rem, 75vw);
+  padding: 0.45rem 0.6rem;
+  color: var(--text-primary);
+  border: 1px solid rgb(220 38 38 / 45%);
+  border-radius: 5px;
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-sm);
+  font-family: system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 400;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+.pdf-text-edit.has-overflow:hover .pdf-text-edit__overflow-tooltip,
+.pdf-text-edit.is-selected.has-overflow .pdf-text-edit__overflow-tooltip {
+  display: block;
 }
 
 .pdf-text-edit__drag-handle {

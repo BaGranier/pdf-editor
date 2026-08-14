@@ -114,6 +114,13 @@ class OrganizeExportPlan(BaseModel):
     save_to_output_dir: bool = Field(default=False, alias="saveToOutputDir")
 
 
+class ExportWarning(BaseModel):
+    type: Literal["text_overflow"] = "text_overflow"
+    edit_id: str = Field(alias="editId")
+    page: int = Field(ge=1)
+    rendering: Literal["expanded", "partial"]
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_DIR = PROJECT_ROOT / "data" / "output"
 FORBIDDEN_OUTPUT_NAME_CHARACTERS = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f]')
@@ -142,6 +149,7 @@ app.add_middleware(
         "Content-Disposition",
         "X-Pdf-Output-Status",
         "X-Pdf-Output-Warning",
+        "X-Pdf-Export-Warnings",
         "X-Conversion-Format",
         "X-Conversion-Duration-Ms",
         "X-Conversion-Input-Bytes",
@@ -315,6 +323,8 @@ def _parse_hex_color(value: str) -> tuple[float, float, float]:
 
 
 MAX_SIGNATURE_IMAGE_BYTES = 5 * 1024 * 1024
+TEXTBOX_LINE_HEIGHT = 1.2
+TEXTBOX_HEIGHT_MARGIN = 0.5
 
 
 def _decode_signature_image(image: SignatureImagePayload) -> bytes:
@@ -357,11 +367,139 @@ def _decode_signature_image(image: SignatureImagePayload) -> bytes:
     return decoded
 
 
+def _textbox_shape(
+    page: fitz.Page,
+    rect: fitz.Rect,
+    edit: AddTextEdit,
+    text: str,
+) -> tuple[fitz.Shape, float]:
+    shape = page.new_shape()
+    spare_height = shape.insert_textbox(
+        rect,
+        text,
+        fontname=FONT_NAMES[(edit.style.font_family, edit.style.bold)],
+        fontsize=edit.style.font_size,
+        color=_parse_hex_color(edit.style.color),
+        lineheight=TEXTBOX_LINE_HEIGHT,
+    )
+    return shape, spare_height
+
+
+def _expand_text_rect_vertically(
+    requested_rect: fitz.Rect,
+    page_rect: fitz.Rect,
+    required_height: float,
+) -> fitz.Rect:
+    """Keep x/width fixed, grow downward, then use space above if needed."""
+    target_height = min(
+        max(requested_rect.height, required_height),
+        page_rect.height,
+    )
+    expanded_y0 = max(page_rect.y0, min(requested_rect.y0, page_rect.y1))
+    expanded_y1 = min(page_rect.y1, expanded_y0 + target_height)
+    missing_height = target_height - (expanded_y1 - expanded_y0)
+    if missing_height > 0:
+        expanded_y0 = max(page_rect.y0, expanded_y0 - missing_height)
+    return fitz.Rect(
+        requested_rect.x0,
+        expanded_y0,
+        requested_rect.x1,
+        expanded_y1,
+    )
+
+
+def _largest_fitting_text_prefix(
+    page: fitz.Page,
+    rect: fitz.Rect,
+    edit: AddTextEdit,
+) -> str:
+    """Return the longest prefix PyMuPDF can place without shrinking the font."""
+    low = 0
+    high = len(edit.text)
+    while low < high:
+        candidate_length = (low + high + 1) // 2
+        _shape, spare_height = _textbox_shape(
+            page,
+            rect,
+            edit,
+            edit.text[:candidate_length],
+        )
+        if spare_height >= 0:
+            low = candidate_length
+        else:
+            high = candidate_length - 1
+    return edit.text[:low]
+
+
+def _insert_text_best_effort(
+    page: fitz.Page,
+    requested_rect: fitz.Rect,
+    edit: AddTextEdit,
+) -> Literal["exact", "expanded", "partial"]:
+    requested_shape, spare_height = _textbox_shape(
+        page,
+        requested_rect,
+        edit,
+        edit.text,
+    )
+    if spare_height >= 0:
+        requested_shape.commit(overlay=True)
+        return "exact"
+
+    required_height = (
+        requested_rect.height - spare_height + TEXTBOX_HEIGHT_MARGIN
+    )
+    expanded_rect = _expand_text_rect_vertically(
+        requested_rect,
+        page.rect,
+        required_height,
+    )
+    expanded_shape, expanded_spare_height = _textbox_shape(
+        page,
+        expanded_rect,
+        edit,
+        edit.text,
+    )
+    if expanded_spare_height >= 0:
+        expanded_shape.commit(overlay=True)
+        return "expanded"
+
+    available_page_rect = fitz.Rect(
+        requested_rect.x0,
+        page.rect.y0,
+        requested_rect.x1,
+        page.rect.y1,
+    )
+    if expanded_rect != available_page_rect:
+        page_shape, page_spare_height = _textbox_shape(
+            page,
+            available_page_rect,
+            edit,
+            edit.text,
+        )
+        if page_spare_height >= 0:
+            page_shape.commit(overlay=True)
+            return "expanded"
+
+    fitting_text = _largest_fitting_text_prefix(page, available_page_rect, edit)
+    if fitting_text:
+        partial_shape, partial_spare_height = _textbox_shape(
+            page,
+            available_page_rect,
+            edit,
+            fitting_text,
+        )
+        if partial_spare_height >= 0:
+            partial_shape.commit(overlay=True)
+    return "partial"
+
+
 def apply_visual_edits(
     source: bytes,
     text_edits_by_output_page: dict[int, list[AddTextEdit]],
     signature_edits_by_output_page: dict[int, list[SignatureEdit]],
     signature_images: dict[str, bytes],
+    export_warnings: list[ExportWarning] | None = None,
 ) -> bytes:
     if not text_edits_by_output_page and not signature_edits_by_output_page:
         return source
@@ -388,24 +526,20 @@ def apply_visual_edits(
                     if isinstance(edit, AddTextEdit):
                         if not edit.text:
                             continue
-                        spare_height = page.insert_textbox(
-                            page_rect,
-                            edit.text,
-                            fontname=FONT_NAMES[
-                                (edit.style.font_family, edit.style.bold)
-                            ],
-                            fontsize=edit.style.font_size,
-                            color=_parse_hex_color(edit.style.color),
-                            lineheight=1.2,
-                            overlay=True,
-                        )
-                        if spare_height < 0:
-                            raise HTTPException(
-                                status_code=422,
-                                detail=(
-                                    f"Le bloc de texte {edit.id!r} est trop petit "
-                                    "pour contenir son texte."
-                                ),
+                        rendering = _insert_text_best_effort(page, page_rect, edit)
+                        if rendering != "exact":
+                            warning = ExportWarning(
+                                editId=edit.id,
+                                page=output_page_index + 1,
+                                rendering=rendering,
+                            )
+                            if export_warnings is not None:
+                                export_warnings.append(warning)
+                            logger.warning(
+                                "Text overflow: edit_id=%s page=%s rendering=%s",
+                                edit.id,
+                                output_page_index + 1,
+                                rendering,
                             )
                     else:
                         page.insert_image(
@@ -424,7 +558,11 @@ def apply_visual_edits(
         ) from error
 
 
-def export_organized_pdf(sources: dict[str, bytes], plan: OrganizeExportPlan) -> bytes:
+def export_organized_pdf(
+    sources: dict[str, bytes],
+    plan: OrganizeExportPlan,
+    export_warnings: list[ExportWarning] | None = None,
+) -> bytes:
     if not plan.pages:
         raise HTTPException(
             status_code=422, detail="Le plan d'organisation ne contient aucune page."
@@ -530,6 +668,7 @@ def export_organized_pdf(sources: dict[str, bytes], plan: OrganizeExportPlan) ->
         edits_by_output_page,
         signatures_by_output_page,
         signature_images,
+        export_warnings,
     )
 
 
@@ -573,9 +712,16 @@ async def export_organize_pdf(
         raise HTTPException(status_code=400, detail="Un fichier PDF source est vide.")
 
     output_name = build_output_name(source_files[0].filename, organize_plan.output_name)
-    result = export_organized_pdf(sources, organize_plan)
+    export_warnings: list[ExportWarning] = []
+    result = export_organized_pdf(sources, organize_plan, export_warnings)
 
     output_headers: dict[str, str] = {}
+    if export_warnings:
+        output_headers["X-Pdf-Export-Warnings"] = json.dumps(
+            [warning.model_dump(by_alias=True) for warning in export_warnings],
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
     if organize_plan.save_to_output_dir:
         try:
             output_path = get_output_path(output_name)
