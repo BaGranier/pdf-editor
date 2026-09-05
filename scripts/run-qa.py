@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -18,6 +19,24 @@ WEB_DIR = PROJECT_ROOT / "apps" / "web"
 BACKEND_DIR = PROJECT_ROOT / "services" / "pdf-engine"
 GENERATE_SCRIPT = PROJECT_ROOT / "scripts" / "generate-qa-pdfs.py"
 REPORT_SCRIPT = PROJECT_ROOT / "scripts" / "generate-qa-report.py"
+DOCX_QUALITY_SCRIPT = (
+    PROJECT_ROOT / "scripts" / "validate-docx-visual-quality.py"
+)
+TEST_RESULTS_DIR = WEB_DIR / "test-results"
+AUTOMATED_REPORT = PROJECT_ROOT / "QA_AUTOMATED_REPORT.md"
+
+
+def is_quick_campaign(playwright_args: list[str]) -> bool:
+    return any(
+        argument == "--grep-invert" or argument.startswith("--grep-invert=")
+        for argument in playwright_args
+    )
+
+
+def clean_previous_results() -> None:
+    """Ensure a campaign cannot mix current and stale generated artifacts."""
+    shutil.rmtree(TEST_RESULTS_DIR, ignore_errors=True)
+    AUTOMATED_REPORT.unlink(missing_ok=True)
 
 
 def port_is_open(host: str, port: int) -> bool:
@@ -48,10 +67,7 @@ def check_ports() -> None:
 
 
 def generate_fixtures(playwright_args: list[str]) -> None:
-    quick_campaign = any(
-        argument == "--grep-invert" or argument.startswith("--grep-invert=")
-        for argument in playwright_args
-    )
+    quick_campaign = is_quick_campaign(playwright_args)
     command = [
         "uv",
         "run",
@@ -69,15 +85,44 @@ def generate_fixtures(playwright_args: list[str]) -> None:
     subprocess.run(command, cwd=PROJECT_ROOT, env=environment, check=True)
 
 
+def validate_docx_quality(environment: dict[str, str]) -> int:
+    command = [
+        "uv",
+        "run",
+        "--directory",
+        str(BACKEND_DIR),
+        "python",
+        str(DOCX_QUALITY_SCRIPT),
+    ]
+    if environment.get("QA_REQUIRE_DOCX_VISUAL") == "1":
+        command.append("--required")
+    return subprocess.run(
+        command,
+        cwd=PROJECT_ROOT,
+        env=environment,
+        check=False,
+    ).returncode
+
+
 def main() -> int:
     playwright_args = sys.argv[1:]
     if os.environ.get("QA_SKIP_WEBSERVERS") != "1":
         check_ports()
+    clean_previous_results()
     generate_fixtures(playwright_args)
     environment = dict(os.environ)
     local_browsers = PROJECT_ROOT / ".playwright-browsers"
     if local_browsers.exists():
         environment.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(local_browsers))
+    environment.setdefault("UV_CACHE_DIR", str(PROJECT_ROOT / ".uv-cache"))
+
+    quick_campaign = is_quick_campaign(playwright_args)
+    environment["QA_DOCX_QUALITY_INCLUDED"] = (
+        "0" if quick_campaign else "1"
+    )
+    docx_quality_status = (
+        0 if quick_campaign else validate_docx_quality(environment)
+    )
 
     test_status = subprocess.run(
         ["npx", "playwright", "test", *playwright_args],
@@ -88,9 +133,14 @@ def main() -> int:
     report_status = subprocess.run(
         [sys.executable, str(REPORT_SCRIPT)],
         cwd=WEB_DIR,
+        env=environment,
         check=False,
     ).returncode
-    return test_status if test_status != 0 else report_status
+    if test_status != 0:
+        return test_status
+    if docx_quality_status != 0:
+        return docx_quality_status
+    return report_status
 
 
 if __name__ == "__main__":

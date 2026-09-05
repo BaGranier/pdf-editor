@@ -298,6 +298,7 @@ def generate(include_large: bool) -> list[Path]:
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
     generated = [
         write_pdf("pdf-small-1-page.pdf", [(320, 460)]),
+        write_pdf("pdf-text-position.pdf", [(612, 792)]),
         write_pdf(
             "pdf-small-5-pages.pdf",
             [(300 + index * 25, 500) for index in range(5)],

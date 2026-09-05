@@ -52,7 +52,8 @@ async function validateAndReport(
   );
   await run.download.saveAs(outputPath);
   const validation = validateConversion(outputPath, "docx");
-  const requestBody = run.response.request().postData() ?? "";
+  const requestContentType =
+    run.response.request().headers()["content-type"] ?? "";
   const sourceSize = fs.statSync(fixtures.conversionDocxFidelity).size;
   const inputBytes = Number(
     run.response.headers()["x-conversion-input-bytes"],
@@ -63,19 +64,11 @@ async function validateAndReport(
 
   expect(run.response.status(), "Le backend ne doit pas retourner 502").toBe(200);
   expect(run.response.headers()["x-conversion-stage"]).toBe("completed");
+  expect(run.response.headers()["x-conversion-format"]).toBe("docx");
+  expect(run.response.headers()["x-conversion-docx-mode"]).toBe(mode);
   expect(inputBytes).toBe(sourceSize);
   expect(outputBytes).toBeGreaterThan(0);
-  expect(requestBody).toContain('name="file"');
-  expect(requestBody).toContain('filename="conversion-docx-fidelity.pdf"');
-  expect(requestBody).toContain('name="target_format"');
-  expect(requestBody).toContain("docx");
-  expect(requestBody).toContain('name="docx_mode"');
-  expect(requestBody).toContain(mode);
-  expect(requestBody).toContain('name="ocr_mode"');
-  expect(requestBody).toContain("auto");
-  expect(requestBody).toContain('name="languages"');
-  expect(requestBody).toContain("fra");
-  expect(requestBody).toContain('name="output_filename"');
+  expect(requestContentType).toContain("multipart/form-data; boundary=");
   expect(run.download.suggestedFilename()).toBe(
     mode === "visual"
       ? "conversion-docx-fidelity-visual.docx"

@@ -37,7 +37,10 @@ def create_upload(name: str, widths: list[int]) -> UploadFile:
 
 def export_pdf(plan: dict[str, object], source_documents: dict[str, list[int]]):
     document_ids = list(source_documents)
-    files = [create_upload(f"{document_id}.pdf", widths) for document_id, widths in source_documents.items()]
+    files = [
+        create_upload(f"{document_id}.pdf", widths)
+        for document_id, widths in source_documents.items()
+    ]
     return asyncio.run(
         main.export_organize_pdf(
             plan=json.dumps(plan),
@@ -764,7 +767,10 @@ def test_rejects_an_empty_plan() -> None:
 
 def test_rejects_an_unknown_source_document() -> None:
     with pytest.raises(HTTPException) as error:
-        export_pdf({"pages": [{"sourceDocumentId": "doc-b", "sourcePageIndex": 0}]}, {"doc-a": [100]})
+        export_pdf(
+            {"pages": [{"sourceDocumentId": "doc-b", "sourcePageIndex": 0}]},
+            {"doc-a": [100]},
+        )
 
     assert error.value.status_code == 422
     assert error.value.detail == "Le document source 'doc-b' est introuvable."
@@ -772,13 +778,20 @@ def test_rejects_an_unknown_source_document() -> None:
 
 def test_rejects_an_invalid_page_index() -> None:
     with pytest.raises(HTTPException) as error:
-        export_pdf({"pages": [{"sourceDocumentId": "doc-a", "sourcePageIndex": 3}]}, {"doc-a": [100]})
+        export_pdf(
+            {"pages": [{"sourceDocumentId": "doc-a", "sourcePageIndex": 3}]},
+            {"doc-a": [100]},
+        )
 
     assert error.value.status_code == 422
-    assert error.value.detail == "L'index de page 3 est invalide pour le document 'doc-a'."
+    assert (
+        error.value.detail == "L'index de page 3 est invalide pour le document 'doc-a'."
+    )
 
 
-def test_writes_a_non_overwriting_copy_to_the_output_directory(tmp_path, monkeypatch) -> None:
+def test_writes_a_non_overwriting_copy_to_the_output_directory(
+    tmp_path, monkeypatch
+) -> None:
     monkeypatch.setattr(main, "OUTPUT_DIR", tmp_path)
     (tmp_path / "organise.pdf").write_bytes(b"existing")
     response = export_pdf(
@@ -795,7 +808,9 @@ def test_writes_a_non_overwriting_copy_to_the_output_directory(tmp_path, monkeyp
     assert (tmp_path / "organise-1.pdf").read_bytes() == response.body
 
 
-def test_does_not_touch_the_output_directory_when_copy_is_disabled(tmp_path, monkeypatch) -> None:
+def test_does_not_touch_the_output_directory_when_copy_is_disabled(
+    tmp_path, monkeypatch
+) -> None:
     output_dir = tmp_path / "not-created"
     monkeypatch.setattr(main, "OUTPUT_DIR", output_dir)
     response = export_pdf(
@@ -807,7 +822,25 @@ def test_does_not_touch_the_output_directory_when_copy_is_disabled(tmp_path, mon
     assert not output_dir.exists()
 
 
-def test_creates_the_output_directory_and_sanitizes_the_output_name(tmp_path, monkeypatch) -> None:
+def test_returns_a_utf8_content_disposition_for_a_requested_french_name() -> None:
+    response = export_pdf(
+        {
+            "outputName": "contrat été (signé).PDF",
+            "pages": [{"sourceDocumentId": "doc-a", "sourcePageIndex": 0}],
+        },
+        {"doc-a": [100]},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="contrat -t- (sign-).pdf"; '
+        "filename*=UTF-8''contrat%20%C3%A9t%C3%A9%20%28sign%C3%A9%29.pdf"
+    )
+
+
+def test_creates_the_output_directory_and_sanitizes_the_output_name(
+    tmp_path, monkeypatch
+) -> None:
     output_dir = tmp_path / "created-on-demand"
     monkeypatch.setattr(main, "OUTPUT_DIR", output_dir)
     response = export_pdf(
@@ -823,7 +856,9 @@ def test_creates_the_output_directory_and_sanitizes_the_output_name(tmp_path, mo
     assert (output_dir / "rapport-.pdf").read_bytes() == response.body
 
 
-def test_returns_the_pdf_when_the_development_copy_cannot_be_written(tmp_path, monkeypatch) -> None:
+def test_returns_the_pdf_when_the_development_copy_cannot_be_written(
+    tmp_path, monkeypatch
+) -> None:
     blocked_output = tmp_path / "blocked-output"
     blocked_output.write_text("not a directory")
     monkeypatch.setattr(main, "OUTPUT_DIR", blocked_output)

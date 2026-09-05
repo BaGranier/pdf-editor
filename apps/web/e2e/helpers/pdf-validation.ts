@@ -7,6 +7,13 @@ export type ValidatedPdf = {
   pageCount: number;
   imageCount: number;
   text: string;
+  textSpans: Array<{
+    page: number;
+    text: string;
+    bbox: [number, number, number, number];
+    font: string;
+    size: number;
+  }>;
   pages: Array<{
     width: number;
     height: number;

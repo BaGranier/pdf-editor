@@ -264,15 +264,21 @@ def parse_document_ids(serialized_ids: str | None, file_count: int) -> list[str]
     try:
         document_ids = json.loads(serialized_ids)
     except json.JSONDecodeError as error:
-        raise HTTPException(status_code=422, detail="Les identifiants des documents sont invalides.") from error
+        raise HTTPException(
+            status_code=422, detail="Les identifiants des documents sont invalides."
+        ) from error
 
     if (
         not isinstance(document_ids, list)
         or len(document_ids) != file_count
-        or not all(isinstance(document_id, str) and document_id for document_id in document_ids)
+        or not all(
+            isinstance(document_id, str) and document_id for document_id in document_ids
+        )
         or len(set(document_ids)) != len(document_ids)
     ):
-        raise HTTPException(status_code=422, detail="Les identifiants des documents sont invalides.")
+        raise HTTPException(
+            status_code=422, detail="Les identifiants des documents sont invalides."
+        )
 
     return document_ids
 
@@ -687,25 +693,33 @@ def get_output_path(output_name: str) -> Path:
 @app.post("/pdf/export/organize", response_class=Response)
 async def export_organize_pdf(
     plan: Annotated[str, Form(description="Plan d'organisation au format JSON")],
-    files: Annotated[list[UploadFile] | None, File(description="PDF sources à organiser")] = None,
+    files: Annotated[
+        list[UploadFile] | None, File(description="PDF sources à organiser")
+    ] = None,
     document_ids: Annotated[str | None, Form(alias="documentIds")] = None,
     file: Annotated[UploadFile | None, File(description="PDF source legacy")] = None,
 ) -> Response:
     source_files = files or ([] if file is None else [file])
     if not source_files:
-        raise HTTPException(status_code=422, detail="Au moins un PDF source est requis.")
+        raise HTTPException(
+            status_code=422, detail="Au moins un PDF source est requis."
+        )
 
     for source_file in source_files:
         if source_file.content_type not in {None, "application/pdf"} and not (
             source_file.filename or ""
         ).lower().endswith(".pdf"):
-            raise HTTPException(status_code=400, detail="Les fichiers source doivent être des PDF.")
+            raise HTTPException(
+                status_code=400, detail="Les fichiers source doivent être des PDF."
+            )
 
     organize_plan = parse_organize_plan(plan)
     source_document_ids = parse_document_ids(document_ids, len(source_files))
     sources = {
         document_id: await source_file.read()
-        for document_id, source_file in zip(source_document_ids, source_files, strict=True)
+        for document_id, source_file in zip(
+            source_document_ids, source_files, strict=True
+        )
     }
 
     if any(not source for source in sources.values()):
@@ -729,7 +743,9 @@ async def export_organize_pdf(
             output_name = output_path.name
             output_headers["X-Pdf-Output-Status"] = "saved"
         except OSError as error:
-            logger.warning("Impossible d'écrire la copie PDF dans %s: %s", OUTPUT_DIR, error)
+            logger.warning(
+                "Impossible d'écrire la copie PDF dans %s: %s", OUTPUT_DIR, error
+            )
             output_headers["X-Pdf-Output-Status"] = "warning"
             output_headers["X-Pdf-Output-Warning"] = (
                 "La copie dans data/output a échoué ; le PDF est tout de même téléchargé."

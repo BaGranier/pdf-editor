@@ -46,6 +46,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes \
             ghostscript \
+            libreoffice-writer \
             ocrmypdf \
             qpdf \
             tesseract-ocr-eng \
@@ -70,6 +71,8 @@ jobs:
       - name: Exécuter la campagne complète
         if: github.event_name != 'pull_request' && inputs.campaign == 'complete'
         working-directory: apps/web
+        env:
+          QA_REQUIRE_DOCX_VISUAL: "1"
         run: npm run qa:e2e
 
       - name: Publier le rapport HTML et JSON
@@ -82,6 +85,7 @@ jobs:
           path: |
             apps/web/test-results/playwright-report/
             apps/web/test-results/results.json
+            apps/web/test-results/docx-visual-quality/
             QA_AUTOMATED_REPORT.md
 
       - name: Publier les traces, captures et vidéos

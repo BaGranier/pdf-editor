@@ -20,9 +20,13 @@ QA_AUTOMATED_REPORT.md
 .uv-cache/
 data/output/*
 !data/output/.gitkeep
-data/input/*.pdf
-data/input/**/*.pdf
+# Local input documents may contain user or confidential data. Reproducible,
+# versioned QA fixtures belong in apps/web/e2e/fixtures instead.
+data/input/**
 !data/input/.gitkeep
+apps/desktop/src-tauri/*.pdf
+apps/desktop/src-tauri/*.docx
+*:Zone.Identifier
 
 # env / secrets
 .env

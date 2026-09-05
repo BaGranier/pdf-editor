@@ -408,5 +408,7 @@ export function downloadConversionFile(file: File): void {
   document.body.append(link);
   link.click();
   link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+  // Firefox may start consuming the Blob URL after the click task completes.
+  // Keep it alive long enough for the browser download manager to acquire it.
+  window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 60_000);
 }

@@ -59,6 +59,8 @@ async function saveAndReport(
     technicalValidation: validation,
     downloadName: result.download.suggestedFilename(),
     mimeType: result.response.headers()["content-type"],
+    docxMode: result.response.headers()["x-conversion-docx-mode"],
+    stage: result.response.headers()["x-conversion-stage"],
   };
   await testInfo.attach("conversion-result", {
     body: Buffer.from(JSON.stringify(metadata)),
@@ -144,6 +146,47 @@ test("QA-CONV-002 @smoke convertit en TXT UTF-8 puis en HTML autonome", async ({
   expect(html.validation.valid).toBe(true);
   expect(html.validation.pageSections).toBe(2);
   expect(html.validation.externalResourceCount).toBe(0);
+  await expect(page.locator(".document-item")).toHaveCount(1);
+});
+
+test("QA-CONV-DOCX-002 @regression produit un Word fidèle visuellement", async ({
+  page,
+  qa,
+}, testInfo) => {
+  await openApp(page);
+  await openPdf(page, fixtures.conversionDocxFidelity);
+  const result = await qa.measure("conversion-docx-visual", () =>
+    runConversion(page, "docx", async (dialog) => {
+      await expect(
+        dialog.getByText(/Produit un document modifiable/),
+      ).toBeVisible();
+      await dialog.getByLabel("Mode Word").selectOption("visual");
+      await expect(
+        dialog.getByText(/Conserve l’apparence sous forme d’images/),
+      ).toBeVisible();
+      await expect(
+        dialog.getByText(/Chaque page sera conservée comme une image/),
+      ).toBeVisible();
+    }),
+  );
+  const converted = await saveAndReport(
+    result,
+    "docx",
+    testInfo,
+    "conversion-visual.docx",
+  );
+
+  expect(result.response.headers()["x-conversion-docx-mode"]).toBe("visual");
+  expect(converted.validation.valid).toBe(true);
+  expect(converted.validation.imageCount).toBe(3);
+  expect(converted.validation.sectionCount).toBe(3);
+  expect(converted.validation.clippingDetected).toBe(false);
+  expect(converted.validation.exactLineRuleImageParagraphs).toBe(0);
+  expect(
+    converted.validation.imageNonWhiteRatios?.every(
+      (ratio) => ratio > 0.002,
+    ),
+  ).toBe(true);
   await expect(page.locator(".document-item")).toHaveCount(1);
 });
 

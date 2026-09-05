@@ -22,13 +22,6 @@ from app.conversion.models import DocxMode
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_REAL_PDF = (
-    PROJECT_ROOT
-    / "data"
-    / "input"
-    / "manual-docx-regression"
-    / "2-ENGAGEMENT_INDIVIDUEL_ETUDIANT_2026-2027.pdf"
-)
 RESULT_PATH = (
     PROJECT_ROOT
     / "apps"
@@ -51,10 +44,10 @@ pytestmark = [
 ]
 
 
-def real_pdf_path() -> Path:
+def real_pdf_path() -> Path | None:
     configured = os.environ.get("QA_REAL_DOCX_PDF")
     if not configured:
-        return DEFAULT_REAL_PDF
+        return None
     candidate = Path(configured)
     return candidate if candidate.is_absolute() else PROJECT_ROOT / candidate
 
@@ -206,9 +199,9 @@ def libreoffice_page_metrics(
 
 def test_real_pdf_produces_an_editable_docx(tmp_path: Path) -> None:
     source_path = real_pdf_path()
-    if not source_path.is_file():
+    if source_path is None or not source_path.is_file():
         pytest.skip(
-            "PDF réel absent. Définissez QA_REAL_DOCX_PDF pour activer ce test."
+            "Définissez QA_REAL_DOCX_PDF pour autoriser explicitement ce test."
         )
 
     output_path = tmp_path / "editable.docx"

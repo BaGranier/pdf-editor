@@ -2,6 +2,7 @@
 """Convert Playwright JSON output into QA_AUTOMATED_REPORT.md."""
 
 import base64
+import hashlib
 import json
 import os
 import platform
@@ -67,6 +68,42 @@ def command_output(command: list[str], cwd: Path = PROJECT_ROOT) -> str:
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return "non disponible"
+
+
+def repository_state_fingerprint() -> str:
+    """Hash every tracked or non-ignored file in the tested worktree."""
+    try:
+        result = subprocess.run(
+            [
+                "git",
+                "ls-files",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return "non disponible"
+
+    digest = hashlib.sha256()
+    relative_paths = sorted(
+        path for path in result.stdout.split(b"\0") if path
+    )
+    for encoded_path in relative_paths:
+        relative_path = encoded_path.decode("utf-8", errors="surrogateescape")
+        path = PROJECT_ROOT / relative_path
+        digest.update(encoded_path)
+        digest.update(b"\0")
+        if path.is_file():
+            digest.update(path.read_bytes())
+        else:
+            digest.update(b"<missing>")
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def collect_specs(
@@ -295,6 +332,11 @@ def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
         if scenario.status in {"unexpected", "failed", "timedOut", "interrupted"}
     ]
     skipped = [scenario for scenario in scenarios if scenario.status == "skipped"]
+    successful = [
+        scenario
+        for scenario in scenarios
+        if scenario.status in {"expected", "passed", "flaky"}
+    ]
     has_non_blocking_findings = any(
         (scenario.diagnostics or {}).get("accessibilityFindings")
         for scenario in scenarios
@@ -317,8 +359,10 @@ def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
         or (docx_cover or {}).get("renderStatus") == "unavailable"
         else "RÉUSSITE"
     )
-    commit = command_output(["git", "rev-parse", "--short", "HEAD"])
+    commit = command_output(["git", "rev-parse", "HEAD"])
+    branch = command_output(["git", "branch", "--show-current"])
     dirty = bool(command_output(["git", "status", "--short"]))
+    state_fingerprint = repository_state_fingerprint()
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     node_version = command_output(["node", "--version"])
     python_version = command_output(["python3", "--version"])
@@ -333,13 +377,17 @@ def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
         "## Synthèse",
         "",
         f"- Date de campagne : {now}",
-        f"- Commit testé : `{commit}{' (arbre de travail modifié)' if dirty else ''}`",
+        f"- Commit Git de base : `{commit}`",
+        f"- Branche : `{branch}`",
+        f"- État du worktree : {'modifié' if dirty else 'propre'}",
+        f"- Empreinte SHA-256 exacte de l'état testé : `{state_fingerprint}`",
         f"- Système : {platform.platform()}",
         f"- Node : {node_version}",
         f"- Python : {python_version}",
         f"- Playwright : {playwright_version}",
         f"- Navigateurs Playwright : {browser_versions()}",
         f"- Scénarios/navigateurs : {len(scenarios)}",
+        f"- Succès : {len(successful)}",
         f"- Échecs : {len(failed)}",
         f"- Ignorés : {len(skipped)}",
         f"- Décision automatisée : **{decision}**",
@@ -565,9 +613,9 @@ def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
         lines.extend(
             [
                 "- Statut : **NON EXÉCUTÉ**",
-                "- Motif : le PDF privé local n'est pas présent. Le test "
-                "`docx_real_document` est activé uniquement avec "
-                "`QA_REAL_DOCX_PDF` et le fichier reste ignoré par Git.",
+                "- Motif : aucun accès à un PDF privé n'a été explicitement "
+                "autorisé. Le test `docx_real_document` est activé uniquement "
+                "avec `QA_REAL_DOCX_PDF` et le fichier reste ignoré par Git.",
             ]
         )
     else:

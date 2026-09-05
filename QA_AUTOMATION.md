@@ -5,6 +5,12 @@ les conversions locales dans Chromium et Firefox. Elle génère ses propres PDF
 non confidentiels et ne lit aucun document personnel. Les observations humaines
 historiques restent dans `QA_BROWSER_REPORT.md`.
 
+`QA_AUTOMATION.md` décrit le protocole ; ce n'est pas un résultat de campagne.
+Seuls `QA_AUTOMATED_REPORT.md` et les fichiers sous `apps/web/test-results/`
+produits par la dernière commande représentent une exécution. Ils sont ignorés
+par Git et remplacés au début de chaque campagne afin qu'aucun résultat ancien
+ne puisse être mélangé au résultat courant.
+
 La campagne rapide inclut l’OCR réel ainsi que les smoke tests de conversion
 DOCX et TXT. Les artefacts sont inspectés côté test. Le résumé Markdown consigne
 le texte témoin OCR et, pour les conversions, les durées, tailles, utilisation
@@ -90,6 +96,16 @@ Après l'exécution :
 - `apps/web/test-results/docx-editable-real-document/results.json` : mesures
   agrégées du test DOCX éditable sur document local, sans contenu PDF ou DOCX.
 
+Le rapport indique le hash Git complet, l'état propre ou modifié du worktree et
+une empreinte SHA-256 de tous les fichiers suivis ou non ignorés. Cette empreinte
+identifie exactement l'état testé avant commit ; après création du commit, une
+nouvelle campagne doit être exécutée pour publier un rapport rattaché à ce hash.
+
+Les PDF de `apps/web/e2e/fixtures` sont des entrées synthétiques versionnées.
+Les téléchargements, traces, captures, résultats JSON et rapports HTML sont des
+artefacts générés sous `test-results` et ne doivent jamais être ajoutés comme
+fixtures.
+
 Le code de sortie reste celui de Playwright si un scénario bloquant échoue, même
 si le résumé Markdown a pu être généré. Pour régénérer seulement le résumé :
 
@@ -103,8 +119,8 @@ Le rapport HTML s'ouvre avec `npm run qa:e2e:report`.
 
 Le PDF privé n'est jamais versionné. Le chemin
 `data/input/manual-docx-regression/` est couvert par les règles d'ignorance des
-PDF d'entrée. Le test est ignoré lorsque le fichier n'existe pas et s'active
-localement ainsi :
+PDF d'entrée. Le test reste ignoré tant que son exécution n'est pas explicitement
+autorisée par `QA_REAL_DOCX_PDF`, même si un fichier local existe :
 
 ```bash
 cd services/pdf-engine

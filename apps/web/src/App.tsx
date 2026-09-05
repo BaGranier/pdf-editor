@@ -286,10 +286,13 @@ async function restoreOpenDocument(storedDocument: StoredPdfDocument): Promise<O
   if (!(storedDocument.content instanceof Blob) || storedDocument.content.size === 0) {
     throw new Error("Le document restauré ne contient plus de données PDF valides.");
   }
-  const file = new File([storedDocument.content], storedDocument.fileName, {
+  // Materialize the IndexedDB-backed Blob into memory once. Firefox can
+  // otherwise abort a later second read of the restored Blob.
+  const storedBytes = new Uint8Array(await storedDocument.content.arrayBuffer());
+  const file = new File([storedBytes], storedDocument.fileName, {
     type: storedDocument.mimeType || "application/pdf",
   });
-  const data = new Uint8Array(await file.arrayBuffer());
+  const data = storedBytes.slice();
   const loadingTask = pdfjsLib.getDocument({ data });
 
   try {

@@ -20,6 +20,7 @@ export const fixtures = {
     fixtureDirectory,
     "conversion-docx-fidelity.pdf",
   ),
+  textPosition: path.resolve(fixtureDirectory, "pdf-text-position.pdf"),
 } as const;
 
 export async function openApp(page: Page): Promise<void> {

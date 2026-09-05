@@ -175,8 +175,9 @@ npm run qa:docx-visual
 ```
 
 Le document utilisateur de régression reste exclusivement local et est ignoré
-par Git sous `data/input/manual-docx-regression/`. Lorsqu'il est disponible, le
-test optionnel vérifie avec `python-docx` le texte Word réel, les titres, listes,
+par Git sous `data/input/manual-docx-regression/`. Le test optionnel ne lit aucun
+fichier tant que `QA_REAL_DOCX_PDF` n'est pas défini explicitement. Lorsqu'il est
+autorisé, il vérifie avec `python-docx` le texte Word réel, les titres, listes,
 images, surlignage et encadré, sans versionner ni le PDF ni le DOCX produit :
 
 ```bash
@@ -186,8 +187,9 @@ QA_REAL_DOCX_PDF=data/input/manual-docx-regression/2-ENGAGEMENT_INDIVIDUEL_ETUDI
   uv run pytest -m docx_real_document
 ```
 
-Une page de garde locale peut être vérifiée séparément. Le test est ignoré si
-le fichier n'existe pas et le DOCX de contrôle reste sous `data/output/` :
+Une page de garde locale peut être vérifiée séparément. Le test reste ignoré
+sans `QA_COVER_PAGE_PDF`, même si un fichier local existe, et le DOCX de contrôle
+reste sous `data/output/` :
 
 ```bash
 cd services/pdf-engine

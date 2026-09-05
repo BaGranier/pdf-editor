@@ -70,7 +70,10 @@ def validate_docx(path: Path) -> dict[str, object]:
         "valid": True,
         "text": text,
         "paragraphCount": len(document.paragraphs),
-        "imageCount": len(document.inline_shapes),
+        # Media may legitimately live in a DOCX header/footer rather than in
+        # the main document body. Count package media for retention checks.
+        "imageCount": len(media_parts),
+        "inlineImageCount": len(document.inline_shapes),
         "tableCount": len(document.tables),
         "sectionCount": len(document.sections),
         "imageNonWhiteRatios": [

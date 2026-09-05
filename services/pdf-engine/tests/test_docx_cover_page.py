@@ -22,13 +22,6 @@ from app.conversion.models import DocxMode
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_COVER_PDF = (
-    PROJECT_ROOT
-    / "data"
-    / "input"
-    / "manual-docx-regression"
-    / "cort_test.pdf"
-)
 CONTROL_OUTPUT = (
     PROJECT_ROOT
     / "data"
@@ -46,10 +39,10 @@ COVER_RESULTS_PATH = (
 BLUE = (0.05, 0.25, 0.55)
 
 
-def cover_pdf_path() -> Path:
+def cover_pdf_path() -> Path | None:
     configured = os.environ.get("QA_COVER_PAGE_PDF")
     if not configured:
-        return DEFAULT_COVER_PDF
+        return None
     candidate = Path(configured)
     return candidate if candidate.is_absolute() else PROJECT_ROOT / candidate
 
@@ -366,10 +359,9 @@ def test_synthetic_cover_page_preserves_editable_vertical_layout(
 @pytest.mark.regression
 def test_local_cover_page_regression(tmp_path: Path) -> None:
     source_path = cover_pdf_path()
-    if not source_path.is_file():
+    if source_path is None or not source_path.is_file():
         pytest.skip(
-            "PDF de couverture absent. Définissez QA_COVER_PAGE_PDF pour "
-            "activer ce test."
+            "Définissez QA_COVER_PAGE_PDF pour autoriser explicitement ce test."
         )
 
     CONTROL_OUTPUT.parent.mkdir(parents=True, exist_ok=True)

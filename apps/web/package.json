@@ -21,6 +21,7 @@
     "qa:e2e:report": "playwright show-report test-results/playwright-report",
     "qa:e2e:update-snapshots": "python3 ../../scripts/run-qa.py --update-snapshots",
     "qa:e2e:typecheck": "tsc --noEmit -p tsconfig.e2e.json",
+    "qa:docx-visual": "uv run --directory ../../services/pdf-engine python ../../scripts/validate-docx-visual-quality.py --required",
     "qa:report": "python3 ../../scripts/generate-qa-report.py"
   },
   "dependencies": {

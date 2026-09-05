@@ -1,24 +1,42 @@
-# PDF Editor MVP
+# PDF Studio Local
 
-Local-first web MVP for a PDF editor.
+Éditeur PDF local-first disponible dans un navigateur ou dans une application
+desktop Tauri. Les documents restent sur la machine : le frontend communique
+uniquement avec le moteur FastAPI local.
 
 ## Structure
 
 - `apps/web`: Vite + React + TypeScript frontend
 - `apps/desktop`: Tauri v2 native shell and local backend lifecycle
 - `services/pdf-engine`: FastAPI backend
-- `packages/shared`: shared schemas and types
-- `data/input`: sample PDFs
-- `data/output`: generated PDFs
+- `apps/web/e2e/fixtures`: fixtures QA synthétiques et versionnées
+- `data/input`: documents d'entrée locaux, entièrement ignorés par Git
+- `data/output`: documents générés localement, entièrement ignorés par Git
 
 Le développement et le packaging natifs sont documentés dans
 [DESKTOP.md](DESKTOP.md).
+
+## Fonctionnalités
+
+- ouverture, affichage, miniatures et navigation multi-document ;
+- persistance locale des documents et préférences avec IndexedDB ;
+- rotation, suppression, duplication et réorganisation des pages ;
+- composition et export PDF mono-document ou multi-document ;
+- ajout, déplacement et redimensionnement de textes et signatures ;
+- OCR local en français, anglais ou mode mixte ;
+- conversion en DOCX éditable ou visuel, TXT, HTML, PNG et JPEG ;
+- exécution web ou desktop avec cycle de vie du backend géré par Tauri.
+
+La reconstruction DOCX éditable, la qualité OCR sur des scans réels et le
+packaging desktop multi-plateforme restent soumis aux limites décrites dans
+[CONVERSION.md](CONVERSION.md), [DESKTOP.md](DESKTOP.md) et
+[TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
 
 ## Frontend
 
 ```bash
 cd apps/web
-npm install
+npm ci
 npm run dev -- --host 0.0.0.0
 ```
 
@@ -60,7 +78,7 @@ npm run qa:e2e:quick
 
 ```bash
 cd services/pdf-engine
-uv sync
+uv sync --locked
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -69,6 +87,27 @@ Health check:
 ```bash
 curl http://localhost:8000/health
 ```
+
+### API locale
+
+| Méthode et route | Rôle |
+| --- | --- |
+| `GET /health` | vérifier que le moteur local est prêt |
+| `POST /pdf/export/organize` | composer, éditer et exporter un PDF |
+| `POST /ocr` | produire un PDF local avec couche texte OCR |
+| `POST /convert` | convertir un PDF en document ou en images |
+
+Les trois routes de traitement utilisent `multipart/form-data`. Les fichiers
+sources ne sont jamais modifiés ; les résultats sont renvoyés comme
+téléchargements et peuvent être rouverts dans l'application.
+
+### OCR local
+
+L'action **OCR** produit un nouveau PDF recherchable sans fermer ni modifier le
+document source. Elle accepte `fra`, `eng` et `fra+eng`, avec correction
+d'inclinaison optionnelle. OCRmyPDF, Tesseract, Ghostscript et QPDF doivent être
+installés sur la machine. Les erreurs de dépendance ou de PDF invalide sont
+renvoyées avec des codes métier stables.
 
 ### Conversion locale
 
@@ -120,11 +159,16 @@ progressif. « Ajouter les pages sélectionnées » ajoute les pages cochées à
 dans l'ordre croissant ; « Tout ajouter » ajoute toutes les pages du PDF source à la
 fin. Elles restent ensuite réorganisables dans la grille principale.
 
+Les blocs de texte et signatures ajoutés dans l'interface sont inclus dans le
+plan d'export. Le frontend conserve un historique local pour les interactions
+d'édition prises en charge, et le backend signale les éventuels débordements de
+texte sans altérer les PDF sources.
+
 En web pur, le téléchargement navigateur est le comportement standard ; le choix
 libre d'un dossier et un vrai « Enregistrer sous… » système seront traités plus
 tard avec Tauri. `/workspace/data/output` est une sortie de développement.
 
-### Limites d'usage MVP
+### Limites d'usage recommandées
 
 Le frontend avertit sans bloquer l'ouverture ou l'export au-delà de **50 Mo** par
 PDF, **250 pages** par PDF ou **8 documents ouverts**. Ces valeurs sont des
@@ -134,9 +178,32 @@ recommandations de mémoire et de quota navigateur, configurables au build par
 peuvent rester ouverts pour la session mais ne seront pas forcément restaurés
 après fermeture de l'onglet.
 
-Les fichiers locaux non privés de validation sont dans `data/input` et la campagne
-manuelle est décrite dans [QA_BROWSER_CHECKLIST.md](QA_BROWSER_CHECKLIST.md).
+Les fixtures reproductibles versionnées sont dans `apps/web/e2e/fixtures`. Les
+documents complémentaires placés dans `data/input` restent locaux et ignorés par
+Git. La campagne manuelle est décrite dans
+[QA_BROWSER_CHECKLIST.md](QA_BROWSER_CHECKLIST.md).
 
-Limites actuelles : pas encore de split avancé ni d'édition de texte PDF. La
-conversion DOCX reconstruit un document éditable, sans garantir une reproduction
-parfaite des mises en page complexes.
+Limites actuelles : pas de split avancé ni d'édition arbitraire des objets PDF
+existants. L'édition ajoute des blocs de texte et des signatures lors de
+l'export ; elle ne remplace pas une suite PAO complète. La conversion DOCX
+reconstruit un document éditable sans garantir une reproduction parfaite des
+mises en page complexes.
+
+## Application desktop
+
+```bash
+cd apps/desktop
+npm ci
+npm run desktop:dev
+```
+
+Le shell Tauri démarre le frontend et un backend FastAPI sur un port loopback
+dynamique. La configuration, les prérequis système, le build du sidecar et les
+limites de packaging sont détaillés dans [DESKTOP.md](DESKTOP.md).
+
+Pour valider la configuration desktop :
+
+```bash
+cd apps/desktop
+npm run desktop:check
+```
