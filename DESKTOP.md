@@ -7,6 +7,9 @@ frontend React/Vite utilisable seul et `services/pdf-engine` reste le backend
 FastAPI. Cette séparation garde les cycles de développement, les dépendances et
 les responsabilités de packaging indépendants.
 
+Le devcontainer général est décrit dans [DEVELOPMENT.md](DEVELOPMENT.md). Il ne
+contient pas actuellement la toolchain Rust/Tauri nécessaire à ce workspace.
+
 ```text
 apps/web (React/Vite)
         │ commande Tauri get_backend_status
@@ -21,7 +24,13 @@ Le nom **PDF Studio Local** et l’identifiant `com.local.pdfstudio` sont
 provisoires. Un changement d’identifiant changera également les répertoires OS
 de l’application.
 
-## Prérequis
+## Prérequis de développement et de compilation
+
+Les éléments de cette section concernent les personnes qui développent,
+contrôlent ou construisent l'application. Ils ne constituent pas une liste de
+prérequis destinée à l'utilisateur final : un installateur publié devra prendre
+en charge la WebView et le sidecar nécessaires sans demander Node.js, npm,
+Rust/Cargo, un compilateur C/C++ ou un Python de développement.
 
 - Node.js 22 et npm ;
 - Python 3.11 et [uv](https://docs.astral.sh/uv/) ;
@@ -32,9 +41,10 @@ de l’application.
 - les dépendances système Tauri v2 de la plateforme (WebView2 sous Windows,
   WebKitGTK 4.1 et les bibliothèques de build sous Linux, outils Xcode sous
   macOS) ;
-- pour les fonctions OCR : OCRmyPDF, Tesseract, Ghostscript et QPDF, avec les
-  langues voulues ;
-- LibreOffice reste nécessaire aux validations visuelles DOCX qui l’utilisent.
+- pour développer et tester les fonctions OCR : OCRmyPDF, Tesseract,
+  Ghostscript et QPDF, avec les langues voulues ;
+- LibreOffice est nécessaire aux validations visuelles DOCX qui l’utilisent,
+  mais pas à la conversion DOCX exécutée par l'application.
 
 Exemple Debian/Ubuntu pour Tauri et les outils PDF :
 
@@ -42,7 +52,8 @@ Exemple Debian/Ubuntu pour Tauri et les outils PDF :
 sudo apt-get install build-essential curl wget file libssl-dev \
   libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
   libwebkit2gtk-4.1-dev patchelf \
-  ghostscript ocrmypdf qpdf tesseract-ocr-eng tesseract-ocr-fra
+  ghostscript libreoffice-writer ocrmypdf qpdf \
+  tesseract-ocr-eng tesseract-ocr-fra
 ```
 
 Installer les dépendances JavaScript et Python :
@@ -50,7 +61,7 @@ Installer les dépendances JavaScript et Python :
 ```bash
 cd apps/web && npm ci
 cd ../desktop && npm ci
-cd ../../services/pdf-engine && uv sync
+cd ../../services/pdf-engine && uv sync --locked
 ```
 
 ## Développement
@@ -144,6 +155,13 @@ Cette commande :
    `bundle.externalBin: ["binaries/pdf-engine"]` ;
 5. construit le frontend puis le bundle Tauri de la plateforme courante.
 
+Le sidecar PyInstaller embarque l'interpréteur Python et les modules Python du
+moteur. Il n'embarque pas actuellement les exécutables système appelés par le
+parcours OCR (`ocrmypdf`, Tesseract, Ghostscript et QPDF), ni leurs données de
+langue. Les bundles produits aujourd'hui ne doivent donc pas être présentés
+comme des installateurs autonomes validés pour toutes les fonctionnalités et
+toutes les plateformes.
+
 Les artefacts PyInstaller, `target/`, `src-tauri/gen/` et tous les sidecars
 générés sont ignorés par Git. On peut préparer manuellement un binaire déjà
 construit :
@@ -156,6 +174,15 @@ python3 scripts/prepare-tauri-sidecars.py \
 
 La convention de suffixe et la résolution par le seul nom `pdf-engine` suivent
 la [documentation sidecar Tauri v2](https://v2.tauri.app/develop/sidecar/).
+
+Le cache Rust `apps/desktop/src-tauri/target` peut occuper plusieurs gigaoctets.
+Il peut être supprimé sans toucher aux sources ; la compilation suivante le
+recréera :
+
+```bash
+cd apps/desktop/src-tauri
+cargo clean
+```
 
 ## Cycle de vie et stockage
 
@@ -200,7 +227,7 @@ cd apps/desktop
 npm run desktop:check
 
 cd src-tauri
-cargo check
+cargo check --locked
 ```
 
 `desktop:check` valide la configuration et les capabilities, détecte soit le
@@ -231,6 +258,13 @@ Le code, les noms de sidecar et la configuration de bundle sont prévus pour
 Windows, Linux et macOS. La CI active la validation Linux. Les builds doivent
 encore être exécutés nativement sur chaque OS pour produire leur sidecar et leur
 bundle ; le cross-compiling du backend Python n’est pas pris en charge.
+
+Il n'existe pas encore d'installateur final validé comme entièrement autonome.
+Node.js, Rust/Cargo, Visual Studio Build Tools, MSVC, le Windows SDK, Xcode et le
+Python de développement sont des outils de construction, pas des dépendances
+fonctionnelles que l'utilisateur final devrait installer. En revanche, tant que
+le packaging OCR n'est pas finalisé, une build locale peut encore dépendre des
+outils OCR système listés plus haut.
 
 DESKTOP-001 ne garantit pas encore :
 

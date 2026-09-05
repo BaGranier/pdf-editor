@@ -1,5 +1,11 @@
 # Rapport de campagne navigateur MVP PDF
 
+> Rapport historique figé : cette campagne a été exécutée le 16 juillet 2026
+> sur le commit `0256126`, avant l'ajout des parcours OCR, conversion et édition
+> actuels. Elle ne décrit pas l'état courant du dépôt. Le protocole automatisé
+> actuel est documenté dans `QA_AUTOMATION.md`; `QA_AUTOMATED_REPORT.md`, lorsqu'il
+> existe localement, correspond à la dernière exécution automatisée.
+
 Ce rapport accompagne [QA_BROWSER_CHECKLIST.md](QA_BROWSER_CHECKLIST.md). Une ligne ne peut être marquée `OK` qu'après une vérification réelle dans le navigateur concerné.
 
 ## Métadonnées
