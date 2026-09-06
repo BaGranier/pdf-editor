@@ -26,7 +26,7 @@ test("QA-E2E-004 @regression centralise et vérifie les raccourcis document", as
   await sidebar.press(DOCUMENT_SHORTCUTS.previous);
   await expect(activeDocumentButton(page)).toHaveText(/pdf-small-5-pages/);
 
-  const fileInput = page.getByLabel("Ouvrir un PDF");
+  const fileInput = page.locator("input[type='file'][aria-label='Ouvrir un PDF']");
   await fileInput.focus();
   await fileInput.press(DOCUMENT_SHORTCUTS.alternateClose);
   await expect(page.locator(".document-item")).toHaveCount(3);

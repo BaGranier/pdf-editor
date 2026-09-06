@@ -16,7 +16,7 @@ test("QA-E2E-014 @smoke refuse un PDF corrompu puis accepte un PDF valide", asyn
 }) => {
   qa.allowError(/InvalidPDF|Invalid PDF|PDF.*corrupt|format error/i);
   await openApp(page);
-  await page.getByLabel("Ouvrir un PDF").setInputFiles(fixtures.corrupted);
+  await page.locator("input[type='file'][aria-label='Ouvrir un PDF']").setInputFiles(fixtures.corrupted);
 
   await expect(
     page
@@ -49,7 +49,7 @@ test("QA-E2E-016 @slow @regression garde huit documents accessibles", async ({
   await openApp(page);
   await qa.measure("open-eight-documents", async () => {
     for (let index = 0; index < 8; index += 1) {
-      await page.getByLabel("Ouvrir un PDF").setInputFiles(fixtures.onePage);
+      await page.locator("input[type='file'][aria-label='Ouvrir un PDF']").setInputFiles(fixtures.onePage);
       await expect(page.locator(".document-item")).toHaveCount(index + 1);
     }
   });

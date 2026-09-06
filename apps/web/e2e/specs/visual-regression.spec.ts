@@ -31,7 +31,7 @@ test("QA-E2E-018 @slow @visual capture les états stables par moteur", async ({
   await expect(page).toHaveScreenshot("theme-dark.png", { fullPage: true });
 
   qa.allowError(/InvalidPDF|Invalid PDF|PDF.*corrupt|format error/i);
-  await page.getByLabel("Ouvrir un PDF").setInputFiles(fixtures.corrupted);
+  await page.locator("input[type='file'][aria-label='Ouvrir un PDF']").setInputFiles(fixtures.corrupted);
   await expect(
     page
       .getByRole("complementary", { name: "Documents ouverts" })

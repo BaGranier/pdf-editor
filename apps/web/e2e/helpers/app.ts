@@ -118,7 +118,7 @@ export async function openPdf(
   pdfPath: string,
   expectedName = path.basename(pdfPath),
 ): Promise<void> {
-  await page.getByLabel("Ouvrir un PDF").setInputFiles(pdfPath);
+  await page.locator("input[type='file'][aria-label='Ouvrir un PDF']").setInputFiles(pdfPath);
   await expect(
     page.getByRole("button", { name: `${expectedName}, document actif` }),
   ).toBeVisible();

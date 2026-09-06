@@ -88,12 +88,12 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Augmenter le zoom" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Masquer la barre latérale" })).toBeInTheDocument();
     expect(sidebar).toBeInTheDocument();
-    expect(within(sidebar).getByRole("switch", { name: "Basculer le thème" })).toHaveAttribute(
+    expect(screen.getByRole("switch", { name: "Basculer le thème" })).toHaveAttribute(
       "aria-checked",
       "false",
     );
     expect(within(sidebar).getByLabelText("Ouvrir un PDF")).toBeInTheDocument();
-    expect(within(sidebar).getByRole("button", { name: "Réinitialiser les données locales" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Réinitialiser les données locales" })).toBeInTheDocument();
     expect(within(sidebar).getByText("Aucun document ouvert.")).toBeInTheDocument();
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
   });
@@ -169,7 +169,7 @@ describe("App", () => {
       expect(screen.getByRole("alert")).toHaveTextContent("Les PDF ne peuvent pas être conservés durablement");
     });
 
-    fireEvent.click(within(sidebar).getByRole("button", { name: "Réinitialiser les données locales" }));
+    fireEvent.click(screen.getByRole("button", { name: "Réinitialiser les données locales" }));
 
     await waitFor(() => {
       expect(screen.getByRole("region", { name: "Aucun PDF ouvert" })).toBeInTheDocument();
@@ -254,7 +254,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Basculer le thème" }));
 
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
-    expect(within(sidebar).getByRole("switch", { name: "Basculer le thème" })).toHaveAttribute(
+    expect(screen.getByRole("switch", { name: "Basculer le thème" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
@@ -459,7 +459,7 @@ describe("App", () => {
     const textButton = screen.getByRole("button", { name: "Ajouter du texte" });
     const signatureButton = screen.getByRole("button", { name: "Ajouter une signature" });
 
-    expect(within(toolbar).getAllByText("cycle.pdf")).toHaveLength(2);
+    expect(within(toolbar).getAllByText("cycle.pdf")).toHaveLength(1);
     expect(within(toolbar).queryByText("1 page")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "cycle.pdf, document actif" })).toBeInTheDocument();
     expect(within(sidebar).getByLabelText("Aller à la page 1")).toBeInTheDocument();
@@ -496,7 +496,7 @@ describe("App", () => {
     fireEvent.click(layer, { clientX: 80, clientY: 100 });
     expect(layer).toHaveAttribute("data-active-editing-tool", "select");
     expect(saveAsButton).toBeEnabled();
-    expect(screen.getByTitle("Modifications non sauvegardées")).toHaveTextContent("Non enregistré");
+    expect(screen.getByTitle("Modifications non sauvegardées")).toHaveTextContent("●");
     expect(
       screen.getByRole("button", { name: "cycle.pdf, document actif" }),
     ).toHaveAccessibleDescription("Modifications non sauvegardées.");

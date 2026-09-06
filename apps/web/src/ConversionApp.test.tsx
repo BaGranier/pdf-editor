@@ -51,7 +51,7 @@ async function openPdf() {
     promise: Promise.resolve(createPdfDocumentMock()),
     destroy: vi.fn().mockResolvedValue(undefined),
   } as never);
-  fireEvent.change(screen.getByLabelText("Ouvrir un PDF"), {
+  fireEvent.change(screen.getByTestId("pdf-file-input"), {
     target: {
       files: [
         new File(["%PDF-1.7\nsource"], "source.pdf", {

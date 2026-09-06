@@ -57,7 +57,7 @@ test("QA-E2E-019 @smoke contrôle noms accessibles, clavier, focus et contraste 
     if (current !== theme) {
       await page.getByRole("switch", { name: "Basculer le thème" }).click();
     }
-    const colors = await page.getByLabel("Ouvrir un PDF").evaluate((element) => {
+    const colors = await page.locator("input[type='file'][aria-label='Ouvrir un PDF']").evaluate((element) => {
       const style = getComputedStyle(element.closest("label") ?? element);
       const parse = (value: string) =>
         (value.match(/\d+/g) ?? ["0", "0", "0"]).slice(0, 3).map(Number) as Rgb;

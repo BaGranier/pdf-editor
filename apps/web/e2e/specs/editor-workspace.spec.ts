@@ -27,6 +27,10 @@ test("EDITOR-UX-002 organise les panneaux et crée les objets par glisser", asyn
   await page.getByRole("button", { name: "Afficher les propriétés" }).click();
 
   await page.getByRole("button", { name: "Formes" }).click();
+  await expect(page.getByRole("menu", { name: "Formes" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu", { name: "Formes" })).toBeHidden();
+  await page.getByRole("button", { name: "Formes" }).click();
   await page.getByRole("menuitem", { name: /Rectangle/ }).click();
   await dragInLayer(page, { x: 40, y: 70 }, { x: 190, y: 150 });
   await expect(page.getByLabel("Rectangle page 1")).toBeVisible();
