@@ -6,7 +6,7 @@ import {
   fitPdfRectToAspectRatio,
   pdfRectToViewportStyle,
 } from "../editing/coordinates";
-import { useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type {
   EditingTool,
   PdfEdit,
@@ -54,6 +54,11 @@ export function PdfEditLayer({
     start: { x: number; y: number };
     end: { x: number; y: number };
   } | null>(null);
+  const creationRef = useRef<typeof creation>(null);
+  const setCreationState = (next: typeof creation) => {
+    creationRef.current = next;
+    setCreation(next);
+  };
   const creationActive =
     activeTool === "add_text" ||
     activeTool.startsWith("shape_") ||
@@ -63,13 +68,13 @@ export function PdfEditLayer({
     : null;
 
   useEffect(() => {
-    setCreation(null);
+    setCreationState(null);
   }, [activeTool, pageNumber, pendingSignatureImage]);
 
   useEffect(() => {
     const cancelCreation = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setCreation(null);
+        setCreationState(null);
       }
     };
     window.addEventListener("keydown", cancelCreation);
@@ -84,13 +89,13 @@ export function PdfEditLayer({
   };
 
   const finishCreation = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const currentCreation = creation;
+    const currentCreation = creationRef.current;
     if (!currentCreation || currentCreation.pointerId !== event.pointerId) {
       return;
     }
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     const end = pointForEvent(event);
-    setCreation(null);
+    setCreationState(null);
     if (
       Math.hypot(end.x - currentCreation.start.x, end.y - currentCreation.start.y) < 6
     ) {
@@ -125,23 +130,24 @@ export function PdfEditLayer({
         if (
           !creationActive ||
           event.button !== 0 ||
-          event.target !== event.currentTarget
+          event.target instanceof Element &&
+          event.target.closest(".pdf-text-edit, .pdf-shape-edit, .pdf-signature-edit")
         ) {
           return;
         }
         event.preventDefault();
         event.currentTarget.setPointerCapture?.(event.pointerId);
         const point = pointForEvent(event);
-        setCreation({ pointerId: event.pointerId, start: point, end: point });
+        setCreationState({ pointerId: event.pointerId, start: point, end: point });
       }}
       onPointerMove={(event) => {
-        if (creation?.pointerId === event.pointerId) {
+        if (creationRef.current?.pointerId === event.pointerId) {
           const point = pointForEvent(event);
-          setCreation((current) => current ? { ...current, end: point } : null);
+          setCreationState({ ...creationRef.current, end: point });
         }
       }}
       onPointerUp={finishCreation}
-      onPointerCancel={() => setCreation(null)}
+      onPointerCancel={() => setCreationState(null)}
       // React unit tests use a synthetic click without pointer events. Real pointer
       // interaction always follows the drag path above, including the click threshold.
       onClick={(event) => {

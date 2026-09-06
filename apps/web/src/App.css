@@ -178,6 +178,35 @@ h1 {
   box-shadow: var(--toolbar-shadow);
 }
 
+/* EDITOR-UX-002A: keep application controls compact and reserve height for PDF. */
+.toolbar {
+  gap: 0.55rem;
+  padding: 0.4rem 0.75rem;
+}
+
+.app-brand__mark { width: 1.7rem; height: 1.7rem; }
+.app-brand h1 { font-size: 0.9rem; }
+.toolbar-icon-button,
+.toolbar-actions > .toolbar-icon-button { width: 2rem; min-width: 2rem; min-height: 2rem; padding: 0; }
+.save-as-button { min-height: 2rem; padding: 0; }
+.save-as-button > span { display: none; }
+.document-tabs { margin-bottom: -0.4rem; }
+.document-tabs__scroll { gap: 0.25rem; padding: 0.25rem 0.75rem; }
+.document-tab { min-width: 7.5rem; border-radius: 6px; }
+.document-tab .document-select { padding: 0.25rem 0.15rem 0.25rem 0.4rem; }
+.document-tab .document-close { min-width: 1.55rem; min-height: 1.55rem; }
+.document-tab__dirty { font-size: 0.56rem; }
+
+.content-area { grid-template-columns: 4.75rem var(--page-sidebar-width, 15.5rem) minmax(0, 1fr) var(--properties-panel-width, 17rem); }
+.content-area--sidebar-hidden { grid-template-columns: 4.75rem minmax(0, 1fr) var(--properties-panel-width, 17rem); }
+.content-area--properties-hidden { grid-template-columns: 4.75rem var(--page-sidebar-width, 15.5rem) minmax(0, 1fr); }
+.page-sidebar-wrap { position: relative; min-width: 0; min-height: 0; }
+.page-sidebar-wrap .document-sidebar { height: 100%; }
+.page-sidebar-resize { position: absolute; z-index: 8; top: 0; right: -4px; bottom: 0; width: 8px; padding: 0; border: 0; background: transparent; cursor: col-resize; }
+.page-sidebar-resize:hover, .page-sidebar-resize:focus-visible { background: var(--selection); }
+.sidebar-page-list--grid { grid-template-columns: repeat(auto-fit, minmax(5.75rem, 1fr)); }
+.document-sidebar__content { min-height: 0; }
+
 .content-area {
   position: relative;
   min-height: 0;

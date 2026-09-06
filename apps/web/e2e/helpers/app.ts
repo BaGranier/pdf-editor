@@ -26,7 +26,7 @@ export const fixtures = {
 export async function openApp(page: Page): Promise<void> {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "PDF Studio Local" })).toBeVisible();
-  await expect(page.getByLabel("Ouvrir un PDF")).toBeVisible();
+  await expect(page.locator("button.toolbar-icon-button[aria-label='Ouvrir un PDF']")).toBeVisible();
 }
 
 export async function getLocalState(page: Page) {

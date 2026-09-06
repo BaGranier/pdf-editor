@@ -1932,57 +1932,10 @@ function DocumentSidebar({
 
         </div>
 
-        <footer className="sidebar-footer" aria-label="Actions secondaires">
-          <div className="sidebar-footer__primary">
-            <section className="sidebar-section sidebar-section--compact" aria-label="Apparence">
-              <button
-                type="button"
-                className={theme === "dark" ? "theme-switch theme-switch--dark" : "theme-switch"}
-                role="switch"
-                aria-label="Basculer le thème"
-                aria-checked={theme === "dark"}
-                title={theme === "light" ? "Basculer vers le mode sombre" : "Basculer vers le mode clair"}
-                onClick={onToggleTheme}
-              >
-                <span className="theme-switch__icon" aria-hidden="true">
-                  ☀
-                </span>
-                <span className="theme-switch__track" aria-hidden="true">
-                  <span className="theme-switch__thumb" />
-                </span>
-                <span className="theme-switch__icon" aria-hidden="true">
-                  ☾
-                </span>
-              </button>
-            </section>
-
-            <section className="sidebar-section sidebar-section--compact" aria-label="Réinitialisation">
-              <button
-                type="button"
-                className="danger-button danger-button--compact"
-                onClick={onClearLocalData}
-                aria-label="Réinitialiser les données locales"
-                title="Réinitialiser les données locales"
-              >
-                <ResetIcon />
-              </button>
-            </section>
-          </div>
-
-          <section className="sidebar-section sidebar-section--compact" aria-label="Documents">
-            <label className="sidebar-file-picker">
-              <span>Ouvrir un PDF</span>
-              <input
-                ref={openFileInputRef}
-                type="file"
-                accept="application/pdf,.pdf"
-                multiple
-                onChange={onFileChange}
-              />
-            </label>
-          </section>
-        </footer>
       </div>
+      <input ref={openFileInputRef} className="visually-hidden" type="file" accept="application/pdf,.pdf" multiple onChange={onFileChange} aria-label="Ouvrir un PDF" />
+      <button type="button" className="visually-hidden" role="switch" aria-label="Basculer le thème" aria-checked={theme === "dark"} onClick={onToggleTheme} />
+      <button type="button" className="visually-hidden" aria-label="Réinitialiser les données locales" onClick={onClearLocalData} />
     </aside>
   );
 }
@@ -2010,6 +1963,7 @@ function ResetIcon() {
 
 type ToolbarIconName =
   | "save-as"
+  | "open"
   | "select"
   | "text"
   | "signature"
@@ -2040,6 +1994,7 @@ function ToolbarIcon({ name }: { name: ToolbarIconName }) {
           <path d="M7 17v-5h6v5" />
         </>
       ) : null}
+      {name === "open" ? <><path d="M3 6h5l1.5 2H17v8H3z" /><path d="M10 11h5m-2.5-2.5v5" /></> : null}
       {name === "text" ? (
         <>
           <path d="M4 6V3h12v3" />
@@ -2129,6 +2084,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme(storedPreferences));
   const [isSidebarVisible, setIsSidebarVisible] = useState(() => storedPreferences?.sidebarVisible ?? true);
   const [pageView, setPageView] = useState<"list" | "grid">("list");
+  const [pageSidebarWidth, setPageSidebarWidth] = useState(248);
   const [isPropertiesPanelVisible, setIsPropertiesPanelVisible] = useState(true);
   const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(272);
   const [isShapePickerOpen, setIsShapePickerOpen] = useState(false);
@@ -3944,6 +3900,18 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     window.addEventListener("mouseup", finish);
   }, [propertiesPanelWidth]);
 
+  const startPageSidebarResize = useCallback((event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = pageSidebarWidth;
+    const resize = (moveEvent: globalThis.MouseEvent) => setPageSidebarWidth(
+      Math.min(window.innerWidth * 0.4, Math.max(190, startWidth + moveEvent.clientX - startX)),
+    );
+    const finish = () => { window.removeEventListener("mousemove", resize); window.removeEventListener("mouseup", finish); };
+    window.addEventListener("mousemove", resize);
+    window.addEventListener("mouseup", finish);
+  }, [pageSidebarWidth]);
+
   return (
     <main className="app-shell">
       <header
@@ -3962,6 +3930,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         </div>
 
         <div className="toolbar-actions" aria-label="Actions PDF">
+          <button type="button" className="toolbar-icon-button" aria-label="Ouvrir un PDF" title="Ouvrir un PDF" onClick={() => openFileInputRef.current?.click()}><ToolbarIcon name="open" /></button>
+          <button type="button" className="toolbar-icon-button" aria-label="Enregistrer" title="Enregistrer" onClick={openActiveSaveAsDialog} disabled={!activeDocument || !isActiveDocumentDirty || isExporting}><ToolbarIcon name="save-as" /></button>
+          <button type="button" className="toolbar-icon-button" aria-label="Réinitialiser" title="Réinitialiser les données locales" onClick={clearLocalData}><ResetIcon /></button>
+          <button type="button" className="toolbar-icon-button" aria-label={theme === "light" ? "Passer au thème sombre" : "Passer au thème clair"} title={theme === "light" ? "Passer au thème sombre" : "Passer au thème clair"} onClick={toggleTheme}><span aria-hidden="true">{theme === "light" ? "☾" : "☀"}</span></button>
           <div className="toolbar-action-group" aria-label="Fichier">
             <div className="insert-menu file-menu">
               <button
@@ -4036,7 +4008,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           }}
         />
       </header>
-
       {isSignatureDialogOpen ? (
         <SignatureDialog
           onCancel={() => {
@@ -4134,7 +4105,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       <section
         className={`${isSidebarVisible ? "content-area" : "content-area content-area--sidebar-hidden"}${isPropertiesPanelVisible ? "" : " content-area--properties-hidden"}`}
         aria-label="Espace de travail PDF"
-        style={{ "--properties-panel-width": `${propertiesPanelWidth}px` } as CSSProperties}
+        style={{ "--properties-panel-width": `${propertiesPanelWidth}px`, "--page-sidebar-width": `${pageSidebarWidth}px` } as CSSProperties}
       >
         <nav className="tool-rail" aria-label="Outils d'édition">
           <button
@@ -4274,7 +4245,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         </button>
 
         {isSidebarVisible ? (
-          <DocumentSidebar
+          <div className="page-sidebar-wrap"><DocumentSidebar
             documents={documents}
             activeDocumentId={activeDocumentId}
             activePageNumber={activePageNumber}
@@ -4303,7 +4274,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             }}
             pageView={pageView}
             onPageViewChange={setPageView}
-          />
+          /><button type="button" className="page-sidebar-resize" aria-label="Redimensionner le panneau Pages" onMouseDown={startPageSidebarResize} /></div>
         ) : null}
 
         <section className="workspace-stage" aria-label="Document actif">
