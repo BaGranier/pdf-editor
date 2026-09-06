@@ -76,7 +76,8 @@ function editsAreEqual(left: PdfEdit, right: PdfEdit) {
       left.style.fontFamily === right.style.fontFamily &&
       left.style.fontSize === right.style.fontSize &&
       left.style.color === right.style.color &&
-      left.style.bold === right.style.bold
+      left.style.bold === right.style.bold &&
+      left.autoSize === right.autoSize
     );
   }
 

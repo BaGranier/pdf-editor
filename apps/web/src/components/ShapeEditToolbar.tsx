@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { SHAPE_TYPES, type ShapeEdit, type ShapeType } from "../editing/types";
 
 type ShapeEditToolbarProps = {
@@ -22,6 +23,10 @@ export function ShapeEditToolbar({
   onDelete,
 }: ShapeEditToolbarProps) {
   const supportsFill = edit.shapeType !== "line";
+  const lastFillColor = useRef(edit.style.fillColor ?? "#dbeafe");
+  if (edit.style.fillColor !== null) {
+    lastFillColor.current = edit.style.fillColor;
+  }
 
   return (
     <section className="shape-edit-toolbar" aria-label="Propriétés de la forme">
@@ -48,27 +53,12 @@ export function ShapeEditToolbar({
           ))}
         </select>
       </label>
-      <label>
+      <label className="shape-edit-toolbar__color-control">
         Contour
-        <input
-          type="color"
-          aria-label="Couleur du contour"
-          value={edit.style.strokeColor}
-          onChange={(event) =>
-            onUpdate({
-              style: { ...edit.style, strokeColor: event.target.value },
-            })
-          }
-        />
+        <span><input type="color" aria-label="Couleur du contour" value={edit.style.strokeColor} onChange={(event) => onUpdate({ style: { ...edit.style, strokeColor: event.target.value } })} />
+          <button type="button" className="shape-edit-toolbar__eyedropper" aria-label="Pipette contour" title="Prélever une couleur" aria-pressed={eyedropperTarget === "stroke"} onClick={() => onPickColor("stroke")}>◉</button>
+        </span>
       </label>
-      <button
-        type="button"
-        aria-label="Pipette contour"
-        aria-pressed={eyedropperTarget === "stroke"}
-        onClick={() => onPickColor("stroke")}
-      >
-        Pipette
-      </button>
       <label>
         Épaisseur
         <input
@@ -88,45 +78,13 @@ export function ShapeEditToolbar({
       </label>
       {supportsFill ? (
         <>
-          <label>
-            <input
-              type="checkbox"
-              aria-label="Remplissage transparent"
-              checked={edit.style.fillColor === null}
-              onChange={(event) =>
-                onUpdate({
-                  style: {
-                    ...edit.style,
-                    fillColor: event.target.checked ? null : "#dbeafe",
-                  },
-                })
-              }
-            />
-            Transparent
-          </label>
-          <label>
+          <label className="shape-edit-toolbar__color-control">
             Remplissage
-            <input
-              type="color"
-              aria-label="Couleur de remplissage"
-              disabled={edit.style.fillColor === null}
-              value={edit.style.fillColor ?? "#dbeafe"}
-              onChange={(event) =>
-                onUpdate({
-                  style: { ...edit.style, fillColor: event.target.value },
-                })
-              }
-            />
+            <span><input type="color" aria-label="Couleur de remplissage" disabled={edit.style.fillColor === null} value={edit.style.fillColor ?? lastFillColor.current} onChange={(event) => onUpdate({ style: { ...edit.style, fillColor: event.target.value } })} />
+              <button type="button" className="shape-edit-toolbar__eyedropper" aria-label="Pipette remplissage" title="Prélever une couleur" aria-pressed={eyedropperTarget === "fill"} disabled={edit.style.fillColor === null} onClick={() => onPickColor("fill")}>◉</button>
+            </span>
           </label>
-          <button
-            type="button"
-            aria-label="Pipette remplissage"
-            aria-pressed={eyedropperTarget === "fill"}
-            disabled={edit.style.fillColor === null}
-            onClick={() => onPickColor("fill")}
-          >
-            Pipette
-          </button>
+          <label className="shape-edit-toolbar__transparent"><input type="checkbox" aria-label="Remplissage transparent" checked={edit.style.fillColor === null} onChange={(event) => onUpdate({ style: { ...edit.style, fillColor: event.target.checked ? null : lastFillColor.current } })} /> Transparent</label>
         </>
       ) : null}
       <button type="button" className="shape-edit-toolbar__delete" onClick={onDelete}>

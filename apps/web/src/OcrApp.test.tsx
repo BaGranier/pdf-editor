@@ -350,8 +350,8 @@ describe("OCR in App", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("complementary", { name: "Documents ouverts" })
-        .querySelectorAll(".document-item"),
+      screen.getByRole("navigation", { name: "Documents ouverts" })
+        .querySelectorAll(".document-tab"),
     ).toHaveLength(1);
   });
 

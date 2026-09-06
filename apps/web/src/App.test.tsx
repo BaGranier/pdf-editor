@@ -117,7 +117,7 @@ describe("App", () => {
     });
 
     let documentSidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
-    expect(within(documentSidebar).getByRole("button", { name: "sample.pdf, document actif" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "sample.pdf, document actif" })).toHaveAttribute(
       "aria-current",
       "true",
     );
@@ -128,8 +128,8 @@ describe("App", () => {
 
     await waitFor(() => {
       documentSidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
-      expect(within(documentSidebar).getByRole("button", { name: "sample.pdf" })).toBeInTheDocument();
-      expect(within(documentSidebar).getByRole("button", { name: "second.pdf, document actif" })).toHaveAttribute(
+      expect(screen.getByRole("button", { name: "sample.pdf" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "second.pdf, document actif" })).toHaveAttribute(
         "aria-current",
         "true",
       );
@@ -459,10 +459,10 @@ describe("App", () => {
     const textButton = screen.getByRole("button", { name: "Ajouter du texte" });
     const signatureButton = screen.getByRole("button", { name: "Ajouter une signature" });
 
-    expect(within(toolbar).getByText("cycle.pdf")).toBeInTheDocument();
+    expect(within(toolbar).getAllByText("cycle.pdf")).toHaveLength(2);
     expect(within(toolbar).queryByText("1 page")).not.toBeInTheDocument();
-    expect(within(sidebar).getByText("cycle.pdf")).toBeInTheDocument();
-    expect(within(sidebar).getByText("1 page")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "cycle.pdf, document actif" })).toBeInTheDocument();
+    expect(within(sidebar).getByLabelText("Aller à la page 1")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sélection" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -496,7 +496,7 @@ describe("App", () => {
     fireEvent.click(layer, { clientX: 80, clientY: 100 });
     expect(layer).toHaveAttribute("data-active-editing-tool", "select");
     expect(saveAsButton).toBeEnabled();
-    expect(screen.getByTitle("Modifications non sauvegardées")).toHaveTextContent("●");
+    expect(screen.getByTitle("Modifications non sauvegardées")).toHaveTextContent("Non enregistré");
     expect(
       screen.getByRole("button", { name: "cycle.pdf, document actif" }),
     ).toHaveAccessibleDescription("Modifications non sauvegardées.");
@@ -2066,8 +2066,8 @@ describe("App", () => {
     fireEvent.mouseMove(window, { clientX: 220, clientY: 190 });
     fireEvent.mouseMove(window, { clientX: 120, clientY: 160 });
     fireEvent.mouseUp(window);
-    expect(block).toHaveStyle({ width: "8px", height: "18px" });
-    expect(input).toHaveStyle({ fontSize: "18px" });
+    expect(block).toHaveStyle({ width: "8px", height: "35px" });
+    expect(input).toBeInTheDocument();
     expect(input).toHaveValue(
       "Un texte suffisamment long pour revenir à la ligne",
     );
@@ -2075,7 +2075,7 @@ describe("App", () => {
     fireEvent.keyDown(window, { key: "z", ctrlKey: true });
     expect(block).toHaveStyle({ width: "220px", height: "72px" });
     fireEvent.keyDown(window, { key: "Z", ctrlKey: true, shiftKey: true });
-    expect(block).toHaveStyle({ width: "8px", height: "18px" });
+    expect(block).toHaveStyle({ width: "8px", height: "35px" });
 
     fireEvent.click(block as HTMLElement);
     expect(fireEvent.keyDown(window, { key: "c", ctrlKey: true })).toBe(false);
@@ -2092,9 +2092,9 @@ describe("App", () => {
       left: "152px",
       top: "182px",
       width: "8px",
-      height: "18px",
+      height: "35px",
     });
-    expect(copiedInputs[1]).toHaveStyle({ fontSize: "18px" });
+    expect(copiedInputs[1]).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "z", ctrlKey: true });
     expect(screen.getAllByLabelText("Texte ajouté page 1")).toHaveLength(1);

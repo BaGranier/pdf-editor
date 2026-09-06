@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   createPdfRectAtScreenPoint,
+  createPdfRectFromScreenPoints,
+  fitPdfRectToAspectRatio,
   getMinimumTextRectSize,
   offsetPdfRectWithinPage,
   pdfRectToViewportStyle,
@@ -63,6 +65,22 @@ describe("PDF edit coordinate conversions", () => {
       y0: 578,
       x1: 320,
       y1: 650,
+    });
+  });
+
+  it("normalizes drag endpoints in PDF coordinates and preserves image ratios", () => {
+    const viewport = createViewport(0);
+    const rect = createPdfRectFromScreenPoints(
+      viewport,
+      { x: 400, y: 600 },
+      { x: 100, y: 200 },
+    );
+    expect(rect).toEqual({ x0: 50, y0: 500, x1: 200, y1: 700 });
+    expect(fitPdfRectToAspectRatio(rect, 3)).toEqual({
+      x0: 50,
+      y0: 575,
+      x1: 200,
+      y1: 625,
     });
   });
 

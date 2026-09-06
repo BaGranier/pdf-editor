@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type CSSProperties,
   type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
@@ -173,6 +174,8 @@ type DocumentSidebarProps = {
   sidebarId: string;
   onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
   getDocumentButtonRef: (documentId: string) => (node: HTMLButtonElement | null) => void;
+  pageView: "list" | "grid";
+  onPageViewChange: (view: "list" | "grid") => void;
 };
 
 type SidebarKeyTarget = "file-input" | string | null;
@@ -1757,6 +1760,7 @@ type SidebarPageListProps = {
   pagePlan: OrganizePagePlan;
   activePageNumber: number;
   onSelectPage: (pageNumber: number) => void;
+  pageView: "list" | "grid";
 };
 
 function SidebarPageList({
@@ -1764,9 +1768,10 @@ function SidebarPageList({
   pagePlan,
   activePageNumber,
   onSelectPage,
+  pageView,
 }: SidebarPageListProps) {
   return (
-    <ol className="sidebar-page-list" aria-label="Pages du document">
+    <ol className={`sidebar-page-list sidebar-page-list--${pageView}`} aria-label="Pages du document">
       {pagePlan.pages.map((page) => {
         const sourceDocument = documents.find(
           (document) => document.id === page.sourceDocumentId,
@@ -1802,6 +1807,69 @@ function SidebarPageList({
   );
 }
 
+type DocumentTabsProps = Pick<
+  DocumentSidebarProps,
+  | "documents"
+  | "activeDocumentId"
+  | "dirtyDocumentIds"
+  | "onSelectDocument"
+  | "onCloseDocument"
+  | "onKeyDown"
+  | "getDocumentButtonRef"
+>;
+
+function DocumentTabs({
+  documents,
+  activeDocumentId,
+  dirtyDocumentIds,
+  onSelectDocument,
+  onCloseDocument,
+  onKeyDown,
+  getDocumentButtonRef,
+}: DocumentTabsProps) {
+  return (
+    <nav className="document-tabs" aria-label="Documents ouverts" onKeyDown={onKeyDown}>
+      <div className="document-tabs__scroll" aria-label="Documents ouverts">
+        {documents.map((document) => {
+          const isActive = document.id === activeDocumentId;
+          const isDirty = dirtyDocumentIds.has(document.id);
+          return (
+            <div key={document.id} className={isActive ? "document-tab is-active" : "document-tab"}>
+              <button
+                type="button"
+                className="document-select"
+                data-document-id={document.id}
+                ref={getDocumentButtonRef(document.id)}
+                onClick={() => onSelectDocument(document.id)}
+                aria-selected={isActive}
+                aria-current={isActive ? "true" : undefined}
+                aria-label={`${document.fileName}${isActive ? ", document actif" : ""}`}
+                aria-describedby={isDirty ? `document-dirty-${document.id}` : undefined}
+                tabIndex={isActive ? 0 : -1}
+                title={document.fileName}
+              >
+                <span className="document-title">{document.fileName}</span>
+                {isDirty ? <span className="document-tab__dirty" title="Modifications non sauvegardées">Non enregistré</span> : null}
+                {isDirty ? <span id={`document-dirty-${document.id}`} className="visually-hidden">Modifications non sauvegardées.</span> : null}
+              </button>
+              <button
+                type="button"
+                className="document-close"
+                data-document-id={document.id}
+                onClick={() => onCloseDocument(document.id)}
+                aria-label={`Fermer ${document.fileName}`}
+                title="Fermer"
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
 function DocumentSidebar({
   documents,
   activeDocumentId,
@@ -1821,6 +1889,8 @@ function DocumentSidebar({
   sidebarId,
   onKeyDown,
   getDocumentButtonRef,
+  pageView,
+  onPageViewChange,
 }: DocumentSidebarProps) {
   return (
     <aside
@@ -1832,9 +1902,11 @@ function DocumentSidebar({
     >
       <div className="sidebar-header">
         <h2>Pages</h2>
-        <span className="sidebar-count">
-          {pagePlan?.pages.length ?? 0}
-        </span>
+        <div className="sidebar-page-view" role="group" aria-label="Affichage des pages">
+          <button type="button" aria-label="Vue liste" aria-pressed={pageView === "list"} onClick={() => onPageViewChange("list")}>▤</button>
+          <button type="button" aria-label="Vue grille" aria-pressed={pageView === "grid"} onClick={() => onPageViewChange("grid")}>▦</button>
+          <span className="sidebar-count">{pagePlan?.pages.length ?? 0}</span>
+        </div>
       </div>
 
       <div className="document-sidebar__content">
@@ -1845,15 +1917,12 @@ function DocumentSidebar({
               pagePlan={pagePlan}
               activePageNumber={activePageNumber}
               onSelectPage={onSelectPage}
+              pageView={pageView}
             />
           ) : (
-            <p className="sidebar-hint">Ouvrez un PDF pour afficher ses pages.</p>
+            <p className="sidebar-hint">{documents.length === 0 ? "Aucun document ouvert." : "Ouvrez un PDF pour afficher ses pages."}</p>
           )}
 
-          <div className="sidebar-subheader">
-            <h3>Documents</h3>
-            <span>{documents.length}</span>
-          </div>
           {status ? <p className="sidebar-status">{status}</p> : null}
           {storageWarning ? (
             <p className="sidebar-status" role="alert">
@@ -1861,69 +1930,6 @@ function DocumentSidebar({
             </p>
           ) : null}
 
-          {documents.length > 0 ? (
-            <ul className="document-list" aria-label="Liste des documents ouverts">
-              {documents.map((document) => {
-                const isActive = document.id === activeDocumentId;
-                const isDirty = dirtyDocumentIds.has(document.id);
-                const dirtyDescriptionId = `document-dirty-${document.id}`;
-
-                return (
-                  <li key={document.id} className={isActive ? "document-item is-active" : "document-item"}>
-                    <button
-                      type="button"
-                      className="document-select"
-                      data-document-id={document.id}
-                      ref={getDocumentButtonRef(document.id)}
-                      onClick={() => onSelectDocument(document.id)}
-                      aria-current={isActive ? "true" : undefined}
-                      aria-selected={isActive}
-                      aria-describedby={isDirty ? dirtyDescriptionId : undefined}
-                      tabIndex={isActive ? 0 : -1}
-                      aria-label={`${document.fileName}${isActive ? ", document actif" : ""}`}
-                      title={document.fileName}
-                    >
-                      <span className="document-title">
-                        {document.fileName}
-                        {isDirty ? (
-                          <span
-                            className="document-dirty-indicator"
-                            aria-hidden="true"
-                            title="Modifications non sauvegardées"
-                          >
-                            ●
-                          </span>
-                        ) : null}
-                      </span>
-                      {isDirty ? (
-                        <span id={dirtyDescriptionId} className="visually-hidden">
-                          Modifications non sauvegardées.
-                        </span>
-                      ) : null}
-                      <span className="document-meta-line">
-                        {document.pageCount} page{document.pageCount > 1 ? "s" : ""}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className="document-close"
-                      data-document-id={document.id}
-                      onClick={() => onCloseDocument(document.id)}
-                      aria-label={`Fermer ${document.fileName}`}
-                      title="Fermer"
-                    >
-                      ×
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <div className="sidebar-empty-state">
-              <p>Aucun document ouvert.</p>
-              <p>Ouvrez un PDF avec le bouton en bas de la barre latérale.</p>
-            </div>
-          )}
         </div>
 
         <footer className="sidebar-footer" aria-label="Actions secondaires">
@@ -2122,6 +2128,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const sidebarId = "documents-sidebar";
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme(storedPreferences));
   const [isSidebarVisible, setIsSidebarVisible] = useState(() => storedPreferences?.sidebarVisible ?? true);
+  const [pageView, setPageView] = useState<"list" | "grid">("list");
+  const [isPropertiesPanelVisible, setIsPropertiesPanelVisible] = useState(true);
+  const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(272);
+  const [isShapePickerOpen, setIsShapePickerOpen] = useState(false);
   const [documents, setDocuments] = useState<OpenPdfDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("read");
@@ -2567,7 +2577,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         page: pageNumber,
         rect,
         text: "",
-        style: { ...DEFAULT_TEXT_STYLE },
+        style: {
+          ...DEFAULT_TEXT_STYLE,
+          fontSize: Math.min(144, Math.max(6, Math.round((rect.y1 - rect.y0) * 0.48))),
+        },
+        autoSize: true,
       };
 
       dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
@@ -3903,6 +3917,33 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setStatus([ignoredFilesMessage, ...usageWarnings.map((warning) => `Avertissement: ${warning}`)].filter(Boolean).join(" "));
   }
 
+  useEffect(() => {
+    const closeShapePicker = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsShapePickerOpen(false);
+      }
+    };
+    window.addEventListener("keydown", closeShapePicker);
+    return () => window.removeEventListener("keydown", closeShapePicker);
+  }, []);
+
+  const startPropertiesResize = useCallback((event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = propertiesPanelWidth;
+    const resize = (moveEvent: globalThis.MouseEvent) => {
+      setPropertiesPanelWidth(
+        Math.min(460, Math.max(220, startWidth + startX - moveEvent.clientX)),
+      );
+    };
+    const finish = () => {
+      window.removeEventListener("mousemove", resize);
+      window.removeEventListener("mouseup", finish);
+    };
+    window.addEventListener("mousemove", resize);
+    window.addEventListener("mouseup", finish);
+  }, [propertiesPanelWidth]);
+
   return (
     <main className="app-shell">
       <header
@@ -3983,6 +4024,17 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             </button>
           </div>
         </div>
+        <DocumentTabs
+          documents={documents}
+          activeDocumentId={activeDocumentId}
+          dirtyDocumentIds={dirtyDocumentIds}
+          onSelectDocument={selectDocumentFromSidebar}
+          onCloseDocument={closeDocument}
+          onKeyDown={handleSidebarKeyDown}
+          getDocumentButtonRef={(documentId) => (node) => {
+            documentButtonRefs.current.set(documentId, node);
+          }}
+        />
       </header>
 
       {isSignatureDialogOpen ? (
@@ -4080,8 +4132,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       ) : null}
 
       <section
-        className={isSidebarVisible ? "content-area" : "content-area content-area--sidebar-hidden"}
+        className={`${isSidebarVisible ? "content-area" : "content-area content-area--sidebar-hidden"}${isPropertiesPanelVisible ? "" : " content-area--properties-hidden"}`}
         aria-label="Espace de travail PDF"
+        style={{ "--properties-panel-width": `${propertiesPanelWidth}px` } as CSSProperties}
       >
         <nav className="tool-rail" aria-label="Outils d'édition">
           <button
@@ -4135,40 +4188,35 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <span>Signature</span>
           </button>
 
-          <div className="tool-rail__shape-group" aria-label="Formes">
-            <span className="tool-rail__group-icon" aria-hidden="true">
+          <div className="tool-rail__shape-group">
+            <button
+              type="button"
+              onClick={() => setIsShapePickerOpen((isOpen) => !isOpen)}
+              disabled={!activeDocument || workspaceMode !== "read"}
+              aria-label="Formes"
+              aria-haspopup="menu"
+              aria-expanded={isShapePickerOpen}
+              aria-pressed={activeEditingTool.startsWith("shape_")}
+              title="Formes"
+            >
               <ToolbarIcon name="shape" />
-            </span>
-            {(["rectangle", "ellipse", "line"] as const).map((shapeType) => {
-              const label =
-                shapeType === "rectangle"
-                  ? "Ajouter un rectangle"
-                  : shapeType === "ellipse"
-                    ? "Ajouter une ellipse"
-                    : "Ajouter une ligne";
-              const tool: EditingTool = `shape_${shapeType}`;
-              return (
-                <button
-                  key={shapeType}
-                  type="button"
-                  className="toolbar-shape-button"
-                  onClick={() => {
+              <span>Formes</span>
+            </button>
+            {isShapePickerOpen ? (
+              <div className="shape-picker" role="menu" aria-label="Formes">
+                {(["rectangle", "ellipse", "line"] as const).map((shapeType) => {
+                  const label = shapeType === "rectangle" ? "Rectangle" : shapeType === "ellipse" ? "Ellipse" : "Ligne";
+                  return <button key={shapeType} type="button" role="menuitem" onClick={() => {
                     setExportFeedback(null);
-                    setActiveEditingTool(tool);
+                    setActiveEditingTool(`shape_${shapeType}`);
                     setPendingSignatureImageId(null);
                     setSelectedEditId(null);
                     setEyedropperTarget(null);
-                  }}
-                  disabled={!activeDocument || workspaceMode !== "read"}
-                  aria-label={label}
-                  aria-pressed={activeEditingTool === tool}
-                  title={label}
-                >
-                  {shapeType === "rectangle" ? "▭" : shapeType === "ellipse" ? "○" : "╱"}
-                </button>
-              );
-            })}
-            <span>Formes</span>
+                    setIsShapePickerOpen(false);
+                  }}>{shapeType === "rectangle" ? "▭" : shapeType === "ellipse" ? "○" : "╱"} {label}</button>;
+                })}
+              </div>
+            ) : null}
           </div>
 
           <span className="tool-rail__separator" aria-hidden="true" />
@@ -4253,6 +4301,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             getDocumentButtonRef={(documentId) => (node) => {
               documentButtonRefs.current.set(documentId, node);
             }}
+            pageView={pageView}
+            onPageViewChange={setPageView}
           />
         ) : null}
 
@@ -4344,10 +4394,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           )}
         </section>
 
-        <aside className="properties-panel" aria-label="Propriétés">
+        {isPropertiesPanelVisible ? <aside className="properties-panel" aria-label="Propriétés">
+          <button type="button" className="properties-panel__resize" aria-label="Redimensionner les propriétés" onMouseDown={startPropertiesResize} />
           <header className="properties-panel__header">
-            <span>Inspecteur</span>
-            <h2>Propriétés</h2>
+            <div><span>Inspecteur</span><h2>Propriétés</h2></div>
+            <button type="button" aria-label="Masquer les propriétés" title="Masquer les propriétés" onClick={() => setIsPropertiesPanelVisible(false)}>❯</button>
           </header>
           {workspaceMode === "read" && selectedTextEdit ? (
             <TextEditToolbar
@@ -4394,7 +4445,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               </span>
             </section>
           )}
-        </aside>
+        </aside> : <button type="button" className="properties-panel-toggle" aria-label="Afficher les propriétés" title="Afficher les propriétés" onClick={() => setIsPropertiesPanelVisible(true)}>❮</button>}
       </section>
 
       <footer className="status-bar" aria-label="État du document">

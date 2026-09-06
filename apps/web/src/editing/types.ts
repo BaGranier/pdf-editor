@@ -44,6 +44,8 @@ export type AddTextEdit = BasePdfEdit & {
   type: "add_text";
   text: string;
   style: AddTextStyle;
+  /** True until the user explicitly chooses a font size in the inspector. */
+  autoSize?: boolean;
 };
 
 export type SignatureEdit = BasePdfEdit & {

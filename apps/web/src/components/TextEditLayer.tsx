@@ -24,6 +24,7 @@ type TextEditBlockProps = {
   onSelect: () => void;
   onChangeText: (text: string) => void;
   onMove: (rect: PdfRect) => void;
+  onResize?: (rect: PdfRect, previousRect: PdfRect) => void;
 };
 
 const TEXT_COMMIT_DELAY_MS = 600;
@@ -44,6 +45,7 @@ export function TextEditBlock({
   onSelect,
   onChangeText,
   onMove,
+  onResize,
 }: TextEditBlockProps) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const overflowTooltipId = useId();
@@ -170,8 +172,13 @@ export function TextEditBlock({
       if (!interactionRef.current) {
         return;
       }
+      const interaction = interactionRef.current;
       interactionRef.current = null;
-      onMove(interactionRectRef.current);
+      if (interaction.kind === "resize" && onResize) {
+        onResize(interactionRectRef.current, interaction.rect);
+      } else {
+        onMove(interactionRectRef.current);
+      }
     }
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -182,7 +189,7 @@ export function TextEditBlock({
       window.removeEventListener("mouseup", finishInteraction);
       window.removeEventListener("blur", finishInteraction);
     };
-  }, [minimumSize.height, minimumSize.width, onMove, viewport]);
+  }, [minimumSize.height, minimumSize.width, onMove, onResize, viewport]);
 
   useEffect(
     () => () => {

@@ -47,7 +47,7 @@ export function TextEditToolbar({ edit, onUpdate, onDelete }: TextEditToolbarPro
             const fontSize = Number(event.target.value);
 
             if (Number.isFinite(fontSize) && fontSize >= 6 && fontSize <= 144) {
-              onUpdate({ style: { ...edit.style, fontSize } });
+              onUpdate({ style: { ...edit.style, fontSize }, autoSize: false });
             }
           }}
         />

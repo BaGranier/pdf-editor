@@ -108,6 +108,43 @@ export function createPdfRectAtScreenPoint(
   });
 }
 
+/** Builds a PDF-space rectangle from the two ends of a drag gesture. */
+export function createPdfRectFromScreenPoints(
+  viewport: PdfViewport,
+  start: Point,
+  end: Point,
+): PdfRect {
+  const startPoint = screenPointToPdf(viewport, start);
+  const endPoint = screenPointToPdf(viewport, end);
+
+  return clampPdfRectToPage(viewport, {
+    x0: startPoint.x,
+    y0: startPoint.y,
+    x1: endPoint.x,
+    y1: endPoint.y,
+  });
+}
+
+/** Fits a drag-defined box to an image ratio without stretching the image. */
+export function fitPdfRectToAspectRatio(rect: PdfRect, aspectRatio: number): PdfRect {
+  if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
+    throw new Error("Le ratio de l'image doit être positif.");
+  }
+
+  const normalized = normalizePdfRect(rect);
+  const width = normalized.x1 - normalized.x0;
+  const height = normalized.y1 - normalized.y0;
+  if (width / height > aspectRatio) {
+    const fittedWidth = height * aspectRatio;
+    const offset = (width - fittedWidth) / 2;
+    return { ...normalized, x0: normalized.x0 + offset, x1: normalized.x1 - offset };
+  }
+
+  const fittedHeight = width / aspectRatio;
+  const offset = (height - fittedHeight) / 2;
+  return { ...normalized, y0: normalized.y0 + offset, y1: normalized.y1 - offset };
+}
+
 export function translatePdfRectByScreenDelta(
   viewport: PdfViewport,
   rect: PdfRect,
