@@ -4,7 +4,7 @@ import {
   pdfEditsReducer,
   type PdfEditsByDocument,
 } from "./state";
-import type { AddTextEdit, PdfEdit, SignatureEdit } from "./types";
+import type { AddTextEdit, PdfEdit, ShapeEdit, SignatureEdit } from "./types";
 
 const textEdit: AddTextEdit = {
   id: "text-1",
@@ -26,6 +26,19 @@ const signatureEdit: SignatureEdit = {
   page: 1,
   rect: { x0: 20, y0: 20, x1: 120, y1: 60 },
   imageId: "image-1",
+};
+
+const shapeEdit: ShapeEdit = {
+  id: "shape-1",
+  type: "shape",
+  shapeType: "rectangle",
+  page: 1,
+  rect: { x0: 30, y0: 30, x1: 130, y1: 90 },
+  style: {
+    strokeColor: "#123456",
+    strokeWidth: 2,
+    fillColor: null,
+  },
 };
 
 function addEdits(documentId: string, edits: PdfEdit[]) {
@@ -161,5 +174,24 @@ describe("pdfEditsReducer history", () => {
       canUndo: false,
       canRedo: false,
     });
+  });
+
+  it("tracks shape geometry and visual property changes in the shared history", () => {
+    let state = addEdits("doc-a", [shapeEdit]);
+    const styledShape = {
+      ...shapeEdit,
+      style: { ...shapeEdit.style, fillColor: "#abcdef", strokeWidth: 4 },
+    };
+    state = pdfEditsReducer(state, {
+      type: "replace",
+      documentId: "doc-a",
+      edit: styledShape,
+    });
+    expect(state["doc-a"].edits).toEqual([styledShape]);
+
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toEqual([shapeEdit]);
+    state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toEqual([styledShape]);
   });
 });

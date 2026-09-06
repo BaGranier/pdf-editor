@@ -6,6 +6,7 @@ export type ValidatedPdf = {
   valid: boolean;
   pageCount: number;
   imageCount: number;
+  drawingCount: number;
   text: string;
   textSpans: Array<{
     page: number;

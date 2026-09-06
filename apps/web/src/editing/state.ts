@@ -80,6 +80,15 @@ function editsAreEqual(left: PdfEdit, right: PdfEdit) {
     );
   }
 
+  if (left.type === "shape" && right.type === "shape") {
+    return (
+      left.shapeType === right.shapeType &&
+      left.style.strokeColor === right.style.strokeColor &&
+      left.style.strokeWidth === right.style.strokeWidth &&
+      left.style.fillColor === right.style.fillColor
+    );
+  }
+
   return false;
 }
 

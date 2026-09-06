@@ -16,7 +16,23 @@ export type AddTextStyle = {
   bold: boolean;
 };
 
-export type EditingTool = "select" | "add_text" | "signature";
+export const SHAPE_TYPES = ["rectangle", "ellipse", "line"] as const;
+
+export type ShapeType = (typeof SHAPE_TYPES)[number];
+
+export type ShapeStyle = {
+  strokeColor: string;
+  strokeWidth: number;
+  fillColor: string | null;
+};
+
+export type EditingTool =
+  | "select"
+  | "add_text"
+  | "signature"
+  | "shape_rectangle"
+  | "shape_ellipse"
+  | "shape_line";
 
 export type BasePdfEdit = {
   id: string;
@@ -35,7 +51,13 @@ export type SignatureEdit = BasePdfEdit & {
   imageId: string;
 };
 
-export type PdfEdit = AddTextEdit | SignatureEdit;
+export type ShapeEdit = BasePdfEdit & {
+  type: "shape";
+  shapeType: ShapeType;
+  style: ShapeStyle;
+};
+
+export type PdfEdit = AddTextEdit | SignatureEdit | ShapeEdit;
 
 export type SignatureImage = {
   id: string;
@@ -50,4 +72,10 @@ export const DEFAULT_TEXT_STYLE: AddTextStyle = {
   fontSize: 18,
   color: "#111827",
   bold: false,
+};
+
+export const DEFAULT_SHAPE_STYLE: ShapeStyle = {
+  strokeColor: "#2563eb",
+  strokeWidth: 2,
+  fillColor: null,
 };

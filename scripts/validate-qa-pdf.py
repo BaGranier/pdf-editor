@@ -20,6 +20,7 @@ def main() -> None:
     reader = PdfReader(args.pdf, strict=True)
     with fitz.open(args.pdf) as fitz_document:
         image_count = sum(len(page.get_images(full=True)) for page in fitz_document)
+        drawing_count = sum(len(page.get_drawings()) for page in fitz_document)
         text_spans = [
             {
                 "page": page_index + 1,
@@ -38,6 +39,7 @@ def main() -> None:
         "valid": True,
         "pageCount": len(reader.pages),
         "imageCount": image_count,
+        "drawingCount": drawing_count,
         "text": "\n".join(page.extract_text() or "" for page in reader.pages),
         "textSpans": text_spans,
         "pages": [

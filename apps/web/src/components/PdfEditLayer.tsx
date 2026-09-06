@@ -8,8 +8,10 @@ import type {
   PdfEdit,
   PdfRect,
   SignatureImage,
+  ShapeType,
 } from "../editing/types";
 import { SignatureEditBlock } from "./SignatureEditLayer";
+import { ShapeEditBlock } from "./ShapeEditLayer";
 import { TextEditBlock } from "./TextEditLayer";
 
 type PdfEditLayerProps = {
@@ -21,6 +23,7 @@ type PdfEditLayerProps = {
   activeTool: EditingTool;
   pendingSignatureImage: SignatureImage | null;
   onAddText: (rect: PdfRect) => void;
+  onAddShape: (shapeType: ShapeType, rect: PdfRect) => void;
   onPlaceSignature: (rect: PdfRect) => void;
   onSelect: (editId: string) => void;
   onUpdate: (edit: PdfEdit) => void;
@@ -36,6 +39,7 @@ export function PdfEditLayer({
   activeTool,
   pendingSignatureImage,
   onAddText,
+  onAddShape,
   onPlaceSignature,
   onSelect,
   onUpdate,
@@ -43,6 +47,7 @@ export function PdfEditLayer({
 }: PdfEditLayerProps) {
   const creationActive =
     activeTool === "add_text" ||
+    activeTool.startsWith("shape_") ||
     (activeTool === "signature" && pendingSignatureImage !== null);
 
   return (
@@ -66,6 +71,17 @@ export function PdfEditLayer({
 
         if (activeTool === "add_text") {
           onAddText(createPdfRectAtScreenPoint(viewport, point));
+        } else if (activeTool.startsWith("shape_")) {
+          const shapeType = activeTool.replace("shape_", "") as ShapeType;
+          onAddShape(
+            shapeType,
+            createPdfRectAtScreenPoint(
+              viewport,
+              point,
+              160,
+              shapeType === "line" ? 80 : 120,
+            ),
+          );
         } else if (pendingSignatureImage) {
           onPlaceSignature(
             createProportionalPdfRectAtScreenPoint(
@@ -88,6 +104,19 @@ export function PdfEditLayer({
               selected={edit.id === selectedEditId}
               onSelect={() => onSelect(edit.id)}
               onChangeText={(text) => onUpdate({ ...edit, text })}
+              onMove={(rect) => onUpdate({ ...edit, rect })}
+            />
+          );
+        }
+
+        if (edit.type === "shape") {
+          return (
+            <ShapeEditBlock
+              key={edit.id}
+              edit={edit}
+              viewport={viewport}
+              selected={edit.id === selectedEditId}
+              onSelect={() => onSelect(edit.id)}
               onMove={(rect) => onUpdate({ ...edit, rect })}
             />
           );

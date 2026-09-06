@@ -102,11 +102,41 @@ class SignatureEdit(BaseModel):
     order: int = Field(default=0, ge=0)
 
 
+class ShapeStyle(BaseModel):
+    stroke_color: str = Field(alias="strokeColor", pattern=r"^#[0-9A-Fa-f]{6}$")
+    stroke_width: float = Field(
+        alias="strokeWidth",
+        ge=0.5,
+        le=50,
+        allow_inf_nan=False,
+    )
+    fill_color: str | None = Field(
+        default=None,
+        alias="fillColor",
+        pattern=r"^#[0-9A-Fa-f]{6}$",
+    )
+
+
+class ShapeEdit(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    type: Literal["shape"]
+    shape_type: Literal["rectangle", "ellipse", "line"] = Field(alias="shapeType")
+    source_document_id: str | None = Field(
+        default=None,
+        alias="sourceDocumentId",
+    )
+    page: int = Field(ge=1)
+    rect: PdfEditRect
+    style: ShapeStyle
+    order: int = Field(default=0, ge=0)
+
+
 class OrganizeExportPlan(BaseModel):
     output_name: str | None = Field(default=None, alias="outputName")
     pages: list[OrganizeExportPage]
     edits: list[AddTextEdit] = Field(default_factory=list)
     signatures: list[SignatureEdit] = Field(default_factory=list)
+    shapes: list[ShapeEdit] = Field(default_factory=list)
     signature_images: list[SignatureImagePayload] = Field(
         default_factory=list,
         alias="signatureImages",
@@ -506,20 +536,29 @@ def apply_visual_edits(
     signature_edits_by_output_page: dict[int, list[SignatureEdit]],
     signature_images: dict[str, bytes],
     export_warnings: list[ExportWarning] | None = None,
+    shape_edits_by_output_page: dict[int, list[ShapeEdit]] | None = None,
 ) -> bytes:
-    if not text_edits_by_output_page and not signature_edits_by_output_page:
+    shape_edits_by_output_page = shape_edits_by_output_page or {}
+    if (
+        not text_edits_by_output_page
+        and not signature_edits_by_output_page
+        and not shape_edits_by_output_page
+    ):
         return source
 
     try:
         with fitz.open(stream=source, filetype="pdf") as document:
-            output_page_indexes = set(text_edits_by_output_page) | set(
-                signature_edits_by_output_page
+            output_page_indexes = (
+                set(text_edits_by_output_page)
+                | set(signature_edits_by_output_page)
+                | set(shape_edits_by_output_page)
             )
             for output_page_index in sorted(output_page_indexes):
                 page = document[output_page_index]
-                visual_edits: list[AddTextEdit | SignatureEdit] = [
+                visual_edits: list[AddTextEdit | SignatureEdit | ShapeEdit] = [
                     *text_edits_by_output_page.get(output_page_index, []),
                     *signature_edits_by_output_page.get(output_page_index, []),
+                    *shape_edits_by_output_page.get(output_page_index, []),
                 ]
                 for edit in sorted(visual_edits, key=lambda item: item.order):
                     pdf_rect = fitz.Rect(
@@ -547,13 +586,45 @@ def apply_visual_edits(
                                 output_page_index + 1,
                                 rendering,
                             )
-                    else:
+                    elif isinstance(edit, SignatureEdit):
                         page.insert_image(
                             page_rect,
                             stream=signature_images[edit.image_id],
                             keep_proportion=True,
                             overlay=True,
                         )
+                    else:
+                        stroke = _parse_hex_color(edit.style.stroke_color)
+                        fill = (
+                            None
+                            if edit.shape_type == "line"
+                            or edit.style.fill_color is None
+                            else _parse_hex_color(edit.style.fill_color)
+                        )
+                        if edit.shape_type == "rectangle":
+                            page.draw_rect(
+                                page_rect,
+                                color=stroke,
+                                fill=fill,
+                                width=edit.style.stroke_width,
+                                overlay=True,
+                            )
+                        elif edit.shape_type == "ellipse":
+                            page.draw_oval(
+                                page_rect,
+                                color=stroke,
+                                fill=fill,
+                                width=edit.style.stroke_width,
+                                overlay=True,
+                            )
+                        else:
+                            page.draw_line(
+                                page_rect.tl,
+                                page_rect.br,
+                                color=stroke,
+                                width=edit.style.stroke_width,
+                                overlay=True,
+                            )
             return document.tobytes(garbage=4, deflate=True)
     except HTTPException:
         raise
@@ -634,8 +705,25 @@ def export_organized_pdf(
             [],
         ).append(signature)
 
+    shapes_by_source_page: dict[tuple[str, int], list[ShapeEdit]] = {}
+    for shape in plan.shapes:
+        source_document_id = _resolve_source_document_id(
+            shape.source_document_id,
+            readers,
+        )
+        if shape.page > len(readers[source_document_id].pages):
+            raise HTTPException(
+                status_code=422,
+                detail=f"La page {shape.page} de la forme {shape.id!r} est invalide.",
+            )
+        shapes_by_source_page.setdefault(
+            (source_document_id, shape.page - 1),
+            [],
+        ).append(shape)
+
     edits_by_output_page: dict[int, list[AddTextEdit]] = {}
     signatures_by_output_page: dict[int, list[SignatureEdit]] = {}
+    shapes_by_output_page: dict[int, list[ShapeEdit]] = {}
 
     for output_page_index, page_plan in enumerate(plan.pages):
         source_document_id = _resolve_source_document_id(
@@ -666,6 +754,11 @@ def export_organized_pdf(
         )
         if page_signatures:
             signatures_by_output_page[output_page_index] = page_signatures
+        page_shapes = shapes_by_source_page.get(
+            (source_document_id, page_plan.source_page_index),
+        )
+        if page_shapes:
+            shapes_by_output_page[output_page_index] = page_shapes
 
     output = io.BytesIO()
     writer.write(output)
@@ -675,6 +768,7 @@ def export_organized_pdf(
         signatures_by_output_page,
         signature_images,
         export_warnings,
+        shape_edits_by_output_page=shapes_by_output_page,
     )
 
 

@@ -65,12 +65,14 @@ import {
 import { getWebBackendBaseUrl } from "./api/backend";
 import { PdfEditLayer } from "./components/PdfEditLayer";
 import { TextEditToolbar } from "./components/TextEditToolbar";
+import { ShapeEditToolbar } from "./components/ShapeEditToolbar";
 import { SaveAsDialog } from "./components/SaveAsDialog";
 import {
   SignatureDialog,
   type SignatureImageDraft,
 } from "./components/SignatureDialog";
 import {
+  DEFAULT_SHAPE_STYLE,
   DEFAULT_TEXT_STYLE,
   type AddTextEdit,
   type EditingTool,
@@ -78,6 +80,8 @@ import {
   type PdfRect,
   type SignatureEdit,
   type SignatureImage,
+  type ShapeEdit,
+  type ShapeType,
 } from "./editing/types";
 import { offsetPdfRectWithinPage } from "./editing/coordinates";
 import {
@@ -342,6 +346,14 @@ function clonePdfEdit(edit: PdfEdit): PdfEdit {
     };
   }
 
+  if (edit.type === "shape") {
+    return {
+      ...edit,
+      rect: { ...edit.rect },
+      style: { ...edit.style },
+    };
+  }
+
   return { ...edit, rect: { ...edit.rect } };
 }
 
@@ -398,14 +410,17 @@ type PdfPageCanvasProps = {
   selectedEditId: string | null;
   activeTool: EditingTool;
   pendingSignatureImage: SignatureImage | null;
+  eyedropperTarget: "stroke" | "fill" | null;
   scrollRootRef: RefObject<HTMLElement | null>;
   registerPageRef: (pageNumber: number, node: HTMLElement | null) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
+  onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect) => void;
   onPlaceSignature: (pageNumber: number, rect: PdfRect) => void;
   onSelectEdit: (editId: string) => void;
   onDeselectEdit: () => void;
   onUpdateEdit: (edit: PdfEdit) => void;
   onDeleteEdit: (editId: string) => void;
+  onSampleColor: (color: string) => void;
 };
 
 function PdfPageCanvas({
@@ -419,14 +434,17 @@ function PdfPageCanvas({
   selectedEditId,
   activeTool,
   pendingSignatureImage,
+  eyedropperTarget,
   scrollRootRef,
   registerPageRef,
   onAddText,
+  onAddShape,
   onPlaceSignature,
   onSelectEdit,
   onDeselectEdit,
   onUpdateEdit,
   onDeleteEdit,
+  onSampleColor,
 }: PdfPageCanvasProps) {
   const pageRef = useRef<HTMLElement | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -435,6 +453,49 @@ function PdfPageCanvas({
   const [shouldRender, setShouldRender] = useState(false);
   const [renderState, setRenderState] = useState<RenderState>("idle");
   const [viewport, setViewport] = useState<PageViewport | null>(null);
+
+  const sampleRenderedColor = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (!eyedropperTarget) {
+        return false;
+      }
+      const canvas = canvasRef.current;
+      const context = canvas?.getContext("2d");
+      if (!canvas || !context) {
+        return true;
+      }
+      const bounds = canvas.getBoundingClientRect();
+      if (bounds.width <= 0 || bounds.height <= 0) {
+        return true;
+      }
+      const pixelX = Math.max(
+        0,
+        Math.min(
+          canvas.width - 1,
+          Math.floor((event.clientX - bounds.left) * (canvas.width / bounds.width)),
+        ),
+      );
+      const pixelY = Math.max(
+        0,
+        Math.min(
+          canvas.height - 1,
+          Math.floor((event.clientY - bounds.top) * (canvas.height / bounds.height)),
+        ),
+      );
+      try {
+        const [red, green, blue] = context.getImageData(pixelX, pixelY, 1, 1).data;
+        onSampleColor(
+          `#${[red, green, blue]
+            .map((channel) => channel.toString(16).padStart(2, "0"))
+            .join("")}`,
+        );
+      } catch {
+        // A canvas that cannot be sampled simply leaves the color unchanged.
+      }
+      return true;
+    },
+    [eyedropperTarget, onSampleColor],
+  );
 
   useEffect(() => {
     const pageElement = pageRef.current;
@@ -588,7 +649,10 @@ function PdfPageCanvas({
       <div
         ref={surfaceRef}
         className="page-surface"
-        onClick={() => {
+        onClick={(event) => {
+          if (sampleRenderedColor(event)) {
+            return;
+          }
           if (activeTool === "select") {
             onDeselectEdit();
           }
@@ -618,6 +682,9 @@ function PdfPageCanvas({
             activeTool={activeTool}
             pendingSignatureImage={pendingSignatureImage}
             onAddText={(rect) => onAddText(sourcePageNumber, rect)}
+            onAddShape={(shapeType, rect) =>
+              onAddShape(sourcePageNumber, shapeType, rect)
+            }
             onPlaceSignature={(rect) => onPlaceSignature(sourcePageNumber, rect)}
             onSelect={onSelectEdit}
             onUpdate={onUpdateEdit}
@@ -638,15 +705,18 @@ type PdfViewerProps = {
   selectedEditId: string | null;
   activeTool: EditingTool;
   pendingSignatureImage: SignatureImage | null;
+  eyedropperTarget: "stroke" | "fill" | null;
   onZoomChange: (documentId: string, delta: number) => void;
   onScrollPositionChange: (documentId: string, scrollLeft: number, scrollTop: number) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
+  onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect) => void;
   onPlaceSignature: (pageNumber: number, rect: PdfRect) => void;
   onSelectEdit: (editId: string) => void;
   onDeselectEdit: () => void;
   onUpdateEdit: (edit: PdfEdit) => void;
   onDeleteEdit: (editId: string) => void;
   onActivePageChange: (documentId: string, pageNumber: number) => void;
+  onSampleColor: (color: string) => void;
   focusRequest: number;
 };
 
@@ -659,15 +729,18 @@ function PdfViewer({
   selectedEditId,
   activeTool,
   pendingSignatureImage,
+  eyedropperTarget,
   onZoomChange,
   onScrollPositionChange,
   onAddText,
+  onAddShape,
   onPlaceSignature,
   onSelectEdit,
   onDeselectEdit,
   onUpdateEdit,
   onDeleteEdit,
   onActivePageChange,
+  onSampleColor,
   focusRequest,
 }: PdfViewerProps) {
   const viewerRef = useRef<HTMLElement | null>(null);
@@ -957,7 +1030,9 @@ function PdfViewer({
           ? "viewer viewer--pan-enabled is-panning"
           : activeTool !== "select"
             ? "viewer viewer--text-tool"
-            : "viewer viewer--pan-enabled"
+            : eyedropperTarget
+              ? "viewer viewer--eyedropper"
+              : "viewer viewer--pan-enabled"
       }
       aria-label={`Aperçu PDF ${document.fileName}`}
       onScroll={handleScroll}
@@ -989,14 +1064,17 @@ function PdfViewer({
               pendingSignatureImage={
                 isActiveDocumentSource ? pendingSignatureImage : null
               }
+              eyedropperTarget={isActiveDocumentSource ? eyedropperTarget : null}
               scrollRootRef={viewerRef}
               registerPageRef={registerPageRef}
               onAddText={onAddText}
+              onAddShape={onAddShape}
               onPlaceSignature={onPlaceSignature}
               onSelectEdit={onSelectEdit}
               onDeselectEdit={onDeselectEdit}
               onUpdateEdit={onUpdateEdit}
               onDeleteEdit={onDeleteEdit}
+              onSampleColor={onSampleColor}
             />
           );
         })}
@@ -1938,6 +2016,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     {},
   );
   const [selectedEditId, setSelectedEditId] = useState<string | null>(null);
+  const [eyedropperTarget, setEyedropperTarget] = useState<
+    "stroke" | "fill" | null
+  >(null);
   const clipboardEditRef = useRef<PdfEdit | null>(null);
   const pasteSequenceRef = useRef(0);
   const activePageByDocumentRef = useRef<Record<string, number>>({});
@@ -1971,6 +2052,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [viewerFocusRequest, setViewerFocusRequest] = useState(0);
   const nextOrganizedPageId = useRef(1);
   const nextTextEditId = useRef(1);
+  const nextShapeEditId = useRef(1);
   const nextSignatureImageId = useRef(1);
   const nextSignatureEditId = useRef(1);
   const [isRestoringDocuments, setIsRestoringDocuments] = useState(
@@ -2023,6 +2105,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       (edit): edit is AddTextEdit =>
         edit.id === selectedEditId && edit.type === "add_text",
     ) ?? null;
+  const selectedShapeEdit =
+    activePdfEdits.find(
+      (edit): edit is ShapeEdit =>
+        edit.id === selectedEditId && edit.type === "shape",
+    ) ?? null;
   const selectedPdfEdit =
     activePdfEdits.find((edit) => edit.id === selectedEditId) ?? null;
   const pendingSignatureImage = pendingSignatureImageId
@@ -2048,6 +2135,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
   useEffect(() => {
     setSelectedEditId(null);
+    setEyedropperTarget(null);
     setActiveEditingTool("select");
     setPendingSignatureImageId(null);
     setIsFileMenuOpen(false);
@@ -2059,6 +2147,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       !activePdfEdits.some((edit) => edit.id === selectedEditId)
     ) {
       setSelectedEditId(null);
+      setEyedropperTarget(null);
     }
   }, [activePdfEdits, selectedEditId]);
 
@@ -2354,6 +2443,28 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     [activeDocument],
   );
 
+  const addShapeEdit = useCallback(
+    (pageNumber: number, shapeType: ShapeType, rect: PdfRect) => {
+      if (!activeDocument) {
+        return;
+      }
+      const edit: ShapeEdit = {
+        id: `shape-${Date.now()}-${nextShapeEditId.current++}`,
+        type: "shape",
+        shapeType,
+        page: pageNumber,
+        rect,
+        style: { ...DEFAULT_SHAPE_STYLE },
+      };
+      dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
+      setSelectedEditId(edit.id);
+      setActiveEditingTool("select");
+      setEyedropperTarget(null);
+      setExportFeedback(null);
+    },
+    [activeDocument],
+  );
+
   const updatePdfEdit = useCallback(
     (edit: PdfEdit) => {
       if (!activeDocument) {
@@ -2427,26 +2538,54 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       x: offset,
       y: offset,
     });
-    const edit: PdfEdit =
-      sourceEdit.type === "add_text"
-        ? {
-            ...clonePdfEdit(sourceEdit),
-            id: `text-${Date.now()}-${nextTextEditId.current++}`,
-            page: pageNumber,
-            rect,
-          }
-        : {
-            ...clonePdfEdit(sourceEdit),
-            id: `signature-${Date.now()}-${nextSignatureEditId.current++}`,
-            page: pageNumber,
-            rect,
-          };
+    let edit: PdfEdit;
+    if (sourceEdit.type === "add_text") {
+      edit = {
+        ...clonePdfEdit(sourceEdit),
+        id: `text-${Date.now()}-${nextTextEditId.current++}`,
+        page: pageNumber,
+        rect,
+      } as AddTextEdit;
+    } else if (sourceEdit.type === "shape") {
+      edit = {
+        ...clonePdfEdit(sourceEdit),
+        id: `shape-${Date.now()}-${nextShapeEditId.current++}`,
+        page: pageNumber,
+        rect,
+      } as ShapeEdit;
+    } else {
+      edit = {
+        ...clonePdfEdit(sourceEdit),
+        id: `signature-${Date.now()}-${nextSignatureEditId.current++}`,
+        page: pageNumber,
+        rect,
+      } as SignatureEdit;
+    }
 
     dispatchPdfEdits({ type: "add", documentId: targetDocument.id, edit });
     setSelectedEditId(edit.id);
     setActiveEditingTool("select");
     setExportFeedback(null);
   }, [activeDocument]);
+
+  const applySampledShapeColor = useCallback(
+    (color: string) => {
+      if (!selectedShapeEdit || !eyedropperTarget) {
+        return;
+      }
+      updatePdfEdit({
+        ...selectedShapeEdit,
+        style: {
+          ...selectedShapeEdit.style,
+          ...(eyedropperTarget === "stroke"
+            ? { strokeColor: color }
+            : { fillColor: color }),
+        },
+      });
+      setEyedropperTarget(null);
+    },
+    [eyedropperTarget, selectedShapeEdit, updatePdfEdit],
+  );
 
   useEffect(() => {
     function handleSelectedEditDeletion(event: globalThis.KeyboardEvent) {
@@ -2539,6 +2678,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     }));
     setPendingSignatureImageId(image.id);
     setSelectedEditId(null);
+    setEyedropperTarget(null);
     setActiveEditingTool("signature");
     setIsSignatureDialogOpen(false);
     setExportFeedback(null);
@@ -2733,6 +2873,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setSelectedPageIdsByDocument({});
     dispatchPdfEdits({ type: "clear" });
     setSelectedEditId(null);
+    setEyedropperTarget(null);
     setActiveEditingTool("select");
     setSignatureImages({});
     setPendingSignatureImageId(null);
@@ -2756,6 +2897,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setTheme(getSystemTheme());
     nextDocumentId.current = 1;
     nextTextEditId.current = 1;
+    nextShapeEditId.current = 1;
     nextSignatureImageId.current = 1;
     nextSignatureEditId.current = 1;
     documentButtonRefs.current.clear();
@@ -3157,7 +3299,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         const editIsExportable =
           edit.type === "add_text"
             ? edit.text.length > 0
-            : signatureImages[edit.imageId] !== undefined;
+            : edit.type === "signature"
+              ? signatureImages[edit.imageId] !== undefined
+              : true;
         return pageIsExported && editIsExportable
           ? [{ ...edit, sourceDocumentId: documentId, order }]
           : [];
@@ -3172,6 +3316,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         sourceDocumentId: string;
         order: number;
       } => edit.type === "signature",
+    );
+    const exportedShapeEdits = exportedPdfEdits.filter(
+      (edit): edit is ShapeEdit & {
+        sourceDocumentId: string;
+        order: number;
+      } => edit.type === "shape",
     );
     const exportedSignatureImageIds = new Set(
       exportedSignatureEdits.map((edit) => edit.imageId),
@@ -3200,6 +3350,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               signatures: exportedSignatureEdits,
               signatureImages: exportedSignatureImages,
             }
+          : {}),
+        ...(exportedShapeEdits.length > 0
+          ? { shapes: exportedShapeEdits }
           : {}),
       }),
     );
@@ -3406,6 +3559,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const shouldHandleEscape =
         isFileMenuOpen ||
         isSignatureDialogOpen ||
+        eyedropperTarget !== null ||
         activeEditingTool !== "select" ||
         pendingSignatureImageId !== null ||
         selectedEditId !== null;
@@ -3417,6 +3571,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       setIsFileMenuOpen(false);
       setIsSignatureDialogOpen(false);
       setActiveEditingTool("select");
+      setEyedropperTarget(null);
       setPendingSignatureImageId(null);
       setSelectedEditId(null);
     };
@@ -3428,6 +3583,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     cancelSaveAsDialog,
     isFileMenuOpen,
     isSignatureDialogOpen,
+    eyedropperTarget,
     openActiveSaveAsDialog,
     pendingSignatureImageId,
     saveAsDocumentId,
@@ -3733,6 +3889,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 setActiveEditingTool("add_text");
                 setPendingSignatureImageId(null);
                 setSelectedEditId(null);
+                setEyedropperTarget(null);
               }}
               disabled={!activeDocument || workspaceMode !== "read"}
               aria-label="Ajouter du texte"
@@ -3749,6 +3906,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 setActiveEditingTool("signature");
                 setSelectedEditId(null);
                 setPendingSignatureImageId(null);
+                setEyedropperTarget(null);
                 setIsSignatureDialogOpen(true);
               }}
               disabled={!activeDocument || workspaceMode !== "read"}
@@ -3758,6 +3916,35 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             >
               <ToolbarIcon name="signature" />
             </button>
+            {(["rectangle", "ellipse", "line"] as const).map((shapeType) => {
+              const label =
+                shapeType === "rectangle"
+                  ? "Ajouter un rectangle"
+                  : shapeType === "ellipse"
+                    ? "Ajouter une ellipse"
+                    : "Ajouter une ligne";
+              const tool: EditingTool = `shape_${shapeType}`;
+              return (
+                <button
+                  key={shapeType}
+                  type="button"
+                  className="toolbar-shape-button"
+                  onClick={() => {
+                    setExportFeedback(null);
+                    setActiveEditingTool(tool);
+                    setPendingSignatureImageId(null);
+                    setSelectedEditId(null);
+                    setEyedropperTarget(null);
+                  }}
+                  disabled={!activeDocument || workspaceMode !== "read"}
+                  aria-label={label}
+                  aria-pressed={activeEditingTool === tool}
+                  title={label}
+                >
+                  {shapeType === "rectangle" ? "▭" : shapeType === "ellipse" ? "○" : "╱"}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -3801,6 +3988,22 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             updatePdfEdit({ ...selectedTextEdit, ...patch })
           }
           onDelete={() => deletePdfEdit(selectedTextEdit.id)}
+        />
+      ) : null}
+
+      {workspaceMode === "read" && selectedShapeEdit ? (
+        <ShapeEditToolbar
+          edit={selectedShapeEdit}
+          eyedropperTarget={eyedropperTarget}
+          onUpdate={(patch) =>
+            updatePdfEdit({ ...selectedShapeEdit, ...patch })
+          }
+          onPickColor={(target) =>
+            setEyedropperTarget((currentTarget) =>
+              currentTarget === target ? null : target,
+            )
+          }
+          onDelete={() => deletePdfEdit(selectedShapeEdit.id)}
         />
       ) : null}
 
@@ -3973,15 +4176,18 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             selectedEditId={selectedEditId}
             activeTool={activeEditingTool}
             pendingSignatureImage={pendingSignatureImage}
+            eyedropperTarget={eyedropperTarget}
             onZoomChange={updateDocumentZoom}
             onScrollPositionChange={updateDocumentScrollPosition}
             onAddText={addTextEdit}
+            onAddShape={addShapeEdit}
             onPlaceSignature={placeSignature}
             onSelectEdit={setSelectedEditId}
             onDeselectEdit={() => setSelectedEditId(null)}
             onUpdateEdit={updatePdfEdit}
             onDeleteEdit={deletePdfEdit}
             onActivePageChange={recordActivePage}
+            onSampleColor={applySampledShapeColor}
             focusRequest={viewerFocusRequest}
           />
         ) : activeDocument && activeOrganizationPlan ? (
