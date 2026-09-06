@@ -389,7 +389,9 @@ function scrollViewerByDelta(viewer: HTMLElement, left: number, top: number) {
 
 type PdfPageCanvasProps = {
   pdfDocument: PDFDocumentProxy;
-  pageNumber: number;
+  sourcePageNumber: number;
+  displayPageNumber: number;
+  rotation: number;
   zoom: number;
   edits: PdfEdit[];
   signatureImages: Record<string, SignatureImage>;
@@ -408,7 +410,9 @@ type PdfPageCanvasProps = {
 
 function PdfPageCanvas({
   pdfDocument,
-  pageNumber,
+  sourcePageNumber,
+  displayPageNumber,
+  rotation,
   zoom,
   edits,
   signatureImages,
@@ -481,7 +485,7 @@ function PdfPageCanvas({
       setRenderState("loading");
 
       try {
-        const page = await pdfDocument.getPage(pageNumber);
+        const page = await pdfDocument.getPage(sourcePageNumber);
 
         if (
           isCancelled ||
@@ -492,7 +496,10 @@ function PdfPageCanvas({
           return;
         }
 
-        const viewport = page.getViewport({ scale: zoom });
+        const viewport = page.getViewport({
+          scale: zoom,
+          rotation: ((page.rotate ?? 0) + rotation) % 360,
+        });
         const context = canvas.getContext("2d");
 
         if (!context) {
@@ -557,7 +564,7 @@ function PdfPageCanvas({
       textLayerContainer.replaceChildren();
       textLayerContainer.hidden = true;
     };
-  }, [pageNumber, pdfDocument, shouldRender, zoom]);
+  }, [pdfDocument, rotation, shouldRender, sourcePageNumber, zoom]);
 
   useEffect(() => {
     return () => {
@@ -569,13 +576,15 @@ function PdfPageCanvas({
     <article
       ref={(node) => {
         pageRef.current = node;
-        registerPageRef(pageNumber, node);
+        registerPageRef(displayPageNumber, node);
       }}
       className="pdf-page"
-      data-page-number={pageNumber}
-      aria-label={`Page ${pageNumber}`}
+      data-page-number={displayPageNumber}
+      data-source-page-number={sourcePageNumber}
+      data-rotation={rotation}
+      aria-label={`Page ${displayPageNumber}`}
     >
-      <div className="page-number">Page {pageNumber}</div>
+      <div className="page-number">Page {displayPageNumber}</div>
       <div
         ref={surfaceRef}
         className="page-surface"
@@ -601,15 +610,15 @@ function PdfPageCanvas({
         />
         {viewport ? (
           <PdfEditLayer
-            pageNumber={pageNumber}
+            pageNumber={sourcePageNumber}
             viewport={viewport}
             edits={edits}
             images={signatureImages}
             selectedEditId={selectedEditId}
             activeTool={activeTool}
             pendingSignatureImage={pendingSignatureImage}
-            onAddText={(rect) => onAddText(pageNumber, rect)}
-            onPlaceSignature={(rect) => onPlaceSignature(pageNumber, rect)}
+            onAddText={(rect) => onAddText(sourcePageNumber, rect)}
+            onPlaceSignature={(rect) => onPlaceSignature(sourcePageNumber, rect)}
             onSelect={onSelectEdit}
             onUpdate={onUpdateEdit}
             onDelete={onDeleteEdit}
@@ -622,6 +631,8 @@ function PdfPageCanvas({
 
 type PdfViewerProps = {
   document: OpenPdfDocument;
+  documents: OpenPdfDocument[];
+  pagePlan: OrganizePagePlan;
   edits: PdfEdit[];
   signatureImages: Record<string, SignatureImage>;
   selectedEditId: string | null;
@@ -641,6 +652,8 @@ type PdfViewerProps = {
 
 function PdfViewer({
   document,
+  documents,
+  pagePlan,
   edits,
   signatureImages,
   selectedEditId,
@@ -669,8 +682,14 @@ function PdfViewer({
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const pages = useMemo(
-    () => Array.from({ length: document.pageCount }, (_, index) => index + 1),
-    [document.pageCount],
+    () =>
+      pagePlan.pages.flatMap((plannedPage) => {
+        const sourceDocument = documents.find(
+          (candidate) => candidate.id === plannedPage.sourceDocumentId,
+        );
+        return sourceDocument ? [{ ...plannedPage, sourceDocument }] : [];
+      }),
+    [documents, pagePlan.pages],
   );
 
   const registerPageRef = useCallback((pageNumber: number, node: HTMLElement | null) => {
@@ -692,8 +711,8 @@ function PdfViewer({
     const targetScrollTop = viewer.scrollTop + viewer.clientHeight / 2;
     let currentPageNumber = 1;
 
-    for (const pageNumber of pages) {
-      const pageElement = pageRefs.current.get(pageNumber);
+    for (const page of pages) {
+      const pageElement = pageRefs.current.get(page.displayPageNumber);
 
       if (!pageElement) {
         continue;
@@ -703,11 +722,11 @@ function PdfViewer({
       const pageBottom = pageTop + pageElement.offsetHeight;
 
       if (targetScrollTop >= pageTop && targetScrollTop < pageBottom) {
-        return pageNumber;
+        return page.displayPageNumber;
       }
 
       if (targetScrollTop >= pageTop) {
-        currentPageNumber = pageNumber;
+        currentPageNumber = page.displayPageNumber;
       }
     }
 
@@ -888,7 +907,7 @@ function PdfViewer({
           break;
         case "PageDown":
           event.preventDefault();
-          if (currentPageNumber < document.pageCount) {
+          if (currentPageNumber < pages.length) {
             scrollPageIntoView(currentPageNumber + 1);
           }
           break;
@@ -904,7 +923,7 @@ function PdfViewer({
           return;
       }
     },
-    [document.id, document.pageCount, getCurrentPageNumber, scrollPageIntoView],
+    [document.id, getCurrentPageNumber, pages.length, scrollPageIntoView],
   );
 
   const handleMouseDown = useCallback((event: MouseEvent<HTMLElement>) => {
@@ -947,27 +966,40 @@ function PdfViewer({
     >
       {document.error ? <p className="status">{document.error}</p> : null}
       <div className="pdf-document" aria-label={`Document PDF ${document.fileName}`}>
-        {pages.map((pageNumber) => (
-          <PdfPageCanvas
-            key={`${document.id}-${pageNumber}`}
-            pdfDocument={document.pdfDocument}
-            pageNumber={pageNumber}
-            zoom={document.zoom}
-            edits={edits.filter((edit) => edit.page === pageNumber)}
-            signatureImages={signatureImages}
-            selectedEditId={selectedEditId}
-            activeTool={activeTool}
-            pendingSignatureImage={pendingSignatureImage}
-            scrollRootRef={viewerRef}
-            registerPageRef={registerPageRef}
-            onAddText={onAddText}
-            onPlaceSignature={onPlaceSignature}
-            onSelectEdit={onSelectEdit}
-            onDeselectEdit={onDeselectEdit}
-            onUpdateEdit={onUpdateEdit}
-            onDeleteEdit={onDeleteEdit}
-          />
-        ))}
+        {pages.map((page) => {
+          const isActiveDocumentSource = page.sourceDocumentId === document.id;
+          return (
+            <PdfPageCanvas
+              key={page.id}
+              pdfDocument={page.sourceDocument.pdfDocument}
+              sourcePageNumber={page.sourcePageIndex + 1}
+              displayPageNumber={page.displayPageNumber}
+              rotation={page.rotation}
+              zoom={document.zoom}
+              edits={
+                isActiveDocumentSource
+                  ? edits.filter(
+                      (edit) => edit.page === page.sourcePageIndex + 1,
+                    )
+                  : []
+              }
+              signatureImages={signatureImages}
+              selectedEditId={selectedEditId}
+              activeTool={isActiveDocumentSource ? activeTool : "select"}
+              pendingSignatureImage={
+                isActiveDocumentSource ? pendingSignatureImage : null
+              }
+              scrollRootRef={viewerRef}
+              registerPageRef={registerPageRef}
+              onAddText={onAddText}
+              onPlaceSignature={onPlaceSignature}
+              onSelectEdit={onSelectEdit}
+              onDeselectEdit={onDeselectEdit}
+              onUpdateEdit={onUpdateEdit}
+              onDeleteEdit={onDeleteEdit}
+            />
+          );
+        })}
       </div>
     </section>
   );
@@ -3931,9 +3963,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           </div>
         ) : null}
 
-        {activeDocument && workspaceMode === "read" ? (
+        {activeDocument && activeOrganizationPlan && workspaceMode === "read" ? (
           <PdfViewer
             document={activeDocument}
+            documents={documents}
+            pagePlan={activeOrganizationPlan}
             edits={activePdfEdits}
             signatureImages={signatureImages}
             selectedEditId={selectedEditId}

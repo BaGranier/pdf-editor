@@ -92,3 +92,54 @@ test("QA-E2E-011 @regression réinitialise uniquement le plan du document actif"
   await expect(organizedPages(page)).toHaveCount(1);
   await expect(organizedPages(page).first()).toHaveAttribute("data-rotation", "90");
 });
+
+test("ORGANIZE-UX-001 quitte sans sauvegarder et conserve le plan en lecture", async ({
+  page,
+}) => {
+  let exportRequestCount = 0;
+  let downloadCount = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith("/pdf/export/organize")) {
+      exportRequestCount += 1;
+    }
+  });
+  page.on("download", () => {
+    downloadCount += 1;
+  });
+
+  await openApp(page);
+  await openPdf(page, fixtures.fivePages);
+  await enterOrganizeMode(page);
+  await organizedPages(page)
+    .first()
+    .getByRole("button", { name: "Déplacer la page 1 vers la droite" })
+    .click();
+  await organizedPages(page)
+    .first()
+    .getByRole("button", { name: "Tourner la page 1 vers la droite" })
+    .click();
+  await organizedPages(page)
+    .last()
+    .getByTitle("Retirer du plan d'organisation")
+    .click();
+
+  await page.getByRole("button", { name: "Revenir à la lecture" }).click();
+
+  const visiblePages = page.locator(".pdf-page");
+  await expect(visiblePages).toHaveCount(4);
+  await expect(visiblePages.nth(0)).toHaveAttribute("data-source-page-number", "2");
+  await expect(visiblePages.nth(0)).toHaveAttribute("data-rotation", "90");
+  await expect(visiblePages.nth(1)).toHaveAttribute("data-source-page-number", "1");
+  await expect(visiblePages.nth(3)).toHaveAttribute("data-source-page-number", "4");
+  await expect(page.locator(".document-select[aria-current='true']")).toHaveAttribute(
+    "aria-describedby",
+    /document-dirty-/,
+  );
+  expect(exportRequestCount).toBe(0);
+  expect(downloadCount).toBe(0);
+
+  await page.keyboard.press("Control+s");
+  const saveDialog = page.getByRole("dialog", { name: "Enregistrer sous" });
+  await expect(saveDialog).toBeVisible();
+  await saveDialog.getByRole("button", { name: "Annuler" }).click();
+});

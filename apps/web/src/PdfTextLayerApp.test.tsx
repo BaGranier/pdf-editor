@@ -80,18 +80,22 @@ const createPdfDocumentMock = ({
     cancel: vi.fn(),
   }));
   const streamTextContent = vi.fn(() => ({ text }));
-  const getViewport = vi.fn(({ scale }: { scale: number }) => {
-    const viewport = {
-      width: (rotation % 180 === 0 ? 600 : 800) * scale,
-      height: (rotation % 180 === 0 ? 800 : 600) * scale,
-      scale,
-      userUnit: 1,
-      rotation,
-    };
-    viewports.push(viewport);
-    return viewport;
-  });
+  const getViewport = vi.fn(
+    ({ scale, rotation: requestedRotation = rotation }: { scale: number; rotation?: number }) => {
+      const resolvedRotation = requestedRotation % 360;
+      const viewport = {
+        width: (resolvedRotation % 180 === 0 ? 600 : 800) * scale,
+        height: (resolvedRotation % 180 === 0 ? 800 : 600) * scale,
+        scale,
+        userUnit: 1,
+        rotation: resolvedRotation,
+      };
+      viewports.push(viewport);
+      return viewport;
+    },
+  );
   const page = {
+    rotate: rotation,
     getViewport,
     render,
     streamTextContent,
@@ -272,6 +276,33 @@ describe("PDF.js text layer in App", () => {
       expect(document.querySelector(".pdf-text-layer")).toBeInTheDocument();
       expect(document.querySelectorAll(".endOfContent")).toHaveLength(1);
     });
+  });
+
+  it("renders the in-memory organization plan after returning to read mode", async () => {
+    const pdf = createPdfDocumentMock();
+    usePdfDocument(pdf.pdfDocument);
+    render(<App />);
+    await openPdf("organized-read.pdf");
+
+    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Tourner la page 1 vers la droite" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Revenir à la lecture" }));
+
+    await waitFor(() => {
+      expect(document.querySelector(".pdf-page")).toHaveAttribute(
+        "data-rotation",
+        "90",
+      );
+      expect(pdf.page.getViewport).toHaveBeenLastCalledWith({
+        scale: 1,
+        rotation: 90,
+      });
+    });
+    expect(
+      screen.getByRole("button", { name: /organized-read\.pdf, document actif/ }),
+    ).toHaveAttribute("aria-describedby", expect.stringContaining("document-dirty-"));
   });
 
   it("keeps a scan visible without an interaction-blocking empty layer", async () => {
