@@ -95,5 +95,6 @@ test("QA-E2E-013 @regression exporte plusieurs documents sans altérer les sourc
   await page.getByRole("button", { name: "pdf-small-1-page.pdf", exact: true }).click();
   await expect(page.locator(".pdf-page")).toHaveCount(1);
   await page.getByRole("button", { name: "pdf-small-5-pages.pdf", exact: true }).click();
-  await expect(page.locator(".pdf-page")).toHaveCount(5);
+  // Export does not discard the six-page working plan retained in memory.
+  await expect(page.locator(".pdf-page")).toHaveCount(6);
 });

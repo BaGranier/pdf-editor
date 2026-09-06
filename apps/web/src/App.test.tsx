@@ -77,8 +77,13 @@ describe("App", () => {
     const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
 
     expect(screen.getByRole("main")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "PDF Editor MVP" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "PDF Studio Local" })).toBeInTheDocument();
     expect(toolbar).toHaveClass("toolbar", "toolbar--sticky");
+    expect(screen.getByRole("navigation", { name: "Outils d'édition" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Propriétés" })).toBeInTheDocument();
+    expect(screen.getByRole("contentinfo", { name: "État du document" })).toHaveTextContent(
+      "Aucun document",
+    );
     expect(screen.getByRole("button", { name: "Réduire le zoom" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Augmenter le zoom" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Masquer la barre latérale" })).toBeInTheDocument();
@@ -89,7 +94,7 @@ describe("App", () => {
     );
     expect(within(sidebar).getByLabelText("Ouvrir un PDF")).toBeInTheDocument();
     expect(within(sidebar).getByRole("button", { name: "Réinitialiser les données locales" })).toBeInTheDocument();
-    expect(within(sidebar).getByText("Aucun PDF ouvert.")).toBeInTheDocument();
+    expect(within(sidebar).getByText("Aucun document ouvert.")).toBeInTheDocument();
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
   });
 
@@ -454,11 +459,14 @@ describe("App", () => {
     const textButton = screen.getByRole("button", { name: "Ajouter du texte" });
     const signatureButton = screen.getByRole("button", { name: "Ajouter une signature" });
 
-    expect(within(toolbar).queryByText("cycle.pdf")).not.toBeInTheDocument();
+    expect(within(toolbar).getByText("cycle.pdf")).toBeInTheDocument();
     expect(within(toolbar).queryByText("1 page")).not.toBeInTheDocument();
     expect(within(sidebar).getByText("cycle.pdf")).toBeInTheDocument();
     expect(within(sidebar).getByText("1 page")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Sélection" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sélection" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(saveAsButton).toBeDisabled();
     expect(saveAsButton).toHaveAttribute("title", "Enregistrer sous… (Ctrl+Shift+S)");
     expect(textButton).toHaveAttribute("title", "Ajouter du texte");
@@ -1204,7 +1212,10 @@ describe("App", () => {
       },
     });
     const layer = await screen.findByLabelText("Couche d'édition de la page 1");
-    expect(screen.queryByRole("button", { name: "Sélection" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Sélection" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(layer).toHaveAttribute("data-active-editing-tool", "select");
 
     selectInsertTool("Texte");
@@ -1430,6 +1441,16 @@ describe("App", () => {
     fireEvent.keyDown(viewer, { key: "PageUp" });
     expect(scrollToSpy).toHaveBeenCalledTimes(callsBeforeFirstPage);
     expect(viewer).toHaveProperty("scrollTop", 0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Aller à la page 3" }));
+    expect(scrollToSpy).toHaveBeenLastCalledWith({ top: 2000, behavior: "smooth" });
+    expect(
+      screen.getByRole("contentinfo", { name: "État du document" }),
+    ).toHaveTextContent("Page 3 / 3");
+    expect(screen.getByRole("button", { name: "Aller à la page 3" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   it("switches to organize mode and shows a grid for the active PDF", async () => {

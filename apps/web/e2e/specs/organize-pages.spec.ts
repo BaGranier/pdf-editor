@@ -34,7 +34,10 @@ test("QA-E2E-010 @smoke organise, déplace, duplique, supprime et tourne les pag
   await enterOrganizeMode(page);
   await expect(organizedPages(page)).toHaveCount(5);
 
-  await organizedPages(page).first().dragTo(organizedPages(page).nth(2));
+  await organizedPages(page).first().dragTo(organizedPages(page).nth(2), {
+    sourcePosition: { x: 16, y: 16 },
+    targetPosition: { x: 16, y: 16 },
+  });
   await expect(organizedPages(page).nth(2)).toHaveAttribute("data-source-page-index", "0");
   await organizedPages(page)
     .nth(2)

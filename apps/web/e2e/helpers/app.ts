@@ -25,7 +25,7 @@ export const fixtures = {
 
 export async function openApp(page: Page): Promise<void> {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "PDF Editor MVP" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "PDF Studio Local" })).toBeVisible();
   await expect(page.getByLabel("Ouvrir un PDF")).toBeVisible();
 }
 

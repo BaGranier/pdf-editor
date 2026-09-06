@@ -39,11 +39,14 @@ test("EDIT-SAVE-001 @smoke sauvegarde texte et signature puis nettoie l'état di
   });
   await expect(saveButton).toBeDisabled();
   await expect(sourceDocument).not.toHaveAttribute("aria-describedby");
-  await expect(toolbar.getByText("pdf-small-1-page.pdf")).toHaveCount(0);
+  await expect(toolbar.getByText("pdf-small-1-page.pdf")).toBeVisible();
   await expect(toolbar.getByText("1 page", { exact: true })).toHaveCount(0);
   await expect(sourceDocument).toContainText("pdf-small-1-page.pdf");
   await expect(sourceDocument).toContainText("1 page");
-  await expect(page.getByRole("button", { name: "Sélection" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sélection" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
   await expect(saveButton).toHaveAttribute(
     "title",
     "Enregistrer sous… (Ctrl+Shift+S)",

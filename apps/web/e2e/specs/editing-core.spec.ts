@@ -56,7 +56,10 @@ test("EDIT-CORE-001 @smoke exporte ensemble texte et signature", async ({
   await editLayer.click({ position: { x: 80, y: 145 } });
   await expect(page.locator(".pdf-signature-edit")).toBeVisible();
   await expect(editLayer).toHaveAttribute("data-active-editing-tool", "select");
-  await expect(page.getByRole("button", { name: "Sélection" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Sélection" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 
   const objects = editLayer.locator(".pdf-text-edit, .pdf-signature-edit");
   await expect(objects).toHaveCount(2);

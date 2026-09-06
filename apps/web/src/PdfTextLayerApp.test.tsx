@@ -172,13 +172,17 @@ describe("PDF.js text layer in App", () => {
     const viewer = screen.getByRole("region", {
       name: "Aperçu PDF digital.pdf",
     });
-    const canvasViewport = pdf.render.mock.calls[0]?.[0].viewport;
+    const textLayerViewport = pdfMock.textLayers[0]?.options.viewport;
 
     expect(document.querySelector(".pdf-canvas")).toBeInTheDocument();
     expect(pdf.streamTextContent).toHaveBeenCalledWith({
       includeMarkedContent: true,
     });
-    expect(pdfMock.textLayers[0]?.options.viewport).toBe(canvasViewport);
+    expect(
+      pdf.render.mock.calls.some(
+        ([options]) => options.viewport === textLayerViewport,
+      ),
+    ).toBe(true);
     expect(layer).toHaveClass("textLayer", "pdf-text-layer");
     expect(layer).toHaveStyle({ width: "800px", height: "600px" });
     expect(span).not.toHaveAttribute("style");
@@ -221,9 +225,12 @@ describe("PDF.js text layer in App", () => {
       expect(layer?.style.width).toBe("660px");
       expect(Number.parseFloat(layer?.style.height ?? "")).toBeCloseTo(880);
     });
-    expect(pdfMock.textLayers[1]?.options.viewport).toBe(
-      pdf.render.mock.calls[1]?.[0].viewport,
-    );
+    const zoomedTextLayerViewport = pdfMock.textLayers[1]?.options.viewport;
+    expect(
+      pdf.render.mock.calls.some(
+        ([options]) => options.viewport === zoomedTextLayerViewport,
+      ),
+    ).toBe(true);
   });
 
   it("cleans the active layer on document changes and creates a fresh one", async () => {

@@ -157,10 +157,13 @@ type OpenPdfDocument = {
 type DocumentSidebarProps = {
   documents: OpenPdfDocument[];
   activeDocumentId: string | null;
+  activePageNumber: number;
+  pagePlan: OrganizePagePlan | null;
   dirtyDocumentIds: ReadonlySet<string>;
   theme: ThemeMode;
   openFileInputRef: RefObject<HTMLInputElement | null>;
   onSelectDocument: (documentId: string) => void;
+  onSelectPage: (pageNumber: number) => void;
   onCloseDocument: (documentId: string) => void;
   onToggleTheme: () => void;
   onClearLocalData: () => void;
@@ -718,6 +721,7 @@ type PdfViewerProps = {
   onActivePageChange: (documentId: string, pageNumber: number) => void;
   onSampleColor: (color: string) => void;
   focusRequest: number;
+  pageNavigationRequest: { pageNumber: number; requestId: number } | null;
 };
 
 function PdfViewer({
@@ -742,6 +746,7 @@ function PdfViewer({
   onActivePageChange,
   onSampleColor,
   focusRequest,
+  pageNavigationRequest,
 }: PdfViewerProps) {
   const viewerRef = useRef<HTMLElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
@@ -845,6 +850,13 @@ function PdfViewer({
     lastFocusRequestRef.current = focusRequest;
     viewer.focus();
   }, [document.id, focusRequest]);
+
+  useEffect(() => {
+    if (!pageNavigationRequest) {
+      return;
+    }
+    scrollPageIntoView(pageNavigationRequest.pageNumber);
+  }, [pageNavigationRequest, scrollPageIntoView]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -1740,13 +1752,66 @@ function OrganizePages({
   );
 }
 
+type SidebarPageListProps = {
+  documents: OpenPdfDocument[];
+  pagePlan: OrganizePagePlan;
+  activePageNumber: number;
+  onSelectPage: (pageNumber: number) => void;
+};
+
+function SidebarPageList({
+  documents,
+  pagePlan,
+  activePageNumber,
+  onSelectPage,
+}: SidebarPageListProps) {
+  return (
+    <ol className="sidebar-page-list" aria-label="Pages du document">
+      {pagePlan.pages.map((page) => {
+        const sourceDocument = documents.find(
+          (document) => document.id === page.sourceDocumentId,
+        );
+        if (!sourceDocument) {
+          return null;
+        }
+        return (
+          <li key={page.id}>
+            <button
+              type="button"
+              className={
+                page.displayPageNumber === activePageNumber
+                  ? "sidebar-page is-active"
+                  : "sidebar-page"
+              }
+              aria-label={`Aller à la page ${page.displayPageNumber}`}
+              aria-current={
+                page.displayPageNumber === activePageNumber ? "page" : undefined
+              }
+              onClick={() => onSelectPage(page.displayPageNumber)}
+            >
+              <OrganizePageThumbnail
+                pdfDocument={sourceDocument.pdfDocument}
+                page={page}
+              />
+              <span>{page.displayPageNumber}</span>
+            </button>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 function DocumentSidebar({
   documents,
   activeDocumentId,
+  activePageNumber,
+  pagePlan,
   dirtyDocumentIds,
   theme,
   openFileInputRef,
   onSelectDocument,
+  onSelectPage,
   onCloseDocument,
   onToggleTheme,
   onClearLocalData,
@@ -1766,16 +1831,29 @@ function DocumentSidebar({
       onKeyDown={onKeyDown}
     >
       <div className="sidebar-header">
-        <div>
-          <h2>Documents ouverts</h2>
-          <p className="sidebar-hint">
-            {documents.length > 0 ? "Sélectionnez un PDF pour l'afficher." : "Aucun PDF ouvert."}
-          </p>
-        </div>
+        <h2>Pages</h2>
+        <span className="sidebar-count">
+          {pagePlan?.pages.length ?? 0}
+        </span>
       </div>
 
       <div className="document-sidebar__content">
         <div className="document-sidebar__scroll-area">
+          {pagePlan && pagePlan.pages.length > 0 ? (
+            <SidebarPageList
+              documents={documents}
+              pagePlan={pagePlan}
+              activePageNumber={activePageNumber}
+              onSelectPage={onSelectPage}
+            />
+          ) : (
+            <p className="sidebar-hint">Ouvrez un PDF pour afficher ses pages.</p>
+          )}
+
+          <div className="sidebar-subheader">
+            <h3>Documents</h3>
+            <span>{documents.length}</span>
+          </div>
           {status ? <p className="sidebar-status">{status}</p> : null}
           {storageWarning ? (
             <p className="sidebar-status" role="alert">
@@ -1924,7 +2002,17 @@ function ResetIcon() {
   );
 }
 
-type ToolbarIconName = "save-as" | "text" | "signature" | "undo" | "redo";
+type ToolbarIconName =
+  | "save-as"
+  | "select"
+  | "text"
+  | "signature"
+  | "shape"
+  | "organize"
+  | "ocr"
+  | "conversion"
+  | "undo"
+  | "redo";
 
 function ToolbarIcon({ name }: { name: ToolbarIconName }) {
   return (
@@ -1953,10 +2041,38 @@ function ToolbarIcon({ name }: { name: ToolbarIconName }) {
           <path d="M7 17h6" />
         </>
       ) : null}
+      {name === "select" ? (
+        <path d="m5 3 9.5 8.1-4.2.8 2.3 4.1-2.4 1.3-2.2-4-3 3z" />
+      ) : null}
       {name === "signature" ? (
         <>
           <path d="M3 14c2.4-4.8 3.9-7.2 5.1-7.2 1.9 0-.9 7.5.8 7.5 1.1 0 2.1-3.5 3.2-3.5.7 0 .2 3.2 1.2 3.2.6 0 1.4-1.4 2.1-1.4.6 0 .7.8 1.6.8" />
           <path d="M3 17h14" />
+        </>
+      ) : null}
+      {name === "shape" ? (
+        <>
+          <rect x="3" y="4" width="7" height="7" rx="1" />
+          <circle cx="13.5" cy="13.5" r="3.5" />
+        </>
+      ) : null}
+      {name === "organize" ? (
+        <>
+          <rect x="3" y="3" width="5" height="6" rx="1" />
+          <rect x="12" y="3" width="5" height="6" rx="1" />
+          <rect x="7.5" y="11" width="5" height="6" rx="1" />
+        </>
+      ) : null}
+      {name === "ocr" ? (
+        <>
+          <path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4" />
+          <path d="M6 10h8M10 6v8" />
+        </>
+      ) : null}
+      {name === "conversion" ? (
+        <>
+          <path d="M3 7h11m-3-3 3 3-3 3" />
+          <path d="M17 13H6m3-3-3 3 3 3" />
         </>
       ) : null}
       {name === "undo" ? (
@@ -2022,6 +2138,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const clipboardEditRef = useRef<PdfEdit | null>(null);
   const pasteSequenceRef = useRef(0);
   const activePageByDocumentRef = useRef<Record<string, number>>({});
+  const pageNavigationRequestId = useRef(0);
+  const [activePageByDocument, setActivePageByDocument] = useState<
+    Record<string, number>
+  >({});
+  const [pageNavigationRequest, setPageNavigationRequest] = useState<{
+    pageNumber: number;
+    requestId: number;
+  } | null>(null);
   const [signatureImages, setSignatureImages] = useState<
     Record<string, SignatureImage>
   >({});
@@ -2076,6 +2200,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       createInitialPagePlan(activeDocument.id, activeDocument.fileName, activeDocument.pageCount)
     );
   }, [activeDocument, organizationPlans]);
+  const activePageNumber = activeDocument
+    ? Math.min(
+        Math.max(1, activePageByDocument[activeDocument.id] ?? 1),
+        Math.max(1, activeOrganizationPlan?.pages.length ?? activeDocument.pageCount),
+      )
+    : 0;
   const selectedOrganizedPageId = activeDocument
     ? (selectedPageIdsByDocument[activeDocument.id] ?? null)
     : null;
@@ -2398,6 +2528,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const recordActivePage = useCallback(
     (documentId: string, pageNumber: number) => {
       activePageByDocumentRef.current[documentId] = pageNumber;
+      setActivePageByDocument((currentPages) =>
+        currentPages[documentId] === pageNumber
+          ? currentPages
+          : { ...currentPages, [documentId]: pageNumber },
+      );
     },
     [],
   );
@@ -2622,24 +2757,18 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
       const key = event.key.toLowerCase();
       if (key === "z" && event.shiftKey) {
-        if (activeDocumentEditingState?.canRedo) {
-          event.preventDefault();
-          redoPdfEdit();
-        }
+        event.preventDefault();
+        redoPdfEdit();
         return;
       }
       if (key === "z") {
-        if (activeDocumentEditingState?.canUndo) {
-          event.preventDefault();
-          undoPdfEdit();
-        }
+        event.preventDefault();
+        undoPdfEdit();
         return;
       }
       if (key === "y") {
-        if (activeDocumentEditingState?.canRedo) {
-          event.preventDefault();
-          redoPdfEdit();
-        }
+        event.preventDefault();
+        redoPdfEdit();
         return;
       }
       if (key === "c" && selectedPdfEdit) {
@@ -2657,8 +2786,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     return () => window.removeEventListener("keydown", handleEditingShortcuts);
   }, [
     activeDocument,
-    activeDocumentEditingState?.canRedo,
-    activeDocumentEditingState?.canUndo,
     copySelectedPdfEdit,
     pastePdfEdit,
     redoPdfEdit,
@@ -2871,6 +2998,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setActiveDocumentId(null);
     setOrganizationPlans({});
     setSelectedPageIdsByDocument({});
+    activePageByDocumentRef.current = {};
+    setActivePageByDocument({});
+    setPageNavigationRequest(null);
     dispatchPdfEdits({ type: "clear" });
     setSelectedEditId(null);
     setEyedropperTarget(null);
@@ -3775,9 +3905,19 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
   return (
     <main className="app-shell">
-      <section className="toolbar toolbar--sticky" aria-label="Contrôles PDF">
-        <div className="file-controls">
-          <h1>PDF Editor MVP</h1>
+      <header
+        className="toolbar toolbar--sticky"
+        role="region"
+        aria-label="Contrôles PDF"
+      >
+        <div className="app-brand">
+          <span className="app-brand__mark" aria-hidden="true">P</span>
+          <h1>PDF Studio Local</h1>
+        </div>
+
+        <div className="active-document-title" aria-live="polite">
+          <strong>{activeDocument?.fileName ?? "Aucun document"}</strong>
+          {isActiveDocumentDirty ? <span>Non enregistré</span> : null}
         </div>
 
         <div className="toolbar-actions" aria-label="Actions PDF">
@@ -3793,11 +3933,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 Fichier <span aria-hidden="true">▾</span>
               </button>
               {isFileMenuOpen && activeDocument ? (
-                <div
-                  className="insert-menu__items file-menu__items"
-                  role="menu"
-                  aria-label="Fichier"
-                >
+                <div className="insert-menu__items file-menu__items" role="menu" aria-label="Fichier">
                   <button
                     type="button"
                     role="menuitem"
@@ -3811,7 +3947,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             </div>
             <button
               type="button"
-              className="toolbar-icon-button save-as-button"
+              className="save-as-button"
               onClick={openActiveSaveAsDialog}
               disabled={!activeDocument || !isActiveDocumentDirty || isExporting}
               aria-label="Enregistrer sous…"
@@ -3819,6 +3955,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               title="Enregistrer sous… (Ctrl+Shift+S)"
             >
               <ToolbarIcon name="save-as" />
+              <span>Enregistrer</span>
             </button>
           </div>
           <div className="toolbar-action-group" role="group" aria-label="Historique">
@@ -3845,167 +3982,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               <ToolbarIcon name="redo" />
             </button>
           </div>
-          <div className="toolbar-action-group" aria-label="Outils du document">
-            <button
-              type="button"
-              onClick={() => {
-                setExportFeedback(null);
-                setIsOcrDialogOpen(true);
-              }}
-              disabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
-              aria-label="OCR"
-              aria-busy={isOcrProcessing}
-              title="Reconnaissance de texte (OCR)"
-            >
-              OCR
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setExportFeedback(null);
-                setIsConversionDialogOpen(true);
-              }}
-              disabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
-              title="Convertir le document"
-            >
-              Convertir
-            </button>
-            <button
-              type="button"
-              onClick={() => setWorkspaceMode((currentMode) => (currentMode === "read" ? "organize" : "read"))}
-              aria-pressed={workspaceMode === "organize"}
-              aria-label={workspaceMode === "organize" ? "Revenir à la lecture" : "Organiser"}
-              title={workspaceMode === "organize" ? "Revenir à la lecture" : "Organiser les pages"}
-            >
-              {workspaceMode === "organize" ? "Lecture" : "Organiser"}
-            </button>
-          </div>
-          <div className="toolbar-action-group editing-tool-group" role="group" aria-label="Outils d'édition">
-            <button
-              type="button"
-              className="toolbar-icon-button"
-              onClick={() => {
-                setExportFeedback(null);
-                setActiveEditingTool("add_text");
-                setPendingSignatureImageId(null);
-                setSelectedEditId(null);
-                setEyedropperTarget(null);
-              }}
-              disabled={!activeDocument || workspaceMode !== "read"}
-              aria-label="Ajouter du texte"
-              aria-pressed={activeEditingTool === "add_text"}
-              title="Ajouter du texte"
-            >
-              <ToolbarIcon name="text" />
-            </button>
-            <button
-              type="button"
-              className="toolbar-icon-button"
-              onClick={() => {
-                setExportFeedback(null);
-                setActiveEditingTool("signature");
-                setSelectedEditId(null);
-                setPendingSignatureImageId(null);
-                setEyedropperTarget(null);
-                setIsSignatureDialogOpen(true);
-              }}
-              disabled={!activeDocument || workspaceMode !== "read"}
-              aria-label="Ajouter une signature"
-              aria-pressed={activeEditingTool === "signature"}
-              title="Ajouter une signature"
-            >
-              <ToolbarIcon name="signature" />
-            </button>
-            {(["rectangle", "ellipse", "line"] as const).map((shapeType) => {
-              const label =
-                shapeType === "rectangle"
-                  ? "Ajouter un rectangle"
-                  : shapeType === "ellipse"
-                    ? "Ajouter une ellipse"
-                    : "Ajouter une ligne";
-              const tool: EditingTool = `shape_${shapeType}`;
-              return (
-                <button
-                  key={shapeType}
-                  type="button"
-                  className="toolbar-shape-button"
-                  onClick={() => {
-                    setExportFeedback(null);
-                    setActiveEditingTool(tool);
-                    setPendingSignatureImageId(null);
-                    setSelectedEditId(null);
-                    setEyedropperTarget(null);
-                  }}
-                  disabled={!activeDocument || workspaceMode !== "read"}
-                  aria-label={label}
-                  aria-pressed={activeEditingTool === tool}
-                  title={label}
-                >
-                  {shapeType === "rectangle" ? "▭" : shapeType === "ellipse" ? "○" : "╱"}
-                </button>
-              );
-            })}
-          </div>
         </div>
-
-        <div className="page-controls">
-          <button
-            type="button"
-            onClick={() => {
-              if (activeDocument) {
-                updateDocumentZoom(activeDocument.id, -ZOOM_STEP);
-              }
-            }}
-            disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom <= MIN_ZOOM}
-            aria-label="Réduire le zoom"
-            title="Réduire le zoom"
-          >
-            -
-          </button>
-          <span className="zoom-value" data-testid="zoom-level" aria-live="polite">
-            {activeDocument ? `${Math.round(activeDocument.zoom * 100)}%` : "-"}
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              if (activeDocument) {
-                updateDocumentZoom(activeDocument.id, ZOOM_STEP);
-              }
-            }}
-            disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom >= MAX_ZOOM}
-            aria-label="Augmenter le zoom"
-            title="Augmenter le zoom"
-          >
-            +
-          </button>
-        </div>
-      </section>
-
-      {workspaceMode === "read" && selectedTextEdit ? (
-        <TextEditToolbar
-          edit={selectedTextEdit}
-          onUpdate={(patch) =>
-            updatePdfEdit({ ...selectedTextEdit, ...patch })
-          }
-          onDelete={() => deletePdfEdit(selectedTextEdit.id)}
-        />
-      ) : null}
-
-      {workspaceMode === "read" && selectedShapeEdit ? (
-        <ShapeEditToolbar
-          edit={selectedShapeEdit}
-          eyedropperTarget={eyedropperTarget}
-          onUpdate={(patch) =>
-            updatePdfEdit({ ...selectedShapeEdit, ...patch })
-          }
-          onPickColor={(target) =>
-            setEyedropperTarget((currentTarget) =>
-              currentTarget === target ? null : target,
-            )
-          }
-          onDelete={() => deletePdfEdit(selectedShapeEdit.id)}
-        />
-      ) : null}
+      </header>
 
       {isSignatureDialogOpen ? (
         <SignatureDialog
@@ -4105,6 +4083,137 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         className={isSidebarVisible ? "content-area" : "content-area content-area--sidebar-hidden"}
         aria-label="Espace de travail PDF"
       >
+        <nav className="tool-rail" aria-label="Outils d'édition">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveEditingTool("select");
+              setPendingSignatureImageId(null);
+              setEyedropperTarget(null);
+            }}
+            disabled={!activeDocument || workspaceMode !== "read"}
+            aria-label="Sélection"
+            aria-pressed={activeEditingTool === "select" && workspaceMode === "read"}
+            title="Sélection"
+          >
+            <ToolbarIcon name="select" />
+            <span>Sélection</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setExportFeedback(null);
+              setActiveEditingTool("add_text");
+              setPendingSignatureImageId(null);
+              setSelectedEditId(null);
+              setEyedropperTarget(null);
+            }}
+            disabled={!activeDocument || workspaceMode !== "read"}
+            aria-label="Ajouter du texte"
+            aria-pressed={activeEditingTool === "add_text"}
+            title="Ajouter du texte"
+          >
+            <ToolbarIcon name="text" />
+            <span>Texte</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setExportFeedback(null);
+              setActiveEditingTool("signature");
+              setSelectedEditId(null);
+              setPendingSignatureImageId(null);
+              setEyedropperTarget(null);
+              setIsSignatureDialogOpen(true);
+            }}
+            disabled={!activeDocument || workspaceMode !== "read"}
+            aria-label="Ajouter une signature"
+            aria-pressed={activeEditingTool === "signature"}
+            title="Ajouter une signature"
+          >
+            <ToolbarIcon name="signature" />
+            <span>Signature</span>
+          </button>
+
+          <div className="tool-rail__shape-group" aria-label="Formes">
+            <span className="tool-rail__group-icon" aria-hidden="true">
+              <ToolbarIcon name="shape" />
+            </span>
+            {(["rectangle", "ellipse", "line"] as const).map((shapeType) => {
+              const label =
+                shapeType === "rectangle"
+                  ? "Ajouter un rectangle"
+                  : shapeType === "ellipse"
+                    ? "Ajouter une ellipse"
+                    : "Ajouter une ligne";
+              const tool: EditingTool = `shape_${shapeType}`;
+              return (
+                <button
+                  key={shapeType}
+                  type="button"
+                  className="toolbar-shape-button"
+                  onClick={() => {
+                    setExportFeedback(null);
+                    setActiveEditingTool(tool);
+                    setPendingSignatureImageId(null);
+                    setSelectedEditId(null);
+                    setEyedropperTarget(null);
+                  }}
+                  disabled={!activeDocument || workspaceMode !== "read"}
+                  aria-label={label}
+                  aria-pressed={activeEditingTool === tool}
+                  title={label}
+                >
+                  {shapeType === "rectangle" ? "▭" : shapeType === "ellipse" ? "○" : "╱"}
+                </button>
+              );
+            })}
+            <span>Formes</span>
+          </div>
+
+          <span className="tool-rail__separator" aria-hidden="true" />
+          <button
+            type="button"
+            onClick={() =>
+              setWorkspaceMode((currentMode) =>
+                currentMode === "read" ? "organize" : "read",
+              )
+            }
+            aria-pressed={workspaceMode === "organize"}
+            aria-label={workspaceMode === "organize" ? "Revenir à la lecture" : "Organiser"}
+            title={workspaceMode === "organize" ? "Revenir à la lecture" : "Organiser les pages"}
+          >
+            <ToolbarIcon name="organize" />
+            <span>{workspaceMode === "organize" ? "Lecture" : "Organiser"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setExportFeedback(null);
+              setIsOcrDialogOpen(true);
+            }}
+            disabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
+            aria-label="OCR"
+            aria-busy={isOcrProcessing}
+            title="Reconnaissance de texte (OCR)"
+          >
+            <ToolbarIcon name="ocr" />
+            <span>OCR</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setExportFeedback(null);
+              setIsConversionDialogOpen(true);
+            }}
+            disabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
+            title="Convertir le document"
+          >
+            <ToolbarIcon name="conversion" />
+            <span>Convertir</span>
+          </button>
+        </nav>
+
         <button
           type="button"
           className="sidebar-rail-toggle"
@@ -4120,10 +4229,19 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           <DocumentSidebar
             documents={documents}
             activeDocumentId={activeDocumentId}
+            activePageNumber={activePageNumber}
+            pagePlan={activeOrganizationPlan}
             dirtyDocumentIds={dirtyDocumentIds}
             theme={theme}
             openFileInputRef={openFileInputRef}
             onSelectDocument={selectDocumentFromSidebar}
+            onSelectPage={(pageNumber) => {
+              recordActivePage(activeDocument?.id ?? "", pageNumber);
+              setPageNavigationRequest({
+                pageNumber,
+                requestId: ++pageNavigationRequestId.current,
+              });
+            }}
             onCloseDocument={closeDocument}
             onToggleTheme={toggleTheme}
             onClearLocalData={clearLocalData}
@@ -4138,7 +4256,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           />
         ) : null}
 
-        {isOcrProcessing ? (
+        <section className="workspace-stage" aria-label="Document actif">
+          {isOcrProcessing ? (
           <div
             className="export-read-feedback organize-feedback organize-feedback--progress"
             role="status"
@@ -4164,9 +4283,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               Fermer
             </button>
           </div>
-        ) : null}
+          ) : null}
 
-        {activeDocument && activeOrganizationPlan && workspaceMode === "read" ? (
+          {activeDocument && activeOrganizationPlan && workspaceMode === "read" ? (
           <PdfViewer
             document={activeDocument}
             documents={documents}
@@ -4189,6 +4308,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onActivePageChange={recordActivePage}
             onSampleColor={applySampledShapeColor}
             focusRequest={viewerFocusRequest}
+            pageNavigationRequest={pageNavigationRequest}
           />
         ) : activeDocument && activeOrganizationPlan ? (
           <OrganizePages
@@ -4221,8 +4341,103 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           />
         ) : (
           <EmptyState status={status} mode={workspaceMode} />
-        )}
+          )}
+        </section>
+
+        <aside className="properties-panel" aria-label="Propriétés">
+          <header className="properties-panel__header">
+            <span>Inspecteur</span>
+            <h2>Propriétés</h2>
+          </header>
+          {workspaceMode === "read" && selectedTextEdit ? (
+            <TextEditToolbar
+              edit={selectedTextEdit}
+              onUpdate={(patch) =>
+                updatePdfEdit({ ...selectedTextEdit, ...patch })
+              }
+              onDelete={() => deletePdfEdit(selectedTextEdit.id)}
+            />
+          ) : workspaceMode === "read" && selectedShapeEdit ? (
+            <ShapeEditToolbar
+              edit={selectedShapeEdit}
+              eyedropperTarget={eyedropperTarget}
+              onUpdate={(patch) =>
+                updatePdfEdit({ ...selectedShapeEdit, ...patch })
+              }
+              onPickColor={(target) =>
+                setEyedropperTarget((currentTarget) =>
+                  currentTarget === target ? null : target,
+                )
+              }
+              onDelete={() => deletePdfEdit(selectedShapeEdit.id)}
+            />
+          ) : selectedPdfEdit?.type === "signature" ? (
+            <section className="properties-panel__empty">
+              <strong>Signature</strong>
+              <p>Déplacez ou redimensionnez la signature directement sur la page.</p>
+              <button type="button" onClick={() => deletePdfEdit(selectedPdfEdit.id)}>
+                Supprimer la signature
+              </button>
+            </section>
+          ) : (
+            <section className="properties-panel__empty">
+              <strong>{workspaceMode === "organize" ? "Organisation" : "Document"}</strong>
+              <p>
+                {activeDocument
+                  ? `${activeOrganizationPlan?.pages.length ?? activeDocument.pageCount} page${(activeOrganizationPlan?.pages.length ?? activeDocument.pageCount) > 1 ? "s" : ""}`
+                  : "Aucun document ouvert"}
+              </p>
+              <span>
+                {workspaceMode === "organize"
+                  ? "Réorganisez les pages sans enregistrer automatiquement."
+                  : "Sélectionnez un élément pour afficher ses réglages."}
+              </span>
+            </section>
+          )}
+        </aside>
       </section>
+
+      <footer className="status-bar" aria-label="État du document">
+        <span>
+          {activeDocument
+            ? `Page ${activePageNumber} / ${activeOrganizationPlan?.pages.length ?? activeDocument.pageCount}`
+            : "Aucun document"}
+        </span>
+        <span className="status-bar__mode">
+          {workspaceMode === "organize" ? "Mode Organiser" : "Mode Édition"}
+        </span>
+        <div className="page-controls">
+          <button
+            type="button"
+            onClick={() => {
+              if (activeDocument) {
+                updateDocumentZoom(activeDocument.id, -ZOOM_STEP);
+              }
+            }}
+            disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom <= MIN_ZOOM}
+            aria-label="Réduire le zoom"
+            title="Réduire le zoom"
+          >
+            −
+          </button>
+          <span className="zoom-value" data-testid="zoom-level" aria-live="polite">
+            {activeDocument ? `${Math.round(activeDocument.zoom * 100)}%` : "—"}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeDocument) {
+                updateDocumentZoom(activeDocument.id, ZOOM_STEP);
+              }
+            }}
+            disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom >= MAX_ZOOM}
+            aria-label="Augmenter le zoom"
+            title="Augmenter le zoom"
+          >
+            +
+          </button>
+        </div>
+      </footer>
     </main>
   );
 }
