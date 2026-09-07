@@ -69,6 +69,7 @@ import { PdfEditLayer } from "./components/PdfEditLayer";
 import { TextEditToolbar } from "./components/TextEditToolbar";
 import { ShapeEditToolbar } from "./components/ShapeEditToolbar";
 import { FreehandEditToolbar } from "./components/FreehandEditToolbar";
+import { ColorPicker } from "./components/ColorPicker";
 import { SaveAsDialog } from "./components/SaveAsDialog";
 import {
   SignatureDialog,
@@ -87,7 +88,11 @@ import {
   type SignatureImage,
   type ShapeEdit,
   type ShapeType,
+  type TextMarkupEdit,
+  type TextMarkupKind,
 } from "./editing/types";
+import { selectionClientRectsToPdfRects } from "./pdf/selectionGeometry";
+import { findTextMarkupAtPoint } from "./pdf/textMarkupHitTest";
 import { offsetPdfRectWithinPage } from "./editing/coordinates";
 import {
   getDocumentEditingState,
@@ -666,6 +671,26 @@ function PdfPageCanvas({
             return;
           }
           if (activeTool === "select") {
+            const selection = window.getSelection();
+            if (selection && !selection.isCollapsed) {
+              return;
+            }
+            if (viewport && surfaceRef.current) {
+              const bounds = surfaceRef.current.getBoundingClientRect();
+              const [x, y] = viewport.convertToPdfPoint(
+                event.clientX - bounds.left,
+                event.clientY - bounds.top,
+              );
+              const markup = findTextMarkupAtPoint(
+                edits.filter((edit): edit is TextMarkupEdit => edit.type === "text_markup"),
+                sourcePageNumber,
+                { x, y },
+              );
+              if (markup) {
+                onSelectEdit(markup.id);
+                return;
+              }
+            }
             onDeselectEdit();
           }
         }}
@@ -683,6 +708,29 @@ function PdfPageCanvas({
           ref={textLayerRef}
           className="textLayer pdf-text-layer"
           hidden
+          onMouseUp={() => {
+            if (activeTool !== "select" || !viewport || !surfaceRef.current || !textLayerRef.current) return;
+            window.setTimeout(() => {
+              const selection = window.getSelection();
+              if (!selection || selection.isCollapsed || selection.rangeCount !== 1) return;
+              const range = selection.getRangeAt(0);
+              try {
+                if (!range.intersectsNode(textLayerRef.current!)) return;
+              } catch {
+                return;
+              }
+              const surfaceBounds = surfaceRef.current!.getBoundingClientRect();
+              const pageRects = [...range.getClientRects()].filter((rect) => {
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                return centerX >= surfaceBounds.left && centerX <= surfaceBounds.right && centerY >= surfaceBounds.top && centerY <= surfaceBounds.bottom;
+              });
+              const rects = selectionClientRectsToPdfRects(pageRects, surfaceBounds, viewport);
+              const anchor = range.getBoundingClientRect();
+              if (rects.length === 0 || anchor.width < 1) return;
+              window.dispatchEvent(new CustomEvent("pdf-text-markup-selection", { detail: { page: sourcePageNumber, rects, top: anchor.top, left: anchor.left + anchor.width / 2 } }));
+            }, 0);
+          }}
         />
         {viewport ? (
           <PdfEditLayer
@@ -2096,6 +2144,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [isPropertiesPanelVisible, setIsPropertiesPanelVisible] = useState(true);
   const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(272);
   const [isShapePickerOpen, setIsShapePickerOpen] = useState(false);
+  const [textMarkupSelection, setTextMarkupSelection] = useState<{ page: number; rects: PdfRect[]; top: number; left: number } | null>(null);
+  const [textMarkupColor, setTextMarkupColor] = useState("#eab308");
   const [shapePickerPosition, setShapePickerPosition] = useState({ top: 0, left: 0 });
   const shapePickerButtonRef = useRef<HTMLButtonElement | null>(null);
   const shapePickerRef = useRef<HTMLDivElement | null>(null);
@@ -2155,6 +2205,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const nextTextEditId = useRef(1);
   const nextShapeEditId = useRef(1);
   const nextFreehandEditId = useRef(1);
+  const nextTextMarkupEditId = useRef(1);
+  const textMarkupToolbarRef = useRef<HTMLDivElement | null>(null);
   const nextSignatureImageId = useRef(1);
   const nextSignatureEditId = useRef(1);
   const [isRestoringDocuments, setIsRestoringDocuments] = useState(
@@ -2219,6 +2271,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         edit.id === selectedEditId && edit.type === "shape",
     ) ?? null;
   const selectedFreehandEdit = activePdfEdits.find((edit): edit is FreehandEdit => edit.id === selectedEditId && edit.type === "freehand") ?? null;
+  const selectedTextMarkupEdit = activePdfEdits.find((edit): edit is TextMarkupEdit => edit.id === selectedEditId && edit.type === "text_markup") ?? null;
   const selectedPdfEdit =
     activePdfEdits.find((edit) => edit.id === selectedEditId) ?? null;
   const pendingSignatureImage = pendingSignatureImageId
@@ -2593,6 +2646,44 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setActiveEditingTool("select");
     setExportFeedback(null);
   }, [activeDocument]);
+
+  const addTextMarkupEdit = useCallback((kind: TextMarkupKind, color: string) => {
+    if (!activeDocument || !textMarkupSelection) return;
+    const { page, rects } = textMarkupSelection;
+    const edit: TextMarkupEdit = { id: `markup-${Date.now()}-${nextTextMarkupEditId.current++}`, type: "text_markup", kind, page, rects, color, rect: { x0: Math.min(...rects.map((rect) => rect.x0)), y0: Math.min(...rects.map((rect) => rect.y0)), x1: Math.max(...rects.map((rect) => rect.x1)), y1: Math.max(...rects.map((rect) => rect.y1)) } };
+    dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
+    setSelectedEditId(edit.id);
+    setTextMarkupSelection(null);
+    window.getSelection()?.removeAllRanges();
+  }, [activeDocument, textMarkupSelection]);
+
+  useEffect(() => {
+    const handleSelection = (event: Event) => setTextMarkupSelection((event as CustomEvent<{ page: number; rects: PdfRect[]; top: number; left: number }>).detail);
+    const close = () => setTextMarkupSelection(null);
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    window.addEventListener("pdf-text-markup-selection", handleSelection);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pdf-text-markup-selection", handleSelection);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
+    setTextMarkupSelection(null);
+  }, [activeDocumentId, activeEditingTool]);
+
+  useEffect(() => {
+    if (!textMarkupSelection) return;
+    const closeOnOutsidePointerDown = (event: globalThis.PointerEvent) => {
+      if (event.target instanceof Node && textMarkupToolbarRef.current?.contains(event.target)) return;
+      setTextMarkupSelection(null);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointerDown);
+  }, [textMarkupSelection]);
 
   const updatePdfEdit = useCallback(
     (edit: PdfEdit) => {
@@ -3450,6 +3541,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     const exportedFreehandEdits = exportedPdfEdits.filter(
       (edit): edit is FreehandEdit & { sourceDocumentId: string; order: number } => edit.type === "freehand",
     );
+    const exportedTextMarkupEdits = exportedPdfEdits.filter(
+      (edit): edit is TextMarkupEdit & { sourceDocumentId: string; order: number } => edit.type === "text_markup",
+    );
     const exportedSignatureImageIds = new Set(
       exportedSignatureEdits.map((edit) => edit.imageId),
     );
@@ -3482,6 +3576,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           ? { shapes: exportedShapeEdits }
           : {}),
         ...(exportedFreehandEdits.length > 0 ? { freehands: exportedFreehandEdits } : {}),
+        ...(exportedTextMarkupEdits.length > 0 ? { textMarkups: exportedTextMarkupEdits } : {}),
       }),
     );
 
@@ -4417,6 +4512,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             />
           ) : workspaceMode === "read" && selectedFreehandEdit ? (
             <FreehandEditToolbar edit={selectedFreehandEdit} onUpdate={(patch) => updatePdfEdit({ ...selectedFreehandEdit, ...patch })} onDelete={() => deletePdfEdit(selectedFreehandEdit.id)} />
+          ) : workspaceMode === "read" && selectedTextMarkupEdit ? (
+            <section className="shape-edit-toolbar" aria-label="Propriétés de l'annotation texte"><strong>{selectedTextMarkupEdit.kind === "highlight" ? "Surlignage" : selectedTextMarkupEdit.kind === "underline" ? "Soulignement" : "Barré"}</strong><ColorPicker label="Couleur de l'annotation" value={selectedTextMarkupEdit.color} onChange={(color) => updatePdfEdit({ ...selectedTextMarkupEdit, color })} /><button type="button" onClick={() => deletePdfEdit(selectedTextMarkupEdit.id)}>Supprimer l'annotation</button></section>
           ) : selectedPdfEdit?.type === "signature" ? (
             <section className="properties-panel__empty">
               <strong>Signature</strong>
@@ -4480,6 +4577,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             document.body,
           )
         : null}
+
+      {textMarkupSelection ? createPortal(
+        <div ref={textMarkupToolbarRef} className="text-markup-toolbar" role="toolbar" aria-label="Annotations du texte" style={{ top: Math.max(8, textMarkupSelection.top - 46), left: Math.min(window.innerWidth - 230, Math.max(8, textMarkupSelection.left - 100)) }}>
+          <button type="button" title="Surligner" aria-label="Surligner" onClick={() => addTextMarkupEdit("highlight", textMarkupColor)}>🖍</button>
+          <button type="button" title="Souligner" aria-label="Souligner" onClick={() => addTextMarkupEdit("underline", textMarkupColor)}>U̲</button>
+          <button type="button" title="Barrer" aria-label="Barrer" onClick={() => addTextMarkupEdit("strikeout", textMarkupColor)}>S̶</button>
+          <ColorPicker compact label="Couleur de l'annotation" value={textMarkupColor} onChange={setTextMarkupColor} />
+        </div>, document.body) : null}
 
       <footer className="status-bar" aria-label="État du document">
         <span>

@@ -2784,10 +2784,18 @@ button:disabled {
 .color-picker__actions { display: flex; align-items: center; gap: 0.45rem; }
 .color-picker__custom { display: flex; align-items: center; gap: 0.35rem; font-size: 0.76rem; }
 .color-picker__custom input { width: 2rem !important; height: 1.75rem; padding: 0; }
+.color-picker--compact { position: relative; display: block; }
+.color-picker__trigger { display: grid; width: 2rem; min-width: 2rem; height: 2rem; min-height: 2rem; padding: 0; place-items: center; border-radius: 6px; }
+.color-picker__trigger > span { width: 0.95rem; height: 0.95rem; border: 1px solid var(--border); border-radius: 50%; background: var(--swatch-color); }
+.color-picker__popover { position: absolute; z-index: 2; top: calc(100% + 0.4rem); right: 0; display: grid; gap: 0.45rem; min-width: 11rem; padding: 0.55rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
 .pdf-freehand-edit, .pdf-freehand-preview { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .pdf-freehand-edit { pointer-events: auto; }
 .pdf-freehand-edit.is-selected path { filter: drop-shadow(0 0 2px var(--accent)); }
 .pdf-freehand-preview { z-index: 18; pointer-events: none; }
+.pdf-text-markup { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; pointer-events: none; }
+.pdf-text-markup--highlight { z-index: 1; mix-blend-mode: multiply; }
+.text-markup-toolbar { position: fixed; z-index: 60; display: flex; align-items: center; gap: .2rem; padding: .3rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.text-markup-toolbar > button { width: 2rem; min-width: 2rem; min-height: 2rem; padding: 0; }
 
 .pdf-edit-creation-preview {
   position: absolute;

@@ -16,6 +16,7 @@ import type {
   ShapeType,
 } from "../editing/types";
 import { FreehandEditBlock } from "./FreehandEditLayer";
+import { TextMarkupLayer } from "./TextMarkupLayer";
 import { SignatureEditBlock } from "./SignatureEditLayer";
 import { ShapeEditBlock } from "./ShapeEditLayer";
 import { TextEditBlock } from "./TextEditLayer";
@@ -254,7 +255,7 @@ export function PdfEditLayer({
           return <FreehandEditBlock key={edit.id} edit={edit} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} />;
         }
 
-        if (edit.type === "text_markup") return null;
+        if (edit.type === "text_markup") return <TextMarkupLayer key={edit.id} edit={edit} viewport={viewport} />;
 
         const image = images[edit.imageId];
         return image ? (

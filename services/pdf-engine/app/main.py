@@ -152,6 +152,18 @@ class FreehandEdit(BaseModel):
     order: int = Field(default=0, ge=0)
 
 
+class TextMarkupEdit(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    type: Literal["text_markup"]
+    kind: Literal["highlight", "underline", "strikeout"]
+    source_document_id: str | None = Field(default=None, alias="sourceDocumentId")
+    page: int = Field(ge=1)
+    rect: PdfEditRect
+    rects: list[PdfEditRect] = Field(min_length=1, max_length=500)
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    order: int = Field(default=0, ge=0)
+
+
 class OrganizeExportPlan(BaseModel):
     output_name: str | None = Field(default=None, alias="outputName")
     pages: list[OrganizeExportPage]
@@ -159,6 +171,7 @@ class OrganizeExportPlan(BaseModel):
     signatures: list[SignatureEdit] = Field(default_factory=list)
     shapes: list[ShapeEdit] = Field(default_factory=list)
     freehands: list[FreehandEdit] = Field(default_factory=list)
+    text_markups: list[TextMarkupEdit] = Field(default_factory=list, alias="textMarkups")
     signature_images: list[SignatureImagePayload] = Field(
         default_factory=list,
         alias="signatureImages",
@@ -560,14 +573,17 @@ def apply_visual_edits(
     export_warnings: list[ExportWarning] | None = None,
     shape_edits_by_output_page: dict[int, list[ShapeEdit]] | None = None,
     freehand_edits_by_output_page: dict[int, list[FreehandEdit]] | None = None,
+    text_markup_edits_by_output_page: dict[int, list[TextMarkupEdit]] | None = None,
 ) -> bytes:
     shape_edits_by_output_page = shape_edits_by_output_page or {}
     freehand_edits_by_output_page = freehand_edits_by_output_page or {}
+    text_markup_edits_by_output_page = text_markup_edits_by_output_page or {}
     if (
         not text_edits_by_output_page
         and not signature_edits_by_output_page
         and not shape_edits_by_output_page
         and not freehand_edits_by_output_page
+        and not text_markup_edits_by_output_page
     ):
         return source
 
@@ -578,6 +594,7 @@ def apply_visual_edits(
                 | set(signature_edits_by_output_page)
                 | set(shape_edits_by_output_page)
                 | set(freehand_edits_by_output_page)
+                | set(text_markup_edits_by_output_page)
             )
             for output_page_index in sorted(output_page_indexes):
                 page = document[output_page_index]
@@ -655,6 +672,18 @@ def apply_visual_edits(
                     else:
                         points = [fitz.Point(point.x, point.y) * page.transformation_matrix for point in edit.points]
                         page.draw_polyline(points, color=_parse_hex_color(edit.style.color), width=edit.style.stroke_width, overlay=True)
+                for markup in sorted(text_markup_edits_by_output_page.get(output_page_index, []), key=lambda item: item.order):
+                    color = _parse_hex_color(markup.color)
+                    for rect in markup.rects:
+                        page_rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y1) * page.transformation_matrix
+                        if markup.kind == "highlight":
+                            annotation = page.add_highlight_annot(page_rect)
+                        elif markup.kind == "underline":
+                            annotation = page.add_underline_annot(page_rect)
+                        else:
+                            annotation = page.add_strikeout_annot(page_rect)
+                        annotation.set_colors(stroke=color)
+                        annotation.update()
             return document.tobytes(garbage=4, deflate=True)
     except HTTPException:
         raise
@@ -758,10 +787,18 @@ def export_organized_pdf(
             raise HTTPException(status_code=422, detail=f"La page {freehand.page} du dessin {freehand.id!r} est invalide.")
         freehands_by_source_page.setdefault((source_document_id, freehand.page - 1), []).append(freehand)
 
+    text_markups_by_source_page: dict[tuple[str, int], list[TextMarkupEdit]] = {}
+    for markup in plan.text_markups:
+        source_document_id = _resolve_source_document_id(markup.source_document_id, readers)
+        if markup.page > len(readers[source_document_id].pages):
+            raise HTTPException(status_code=422, detail=f"La page {markup.page} de l'annotation {markup.id!r} est invalide.")
+        text_markups_by_source_page.setdefault((source_document_id, markup.page - 1), []).append(markup)
+
     edits_by_output_page: dict[int, list[AddTextEdit]] = {}
     signatures_by_output_page: dict[int, list[SignatureEdit]] = {}
     shapes_by_output_page: dict[int, list[ShapeEdit]] = {}
     freehands_by_output_page: dict[int, list[FreehandEdit]] = {}
+    text_markups_by_output_page: dict[int, list[TextMarkupEdit]] = {}
 
     for output_page_index, page_plan in enumerate(plan.pages):
         source_document_id = _resolve_source_document_id(
@@ -800,6 +837,9 @@ def export_organized_pdf(
         page_freehands = freehands_by_source_page.get((source_document_id, page_plan.source_page_index))
         if page_freehands:
             freehands_by_output_page[output_page_index] = page_freehands
+        page_text_markups = text_markups_by_source_page.get((source_document_id, page_plan.source_page_index))
+        if page_text_markups:
+            text_markups_by_output_page[output_page_index] = page_text_markups
 
     output = io.BytesIO()
     writer.write(output)
@@ -811,6 +851,7 @@ def export_organized_pdf(
         export_warnings,
         shape_edits_by_output_page=shapes_by_output_page,
         freehand_edits_by_output_page=freehands_by_output_page,
+        text_markup_edits_by_output_page=text_markups_by_output_page,
     )
 
 

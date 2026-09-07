@@ -4,7 +4,7 @@ import {
   pdfEditsReducer,
   type PdfEditsByDocument,
 } from "./state";
-import type { AddTextEdit, PdfEdit, ShapeEdit, SignatureEdit } from "./types";
+import type { AddTextEdit, PdfEdit, ShapeEdit, SignatureEdit, TextMarkupEdit } from "./types";
 
 const textEdit: AddTextEdit = {
   id: "text-1",
@@ -39,6 +39,19 @@ const shapeEdit: ShapeEdit = {
     strokeWidth: 2,
     fillColor: null,
   },
+};
+
+const textMarkupEdit: TextMarkupEdit = {
+  id: "markup-1",
+  type: "text_markup",
+  kind: "highlight",
+  page: 1,
+  rect: { x0: 10, y0: 40, x1: 120, y1: 80 },
+  rects: [
+    { x0: 10, y0: 60, x1: 120, y1: 80 },
+    { x0: 10, y0: 40, x1: 100, y1: 55 },
+  ],
+  color: "#eab308",
 };
 
 function addEdits(documentId: string, edits: PdfEdit[]) {
@@ -193,5 +206,22 @@ describe("pdfEditsReducer history", () => {
     expect(state["doc-a"].edits).toEqual([shapeEdit]);
     state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
     expect(state["doc-a"].edits).toEqual([styledShape]);
+  });
+
+  it("tracks a multi-line text markup as one dirty undoable operation", () => {
+    let state = addEdits("doc-a", [textMarkupEdit]);
+    expect(state["doc-a"].isDirty).toBe(true);
+    const recolored = { ...textMarkupEdit, color: "#dc2626" };
+    state = pdfEditsReducer(state, { type: "replace", documentId: "doc-a", edit: recolored });
+    state = pdfEditsReducer(state, { type: "delete", documentId: "doc-a", editId: textMarkupEdit.id });
+    expect(state["doc-a"].edits).toEqual([]);
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toEqual([recolored]);
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toEqual([textMarkupEdit]);
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toEqual([]);
+    state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toEqual([textMarkupEdit]);
   });
 });
