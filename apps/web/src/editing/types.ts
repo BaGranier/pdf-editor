@@ -26,13 +26,25 @@ export type ShapeStyle = {
   fillColor: string | null;
 };
 
+export const ANNOTATION_COLORS = [
+  "#111827", "#374151", "#6b7280", "#d1d5db",
+  "#dc2626", "#ea580c", "#eab308", "#16a34a",
+  "#0d9488", "#2563eb", "#1e3a8a", "#7c3aed",
+  "#db2777", "#92400e", "#ffffff",
+] as const;
+
+export type PdfPoint = { x: number; y: number };
+export type FreehandStyle = { color: string; strokeWidth: number };
+export type TextMarkupKind = "highlight" | "underline" | "strikeout";
+
 export type EditingTool =
   | "select"
   | "add_text"
   | "signature"
   | "shape_rectangle"
   | "shape_ellipse"
-  | "shape_line";
+  | "shape_line"
+  | "freehand";
 
 export type BasePdfEdit = {
   id: string;
@@ -59,7 +71,20 @@ export type ShapeEdit = BasePdfEdit & {
   style: ShapeStyle;
 };
 
-export type PdfEdit = AddTextEdit | SignatureEdit | ShapeEdit;
+export type FreehandEdit = BasePdfEdit & {
+  type: "freehand";
+  points: PdfPoint[];
+  style: FreehandStyle;
+};
+
+export type TextMarkupEdit = BasePdfEdit & {
+  type: "text_markup";
+  kind: TextMarkupKind;
+  rects: PdfRect[];
+  color: string;
+};
+
+export type PdfEdit = AddTextEdit | SignatureEdit | ShapeEdit | FreehandEdit | TextMarkupEdit;
 
 export type SignatureImage = {
   id: string;
@@ -81,3 +106,5 @@ export const DEFAULT_SHAPE_STYLE: ShapeStyle = {
   strokeWidth: 2,
   fillColor: null,
 };
+
+export const DEFAULT_FREEHAND_STYLE: FreehandStyle = { color: "#2563eb", strokeWidth: 3 };

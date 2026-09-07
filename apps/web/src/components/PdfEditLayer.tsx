@@ -11,9 +11,11 @@ import type {
   EditingTool,
   PdfEdit,
   PdfRect,
+  PdfPoint,
   SignatureImage,
   ShapeType,
 } from "../editing/types";
+import { FreehandEditBlock } from "./FreehandEditLayer";
 import { SignatureEditBlock } from "./SignatureEditLayer";
 import { ShapeEditBlock } from "./ShapeEditLayer";
 import { TextEditBlock } from "./TextEditLayer";
@@ -29,6 +31,7 @@ type PdfEditLayerProps = {
   onAddText: (rect: PdfRect) => void;
   onAddShape: (shapeType: ShapeType, rect: PdfRect) => void;
   onPlaceSignature: (rect: PdfRect) => void;
+  onAddFreehand: (points: PdfPoint[]) => void;
   onSelect: (editId: string) => void;
   onUpdate: (edit: PdfEdit) => void;
   onDelete: (editId: string) => void;
@@ -45,6 +48,7 @@ export function PdfEditLayer({
   onAddText,
   onAddShape,
   onPlaceSignature,
+  onAddFreehand,
   onSelect,
   onUpdate,
   onDelete,
@@ -61,8 +65,11 @@ export function PdfEditLayer({
   };
   const creationActive =
     activeTool === "add_text" ||
+    activeTool === "freehand" ||
     activeTool.startsWith("shape_") ||
     (activeTool === "signature" && pendingSignatureImage !== null);
+  const freehandPointsRef = useRef<PdfPoint[] | null>(null);
+  const [freehandPreview, setFreehandPreview] = useState<PdfPoint[]>([]);
   const previewRect = creation
     ? createPdfRectFromScreenPoints(viewport, creation.start, creation.end)
     : null;
@@ -89,6 +96,14 @@ export function PdfEditLayer({
   };
 
   const finishCreation = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (activeTool === "freehand" && freehandPointsRef.current) {
+      const points = freehandPointsRef.current;
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+      freehandPointsRef.current = null;
+      setFreehandPreview([]);
+      if (points.length > 1) onAddFreehand(points);
+      return;
+    }
     const currentCreation = creationRef.current;
     if (!currentCreation || currentCreation.pointerId !== event.pointerId) {
       return;
@@ -127,6 +142,15 @@ export function PdfEditLayer({
       aria-label={`Couche d'édition de la page ${pageNumber}`}
       data-active-editing-tool={activeTool}
       onPointerDown={(event) => {
+        if (activeTool === "freehand" && event.button === 0) {
+          event.preventDefault();
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          const point = pointForEvent(event);
+          const [x, y] = viewport.convertToPdfPoint(point.x, point.y);
+          freehandPointsRef.current = [{ x, y }];
+          setFreehandPreview([{ x, y }]);
+          return;
+        }
         if (
           !creationActive ||
           event.button !== 0 ||
@@ -141,6 +165,18 @@ export function PdfEditLayer({
         setCreationState({ pointerId: event.pointerId, start: point, end: point });
       }}
       onPointerMove={(event) => {
+        if (activeTool === "freehand" && freehandPointsRef.current) {
+          const point = pointForEvent(event);
+          const [x, y] = viewport.convertToPdfPoint(point.x, point.y);
+          const points = freehandPointsRef.current;
+          const previous = points[points.length - 1];
+          if (!previous || Math.hypot(x - previous.x, y - previous.y) >= 1.5) {
+            const next = [...points, { x, y }];
+            freehandPointsRef.current = next;
+            setFreehandPreview(next);
+          }
+          return;
+        }
         if (creationRef.current?.pointerId === event.pointerId) {
           const point = pointForEvent(event);
           setCreationState({ ...creationRef.current, end: point });
@@ -173,6 +209,7 @@ export function PdfEditLayer({
           shapeType={activeTool.startsWith("shape_") ? activeTool.replace("shape_", "") as ShapeType : null}
         />
       ) : null}
+      {freehandPreview.length > 1 ? <FreehandPreview points={freehandPreview} viewport={viewport} /> : null}
       {edits.map((edit) => {
         if (edit.type === "add_text") {
           return (
@@ -213,6 +250,12 @@ export function PdfEditLayer({
           );
         }
 
+        if (edit.type === "freehand") {
+          return <FreehandEditBlock key={edit.id} edit={edit} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} />;
+        }
+
+        if (edit.type === "text_markup") return null;
+
         const image = images[edit.imageId];
         return image ? (
           <SignatureEditBlock
@@ -229,6 +272,11 @@ export function PdfEditLayer({
       })}
     </div>
   );
+}
+
+function FreehandPreview({ points, viewport }: { points: PdfPoint[]; viewport: PageViewport }) {
+  const path = points.map((point, index) => { const [x, y] = viewport.convertToViewportPoint(point.x, point.y); return `${index ? "L" : "M"}${x} ${y}`; }).join(" ");
+  return <svg className="pdf-freehand-preview" viewBox={`0 0 ${viewport.width} ${viewport.height}`} aria-hidden="true"><path d={path} fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
 function CreationPreview({

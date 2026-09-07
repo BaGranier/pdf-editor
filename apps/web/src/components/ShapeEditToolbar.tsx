@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { SHAPE_TYPES, type ShapeEdit, type ShapeType } from "../editing/types";
+import { ColorPicker } from "./ColorPicker";
 
 type ShapeEditToolbarProps = {
   edit: ShapeEdit;
@@ -53,12 +54,7 @@ export function ShapeEditToolbar({
           ))}
         </select>
       </label>
-      <label className="shape-edit-toolbar__color-control">
-        Contour
-        <span><input type="color" aria-label="Couleur du contour" value={edit.style.strokeColor} onChange={(event) => onUpdate({ style: { ...edit.style, strokeColor: event.target.value } })} />
-          <button type="button" className="shape-edit-toolbar__eyedropper" aria-label="Pipette contour" title="Prélever une couleur" aria-pressed={eyedropperTarget === "stroke"} onClick={() => onPickColor("stroke")}>◉</button>
-        </span>
-      </label>
+      <ColorPicker label="Contour" value={edit.style.strokeColor} onChange={(strokeColor) => onUpdate({ style: { ...edit.style, strokeColor } })} onPickColor={() => onPickColor("stroke")} eyedropperActive={eyedropperTarget === "stroke"} />
       <label>
         Épaisseur
         <input
@@ -78,12 +74,7 @@ export function ShapeEditToolbar({
       </label>
       {supportsFill ? (
         <>
-          <label className="shape-edit-toolbar__color-control">
-            Remplissage
-            <span><input type="color" aria-label="Couleur de remplissage" disabled={edit.style.fillColor === null} value={edit.style.fillColor ?? lastFillColor.current} onChange={(event) => onUpdate({ style: { ...edit.style, fillColor: event.target.value } })} />
-              <button type="button" className="shape-edit-toolbar__eyedropper" aria-label="Pipette remplissage" title="Prélever une couleur" aria-pressed={eyedropperTarget === "fill"} disabled={edit.style.fillColor === null} onClick={() => onPickColor("fill")}>◉</button>
-            </span>
-          </label>
+          <ColorPicker label="Remplissage" value={edit.style.fillColor ?? lastFillColor.current} disabled={edit.style.fillColor === null} onChange={(fillColor) => onUpdate({ style: { ...edit.style, fillColor } })} onPickColor={() => onPickColor("fill")} eyedropperActive={eyedropperTarget === "fill"} />
           <label className="shape-edit-toolbar__transparent"><input type="checkbox" aria-label="Remplissage transparent" checked={edit.style.fillColor === null} onChange={(event) => onUpdate({ style: { ...edit.style, fillColor: event.target.checked ? null : lastFillColor.current } })} /> Transparent</label>
         </>
       ) : null}

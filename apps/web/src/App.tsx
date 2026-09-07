@@ -68,6 +68,7 @@ import { getWebBackendBaseUrl } from "./api/backend";
 import { PdfEditLayer } from "./components/PdfEditLayer";
 import { TextEditToolbar } from "./components/TextEditToolbar";
 import { ShapeEditToolbar } from "./components/ShapeEditToolbar";
+import { FreehandEditToolbar } from "./components/FreehandEditToolbar";
 import { SaveAsDialog } from "./components/SaveAsDialog";
 import {
   SignatureDialog,
@@ -75,9 +76,11 @@ import {
 } from "./components/SignatureDialog";
 import {
   DEFAULT_SHAPE_STYLE,
+  DEFAULT_FREEHAND_STYLE,
   DEFAULT_TEXT_STYLE,
   type AddTextEdit,
   type EditingTool,
+  type FreehandEdit,
   type PdfEdit,
   type PdfRect,
   type SignatureEdit,
@@ -353,6 +356,14 @@ function clonePdfEdit(edit: PdfEdit): PdfEdit {
     };
   }
 
+  if (edit.type === "freehand") {
+    return { ...edit, rect: { ...edit.rect }, points: edit.points.map((point) => ({ ...point })), style: { ...edit.style } };
+  }
+
+  if (edit.type === "text_markup") {
+    return { ...edit, rect: { ...edit.rect }, rects: edit.rects.map((rect) => ({ ...rect })) };
+  }
+
   return { ...edit, rect: { ...edit.rect } };
 }
 
@@ -414,6 +425,7 @@ type PdfPageCanvasProps = {
   registerPageRef: (pageNumber: number, node: HTMLElement | null) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect) => void;
+  onAddFreehand: (pageNumber: number, points: import("./editing/types").PdfPoint[]) => void;
   onPlaceSignature: (pageNumber: number, rect: PdfRect) => void;
   onSelectEdit: (editId: string) => void;
   onDeselectEdit: () => void;
@@ -438,6 +450,7 @@ function PdfPageCanvas({
   registerPageRef,
   onAddText,
   onAddShape,
+  onAddFreehand,
   onPlaceSignature,
   onSelectEdit,
   onDeselectEdit,
@@ -684,6 +697,7 @@ function PdfPageCanvas({
             onAddShape={(shapeType, rect) =>
               onAddShape(sourcePageNumber, shapeType, rect)
             }
+            onAddFreehand={(points) => onAddFreehand(sourcePageNumber, points)}
             onPlaceSignature={(rect) => onPlaceSignature(sourcePageNumber, rect)}
             onSelect={onSelectEdit}
             onUpdate={onUpdateEdit}
@@ -709,6 +723,7 @@ type PdfViewerProps = {
   onScrollPositionChange: (documentId: string, scrollLeft: number, scrollTop: number) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect) => void;
+  onAddFreehand: (pageNumber: number, points: import("./editing/types").PdfPoint[]) => void;
   onPlaceSignature: (pageNumber: number, rect: PdfRect) => void;
   onSelectEdit: (editId: string) => void;
   onDeselectEdit: () => void;
@@ -734,6 +749,7 @@ function PdfViewer({
   onScrollPositionChange,
   onAddText,
   onAddShape,
+  onAddFreehand,
   onPlaceSignature,
   onSelectEdit,
   onDeselectEdit,
@@ -1076,7 +1092,8 @@ function PdfViewer({
               scrollRootRef={viewerRef}
               registerPageRef={registerPageRef}
               onAddText={onAddText}
-              onAddShape={onAddShape}
+                onAddShape={onAddShape}
+                onAddFreehand={onAddFreehand}
               onPlaceSignature={onPlaceSignature}
               onSelectEdit={onSelectEdit}
               onDeselectEdit={onDeselectEdit}
@@ -1958,6 +1975,7 @@ type ToolbarIconName =
   | "text"
   | "signature"
   | "shape"
+  | "freehand"
   | "organize"
   | "ocr"
   | "conversion"
@@ -2007,6 +2025,7 @@ function ToolbarIcon({ name }: { name: ToolbarIconName }) {
           <circle cx="13.5" cy="13.5" r="3.5" />
         </>
       ) : null}
+      {name === "freehand" ? <path d="M3 15c2-6 3.5-8 5-8 1.8 0-.8 7 1 7 1.5 0 2-5 3.4-5 .9 0-.1 4 1.3 4 .8 0 1.2-1.3 2.3-1.3M3 17h14" /> : null}
       {name === "organize" ? (
         <>
           <rect x="3" y="3" width="5" height="6" rx="1" />
@@ -2135,6 +2154,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const nextOrganizedPageId = useRef(1);
   const nextTextEditId = useRef(1);
   const nextShapeEditId = useRef(1);
+  const nextFreehandEditId = useRef(1);
   const nextSignatureImageId = useRef(1);
   const nextSignatureEditId = useRef(1);
   const [isRestoringDocuments, setIsRestoringDocuments] = useState(
@@ -2198,6 +2218,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       (edit): edit is ShapeEdit =>
         edit.id === selectedEditId && edit.type === "shape",
     ) ?? null;
+  const selectedFreehandEdit = activePdfEdits.find((edit): edit is FreehandEdit => edit.id === selectedEditId && edit.type === "freehand") ?? null;
   const selectedPdfEdit =
     activePdfEdits.find((edit) => edit.id === selectedEditId) ?? null;
   const pendingSignatureImage = pendingSignatureImageId
@@ -2561,6 +2582,17 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     },
     [activeDocument],
   );
+
+  const addFreehandEdit = useCallback((pageNumber: number, points: import("./editing/types").PdfPoint[]) => {
+    if (!activeDocument || points.length < 2) return;
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    const edit: FreehandEdit = { id: `freehand-${Date.now()}-${nextFreehandEditId.current++}`, type: "freehand", page: pageNumber, points, rect: { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs) + 0.1, y1: Math.max(...ys) + 0.1 }, style: { ...DEFAULT_FREEHAND_STYLE } };
+    dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
+    setSelectedEditId(edit.id);
+    setActiveEditingTool("select");
+    setExportFeedback(null);
+  }, [activeDocument]);
 
   const updatePdfEdit = useCallback(
     (edit: PdfEdit) => {
@@ -3415,6 +3447,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         order: number;
       } => edit.type === "shape",
     );
+    const exportedFreehandEdits = exportedPdfEdits.filter(
+      (edit): edit is FreehandEdit & { sourceDocumentId: string; order: number } => edit.type === "freehand",
+    );
     const exportedSignatureImageIds = new Set(
       exportedSignatureEdits.map((edit) => edit.imageId),
     );
@@ -3446,6 +3481,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         ...(exportedShapeEdits.length > 0
           ? { shapes: exportedShapeEdits }
           : {}),
+        ...(exportedFreehandEdits.length > 0 ? { freehands: exportedFreehandEdits } : {}),
       }),
     );
 
@@ -4128,6 +4164,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <ToolbarIcon name="select" />
             <span>Sélection</span>
           </button>
+
+          <button type="button" onClick={() => { setActiveEditingTool("freehand"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }} disabled={!activeDocument || workspaceMode !== "read"} aria-label="Dessiner" aria-pressed={activeEditingTool === "freehand"} title="Dessiner">
+            <ToolbarIcon name="freehand" /><span>Dessin</span>
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -4302,6 +4342,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onScrollPositionChange={updateDocumentScrollPosition}
             onAddText={addTextEdit}
             onAddShape={addShapeEdit}
+            onAddFreehand={addFreehandEdit}
             onPlaceSignature={placeSignature}
             onSelectEdit={setSelectedEditId}
             onDeselectEdit={() => setSelectedEditId(null)}
@@ -4374,6 +4415,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               }
               onDelete={() => deletePdfEdit(selectedShapeEdit.id)}
             />
+          ) : workspaceMode === "read" && selectedFreehandEdit ? (
+            <FreehandEditToolbar edit={selectedFreehandEdit} onUpdate={(patch) => updatePdfEdit({ ...selectedFreehandEdit, ...patch })} onDelete={() => deletePdfEdit(selectedFreehandEdit.id)} />
           ) : selectedPdfEdit?.type === "signature" ? (
             <section className="properties-panel__empty">
               <strong>Signature</strong>

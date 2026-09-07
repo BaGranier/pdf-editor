@@ -90,6 +90,14 @@ function editsAreEqual(left: PdfEdit, right: PdfEdit) {
     );
   }
 
+  if (left.type === "freehand" && right.type === "freehand") {
+    return left.style.color === right.style.color && left.style.strokeWidth === right.style.strokeWidth && JSON.stringify(left.points) === JSON.stringify(right.points);
+  }
+
+  if (left.type === "text_markup" && right.type === "text_markup") {
+    return left.kind === right.kind && left.color === right.color && JSON.stringify(left.rects) === JSON.stringify(right.rects);
+  }
+
   return false;
 }
 

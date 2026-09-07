@@ -131,12 +131,34 @@ class ShapeEdit(BaseModel):
     order: int = Field(default=0, ge=0)
 
 
+class FreehandPoint(BaseModel):
+    x: float = Field(allow_inf_nan=False)
+    y: float = Field(allow_inf_nan=False)
+
+
+class FreehandStyle(BaseModel):
+    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    stroke_width: float = Field(alias="strokeWidth", ge=0.5, le=50)
+
+
+class FreehandEdit(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    type: Literal["freehand"]
+    source_document_id: str | None = Field(default=None, alias="sourceDocumentId")
+    page: int = Field(ge=1)
+    rect: PdfEditRect
+    points: list[FreehandPoint] = Field(min_length=2, max_length=10_000)
+    style: FreehandStyle
+    order: int = Field(default=0, ge=0)
+
+
 class OrganizeExportPlan(BaseModel):
     output_name: str | None = Field(default=None, alias="outputName")
     pages: list[OrganizeExportPage]
     edits: list[AddTextEdit] = Field(default_factory=list)
     signatures: list[SignatureEdit] = Field(default_factory=list)
     shapes: list[ShapeEdit] = Field(default_factory=list)
+    freehands: list[FreehandEdit] = Field(default_factory=list)
     signature_images: list[SignatureImagePayload] = Field(
         default_factory=list,
         alias="signatureImages",
@@ -537,12 +559,15 @@ def apply_visual_edits(
     signature_images: dict[str, bytes],
     export_warnings: list[ExportWarning] | None = None,
     shape_edits_by_output_page: dict[int, list[ShapeEdit]] | None = None,
+    freehand_edits_by_output_page: dict[int, list[FreehandEdit]] | None = None,
 ) -> bytes:
     shape_edits_by_output_page = shape_edits_by_output_page or {}
+    freehand_edits_by_output_page = freehand_edits_by_output_page or {}
     if (
         not text_edits_by_output_page
         and not signature_edits_by_output_page
         and not shape_edits_by_output_page
+        and not freehand_edits_by_output_page
     ):
         return source
 
@@ -552,13 +577,15 @@ def apply_visual_edits(
                 set(text_edits_by_output_page)
                 | set(signature_edits_by_output_page)
                 | set(shape_edits_by_output_page)
+                | set(freehand_edits_by_output_page)
             )
             for output_page_index in sorted(output_page_indexes):
                 page = document[output_page_index]
-                visual_edits: list[AddTextEdit | SignatureEdit | ShapeEdit] = [
+                visual_edits: list[AddTextEdit | SignatureEdit | ShapeEdit | FreehandEdit] = [
                     *text_edits_by_output_page.get(output_page_index, []),
                     *signature_edits_by_output_page.get(output_page_index, []),
                     *shape_edits_by_output_page.get(output_page_index, []),
+                    *freehand_edits_by_output_page.get(output_page_index, []),
                 ]
                 for edit in sorted(visual_edits, key=lambda item: item.order):
                     pdf_rect = fitz.Rect(
@@ -593,7 +620,7 @@ def apply_visual_edits(
                             keep_proportion=True,
                             overlay=True,
                         )
-                    else:
+                    elif isinstance(edit, ShapeEdit):
                         stroke = _parse_hex_color(edit.style.stroke_color)
                         fill = (
                             None
@@ -625,6 +652,9 @@ def apply_visual_edits(
                                 width=edit.style.stroke_width,
                                 overlay=True,
                             )
+                    else:
+                        points = [fitz.Point(point.x, point.y) * page.transformation_matrix for point in edit.points]
+                        page.draw_polyline(points, color=_parse_hex_color(edit.style.color), width=edit.style.stroke_width, overlay=True)
             return document.tobytes(garbage=4, deflate=True)
     except HTTPException:
         raise
@@ -721,9 +751,17 @@ def export_organized_pdf(
             [],
         ).append(shape)
 
+    freehands_by_source_page: dict[tuple[str, int], list[FreehandEdit]] = {}
+    for freehand in plan.freehands:
+        source_document_id = _resolve_source_document_id(freehand.source_document_id, readers)
+        if freehand.page > len(readers[source_document_id].pages):
+            raise HTTPException(status_code=422, detail=f"La page {freehand.page} du dessin {freehand.id!r} est invalide.")
+        freehands_by_source_page.setdefault((source_document_id, freehand.page - 1), []).append(freehand)
+
     edits_by_output_page: dict[int, list[AddTextEdit]] = {}
     signatures_by_output_page: dict[int, list[SignatureEdit]] = {}
     shapes_by_output_page: dict[int, list[ShapeEdit]] = {}
+    freehands_by_output_page: dict[int, list[FreehandEdit]] = {}
 
     for output_page_index, page_plan in enumerate(plan.pages):
         source_document_id = _resolve_source_document_id(
@@ -759,6 +797,9 @@ def export_organized_pdf(
         )
         if page_shapes:
             shapes_by_output_page[output_page_index] = page_shapes
+        page_freehands = freehands_by_source_page.get((source_document_id, page_plan.source_page_index))
+        if page_freehands:
+            freehands_by_output_page[output_page_index] = page_freehands
 
     output = io.BytesIO()
     writer.write(output)
@@ -769,6 +810,7 @@ def export_organized_pdf(
         signature_images,
         export_warnings,
         shape_edits_by_output_page=shapes_by_output_page,
+        freehand_edits_by_output_page=freehands_by_output_page,
     )
 
 

@@ -3,6 +3,7 @@ import {
   type AddTextEdit,
   type TextFontFamily,
 } from "../editing/types";
+import { ColorPicker } from "./ColorPicker";
 
 type TextEditToolbarProps = {
   edit: AddTextEdit;
@@ -52,17 +53,7 @@ export function TextEditToolbar({ edit, onUpdate, onDelete }: TextEditToolbarPro
           }}
         />
       </label>
-      <label>
-        Couleur
-        <input
-          aria-label="Couleur du texte"
-          type="color"
-          value={edit.style.color}
-          onChange={(event) =>
-            onUpdate({ style: { ...edit.style, color: event.target.value } })
-          }
-        />
-      </label>
+      <ColorPicker label="Couleur du texte" value={edit.style.color} onChange={(color) => onUpdate({ style: { ...edit.style, color } })} />
       <button
         type="button"
         aria-label="Gras"
