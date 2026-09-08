@@ -69,6 +69,8 @@ import { PdfEditLayer } from "./components/PdfEditLayer";
 import { TextEditToolbar } from "./components/TextEditToolbar";
 import { ShapeEditToolbar } from "./components/ShapeEditToolbar";
 import { FreehandEditToolbar } from "./components/FreehandEditToolbar";
+import { AppLogo } from "./components/AppLogo";
+import { AppStateScreen } from "./components/AppStateScreen";
 import { ColorPicker } from "./components/ColorPicker";
 import { SaveAsDialog } from "./components/SaveAsDialog";
 import {
@@ -2212,6 +2214,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [isRestoringDocuments, setIsRestoringDocuments] = useState(
     () => (storedPreferences?.documentOrder.length ?? 0) > 0,
   );
+  const [restorationError, setRestorationError] = useState<string | null>(null);
+  const [restorationAttempt, setRestorationAttempt] = useState(0);
   const activeDocument = useMemo(
     () => documents.find((document) => document.id === activeDocumentId) ?? null,
     [activeDocumentId, documents],
@@ -2378,98 +2382,110 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     let isCancelled = false;
 
     async function restoreDocuments() {
-      const storedIds = storedPreferences?.documentOrder ?? [];
+      try {
+        const storedIds = storedPreferences?.documentOrder ?? [];
 
-      if (storedIds.length === 0) {
+        if (storedIds.length === 0) {
+          if (!isCancelled) {
+            setIsRestoringDocuments(false);
+          }
+
+          return;
+        }
+
+        setStatus("Restauration des documents enregistrés...");
+
+        const restoredDocuments: OpenPdfDocument[] = [];
+        let failedCount = 0;
+        const storedDocuments = await loadStoredDocuments(storedIds);
+        failedCount += Math.max(0, storedIds.length - storedDocuments.length);
+
+        for (const storedDocument of storedDocuments) {
+          try {
+            restoredDocuments.push(await restoreOpenDocument(storedDocument));
+          } catch {
+            failedCount += 1;
+          }
+        }
+
+        if (isCancelled) {
+          restoredDocuments.forEach(releasePdfDocument);
+          return;
+        }
+
+        const restoredPlans: Record<string, OrganizePagePlan> = {};
+        const restoredSelectedPageIds: Record<string, string | null> = {};
+        let invalidPlanCount = 0;
+        const restoredSourceDocuments = Object.fromEntries(
+          restoredDocuments.map((document) => [
+            document.id,
+            { fileName: document.fileName, pageCount: document.pageCount },
+          ]),
+        );
+
+        restoredDocuments.forEach((restoredDocument) => {
+          const storedPlan = loadOrganizationPlan(restoredDocument.id);
+
+          if (!storedPlan) {
+            return;
+          }
+
+          const hydratedPlan = hydratePlanSourceNames(storedPlan.plan, restoredSourceDocuments);
+
+          if (!isValidPagePlanForDocument(hydratedPlan, restoredDocument.id, restoredSourceDocuments)) {
+            removeOrganizationPlan(restoredDocument.id);
+            invalidPlanCount += 1;
+            return;
+          }
+
+          restoredPlans[restoredDocument.id] = hydratedPlan;
+          restoredSelectedPageIds[restoredDocument.id] = hydratedPlan.pages.some(
+            (page) => page.id === storedPlan.selectedPageId,
+          )
+            ? storedPlan.selectedPageId
+            : null;
+        });
+
+        setDocuments(restoredDocuments);
+        setOrganizationPlans(restoredPlans);
+        setSelectedPageIdsByDocument(restoredSelectedPageIds);
+        setActiveDocumentId(
+          storedPreferences?.activeDocumentId &&
+            restoredDocuments.some((document) => document.id === storedPreferences.activeDocumentId)
+            ? storedPreferences.activeDocumentId
+            : restoredDocuments[restoredDocuments.length - 1]?.id ?? null,
+        );
+        if (restoredDocuments.length > 0) {
+          pendingFocusTargetRef.current = "viewer";
+        }
+        const restorationMessages: string[] = [];
+        if (failedCount > 0) {
+          restorationMessages.push(
+            failedCount === 1
+              ? "1 document n'a pas pu être restauré."
+              : `${failedCount} documents n'ont pas pu être restaurés.`,
+          );
+        }
+        if (invalidPlanCount > 0) {
+          restorationMessages.push(
+            invalidPlanCount === 1
+              ? "1 plan d'organisation a été réinitialisé car une source est indisponible ou invalide."
+              : `${invalidPlanCount} plans d'organisation ont été réinitialisés car une source est indisponible ou invalide.`,
+          );
+        }
+        setStatus(restorationMessages.join(" "));
+        setRestorationError(null);
+        setIsRestoringDocuments(false);
+      } catch (error) {
         if (!isCancelled) {
+          setRestorationError(
+            error instanceof Error
+              ? error.message
+              : "La restauration des documents a échoué.",
+          );
           setIsRestoringDocuments(false);
         }
-
-        return;
       }
-
-      setStatus("Restauration des documents enregistrés...");
-
-      const restoredDocuments: OpenPdfDocument[] = [];
-      let failedCount = 0;
-      const storedDocuments = await loadStoredDocuments(storedIds);
-      failedCount += Math.max(0, storedIds.length - storedDocuments.length);
-
-      for (const storedDocument of storedDocuments) {
-        try {
-          restoredDocuments.push(await restoreOpenDocument(storedDocument));
-        } catch {
-          failedCount += 1;
-        }
-      }
-
-      if (isCancelled) {
-        restoredDocuments.forEach(releasePdfDocument);
-        return;
-      }
-
-      const restoredPlans: Record<string, OrganizePagePlan> = {};
-      const restoredSelectedPageIds: Record<string, string | null> = {};
-      let invalidPlanCount = 0;
-      const restoredSourceDocuments = Object.fromEntries(
-        restoredDocuments.map((document) => [
-          document.id,
-          { fileName: document.fileName, pageCount: document.pageCount },
-        ]),
-      );
-
-      restoredDocuments.forEach((restoredDocument) => {
-        const storedPlan = loadOrganizationPlan(restoredDocument.id);
-
-        if (!storedPlan) {
-          return;
-        }
-
-        const hydratedPlan = hydratePlanSourceNames(storedPlan.plan, restoredSourceDocuments);
-
-        if (!isValidPagePlanForDocument(hydratedPlan, restoredDocument.id, restoredSourceDocuments)) {
-          removeOrganizationPlan(restoredDocument.id);
-          invalidPlanCount += 1;
-          return;
-        }
-
-        restoredPlans[restoredDocument.id] = hydratedPlan;
-        restoredSelectedPageIds[restoredDocument.id] = hydratedPlan.pages.some(
-          (page) => page.id === storedPlan.selectedPageId,
-        )
-          ? storedPlan.selectedPageId
-          : null;
-      });
-
-      setDocuments(restoredDocuments);
-      setOrganizationPlans(restoredPlans);
-      setSelectedPageIdsByDocument(restoredSelectedPageIds);
-      setActiveDocumentId(
-        storedPreferences?.activeDocumentId &&
-          restoredDocuments.some((document) => document.id === storedPreferences.activeDocumentId)
-          ? storedPreferences.activeDocumentId
-          : restoredDocuments[restoredDocuments.length - 1]?.id ?? null,
-      );
-      if (restoredDocuments.length > 0) {
-        pendingFocusTargetRef.current = "viewer";
-      }
-      const restorationMessages: string[] = [];
-      if (failedCount > 0) {
-        restorationMessages.push(
-          failedCount === 1
-            ? "1 document n'a pas pu être restauré."
-            : `${failedCount} documents n'ont pas pu être restaurés.`,
-        );
-      }
-      if (invalidPlanCount > 0) {
-        restorationMessages.push(
-          invalidPlanCount === 1
-            ? "1 plan d'organisation a été réinitialisé car une source est indisponible ou invalide."
-            : `${invalidPlanCount} plans d'organisation ont été réinitialisés car une source est indisponible ou invalide.`,
-        );
-      }
-      setStatus(restorationMessages.join(" "));
-      setIsRestoringDocuments(false);
     }
 
     void restoreDocuments();
@@ -2477,7 +2493,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     return () => {
       isCancelled = true;
     };
-  }, [storedPreferences]);
+  }, [restorationAttempt, storedPreferences]);
 
   useEffect(() => {
     if (isRestoringDocuments) {
@@ -4065,6 +4081,39 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setIsShapePickerOpen(true);
   }, [isShapePickerOpen]);
 
+  if (isRestoringDocuments) {
+    return (
+      <AppStateScreen
+        state="loading"
+        title="Restauration en cours"
+        description="Préparation de vos documents locaux…"
+      />
+    );
+  }
+
+  if (restorationError) {
+    return (
+      <AppStateScreen
+        state="error"
+        title="Impossible de restaurer vos documents"
+        description="L’application n’a pas pu terminer son initialisation."
+        action={
+          <button
+            type="button"
+            onClick={() => {
+              setRestorationError(null);
+              setIsRestoringDocuments(true);
+              setRestorationAttempt((attempt) => attempt + 1);
+            }}
+          >
+            Réessayer
+          </button>
+        }
+        details={<code>{restorationError}</code>}
+      />
+    );
+  }
+
   return (
     <main className="app-shell">
       <header
@@ -4073,7 +4122,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         aria-label="Contrôles PDF"
       >
         <div className="app-brand">
-          <span className="app-brand__mark" aria-hidden="true">P</span>
+          <AppLogo className="app-brand__mark" size={24} />
           <h1>PDF Studio Local</h1>
         </div>
 

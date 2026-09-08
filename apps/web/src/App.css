@@ -112,23 +112,67 @@ body {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
-.desktop-backend-state {
+.app-state-screen {
   min-height: 100%;
   display: grid;
   place-content: center;
   justify-items: center;
-  gap: 0.75rem;
+  gap: 0.65rem;
   padding: 2rem;
   text-align: center;
 }
 
-.desktop-backend-state p {
+.app-state-screen h1 {
+  font-size: 1.25rem;
+}
+
+.app-state-screen p {
   margin: 0;
 }
 
-.desktop-backend-log {
+.app-state-screen__logo {
+  color: var(--accent);
+  filter: drop-shadow(0 8px 16px rgb(37 99 235 / 22%));
+}
+
+.app-state-screen__brand {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.app-state-screen__description {
+  max-width: 30rem;
+  color: var(--text-secondary);
+}
+
+.app-state-screen__spinner {
+  width: 1.2rem;
+  height: 1.2rem;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: app-state-spin 0.7s linear infinite;
+}
+
+.app-state-screen__action {
+  margin-top: 0.35rem;
+}
+
+.app-state-screen__details {
   max-width: 48rem;
+  margin-top: 0.25rem;
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.app-state-screen__details > div {
+  margin-top: 0.55rem;
   overflow-wrap: anywhere;
+}
+
+@keyframes app-state-spin {
+  to { transform: rotate(360deg); }
 }
 
 .desktop-backend-ready {
@@ -2300,17 +2344,11 @@ button:disabled {
 }
 
 .app-brand__mark {
-  display: grid;
   width: 1.65rem;
   height: 1.65rem;
   flex: 0 0 auto;
-  place-items: center;
-  color: #ffffff;
-  border-radius: 8px;
-  background: linear-gradient(145deg, var(--accent), #68a4ff);
-  box-shadow: 0 5px 12px rgb(21 94 239 / 24%);
-  font-size: 0.9rem;
-  font-weight: 800;
+  color: var(--accent);
+  filter: drop-shadow(0 4px 8px rgb(37 99 235 / 20%));
 }
 
 .app-brand h1 {

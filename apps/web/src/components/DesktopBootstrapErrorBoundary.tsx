@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { logDesktopStartupError } from "../desktop/startupDiagnostics";
+import { AppStateScreen } from "./AppStateScreen";
 
 type DesktopBootstrapErrorBoundaryProps = {
   children: ReactNode;
@@ -26,14 +27,13 @@ export class DesktopBootstrapErrorBoundary extends Component<
   render() {
     if (this.state.failed) {
       return (
-        <main className="desktop-backend-state" role="alert">
-          <h1>PDF Studio Local</h1>
-          <p>L’interface desktop n’a pas pu démarrer.</p>
-          <p>Ouvrez les outils de développement pour consulter l’erreur.</p>
-          <button type="button" onClick={() => window.location.reload()}>
-            Recharger l’application
-          </button>
-        </main>
+        <AppStateScreen
+          state="error"
+          title="Une erreur inattendue est survenue"
+          description="L’interface n’a pas pu démarrer correctement."
+          action={<button type="button" onClick={() => window.location.reload()}>Réessayer</button>}
+          details="Consultez la console de développement pour obtenir les détails de diagnostic."
+        />
       );
     }
 

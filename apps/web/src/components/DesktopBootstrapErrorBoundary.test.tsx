@@ -21,8 +21,9 @@ describe("DesktopBootstrapErrorBoundary", () => {
     );
 
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "L’interface desktop n’a pas pu démarrer.",
+      "Une erreur inattendue est survenue",
     );
+    expect(screen.getByRole("button", { name: "Réessayer" })).toBeInTheDocument();
     expect(consoleError).toHaveBeenCalledWith(
       "[desktop:start:react]",
       expect.any(Error),

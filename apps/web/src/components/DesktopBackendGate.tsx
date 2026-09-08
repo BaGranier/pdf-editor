@@ -9,6 +9,7 @@ import {
   logDesktopReactMounted,
   logDesktopStartupError,
 } from "../desktop/startupDiagnostics";
+import { AppStateScreen } from "./AppStateScreen";
 
 type DesktopBackendGateProps = {
   children: (backendBaseUrl: string | null) => ReactNode;
@@ -87,10 +88,11 @@ export function DesktopBackendGate({
 
   if (state.kind === "starting") {
     return (
-      <main className="desktop-backend-state" aria-live="polite">
-        <h1>PDF Studio Local</h1>
-        <p>Démarrage du moteur PDF local…</p>
-      </main>
+      <AppStateScreen
+        state="loading"
+        title="Démarrage en cours"
+        description="Démarrage du moteur PDF local…"
+      />
     );
   }
 
@@ -106,18 +108,13 @@ export function DesktopBackendGate({
     };
 
     return (
-      <main className="desktop-backend-state" role="alert">
-        <h1>PDF Studio Local</h1>
-        <p>{state.status.message || UNKNOWN_ERROR.message}</p>
-        {state.status.logPath ? (
-          <p className="desktop-backend-log">
-            Journal : <code>{state.status.logPath}</code>
-          </p>
-        ) : null}
-        <button type="button" onClick={() => void retry()}>
-          Réessayer
-        </button>
-      </main>
+      <AppStateScreen
+        state="error"
+        title="Impossible de démarrer"
+        description={state.status.message ?? "Impossible de démarrer le moteur PDF local."}
+        action={<button type="button" onClick={() => void retry()}>Réessayer</button>}
+        details={state.status.logPath ? <>Journal : <code>{state.status.logPath}</code></> : undefined}
+      />
     );
   }
 
