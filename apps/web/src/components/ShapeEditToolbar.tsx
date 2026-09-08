@@ -1,11 +1,13 @@
 import { useRef } from "react";
 import { SHAPE_TYPES, type ShapeEdit, type ShapeType } from "../editing/types";
 import { ColorPicker } from "./ColorPicker";
+import { PropertySlider } from "./PropertySlider";
 
 type ShapeEditToolbarProps = {
   edit: ShapeEdit;
   eyedropperTarget: "stroke" | "fill" | null;
-  onUpdate: (patch: Partial<ShapeEdit>) => void;
+  onUpdate: (patch: Partial<ShapeEdit>, coalesceKey?: string) => void;
+  onFinishUpdate: (coalesceKey: string) => void;
   onPickColor: (target: "stroke" | "fill") => void;
   onDelete: () => void;
 };
@@ -20,6 +22,7 @@ export function ShapeEditToolbar({
   edit,
   eyedropperTarget,
   onUpdate,
+  onFinishUpdate,
   onPickColor,
   onDelete,
 }: ShapeEditToolbarProps) {
@@ -55,23 +58,18 @@ export function ShapeEditToolbar({
         </select>
       </label>
       <ColorPicker label="Contour" value={edit.style.strokeColor} onChange={(strokeColor) => onUpdate({ style: { ...edit.style, strokeColor } })} onPickColor={() => onPickColor("stroke")} eyedropperActive={eyedropperTarget === "stroke"} />
-      <label>
-        Épaisseur
-        <input
-          type="number"
-          aria-label="Épaisseur du contour"
-          min="0.5"
-          max="50"
-          step="0.5"
-          value={edit.style.strokeWidth}
-          onChange={(event) => {
-            const strokeWidth = Number(event.target.value);
-            if (Number.isFinite(strokeWidth) && strokeWidth >= 0.5 && strokeWidth <= 50) {
-              onUpdate({ style: { ...edit.style, strokeWidth } });
-            }
-          }}
-        />
-      </label>
+      <PropertySlider
+        label="Épaisseur du contour"
+        value={edit.style.strokeWidth}
+        min={1}
+        max={20}
+        step={1}
+        unit="pt"
+        color={edit.style.strokeColor}
+        previewLabel={`Aperçu du contour ${edit.style.strokeWidth} pt`}
+        onChange={(strokeWidth) => onUpdate({ style: { ...edit.style, strokeWidth } }, "stroke-width")}
+        onCommit={() => onFinishUpdate("stroke-width")}
+      />
       {supportsFill ? (
         <>
           <ColorPicker label="Remplissage" value={edit.style.fillColor ?? lastFillColor.current} disabled={edit.style.fillColor === null} onChange={(fillColor) => onUpdate({ style: { ...edit.style, fillColor } })} onPickColor={() => onPickColor("fill")} eyedropperActive={eyedropperTarget === "fill"} />

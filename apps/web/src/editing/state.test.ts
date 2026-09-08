@@ -4,7 +4,7 @@ import {
   pdfEditsReducer,
   type PdfEditsByDocument,
 } from "./state";
-import type { AddTextEdit, PdfEdit, ShapeEdit, SignatureEdit, TextMarkupEdit } from "./types";
+import type { AddTextEdit, FreehandEdit, PdfEdit, ShapeEdit, SignatureEdit, TextMarkupEdit } from "./types";
 
 const textEdit: AddTextEdit = {
   id: "text-1",
@@ -52,6 +52,15 @@ const textMarkupEdit: TextMarkupEdit = {
     { x0: 10, y0: 40, x1: 100, y1: 55 },
   ],
   color: "#eab308",
+};
+
+const freehandEdit: FreehandEdit = {
+  id: "freehand-1",
+  type: "freehand",
+  page: 1,
+  rect: { x0: 20, y0: 20, x1: 90, y1: 90 },
+  points: [{ x: 20, y: 20 }, { x: 90, y: 90 }],
+  style: { color: "#2563eb", strokeWidth: 3, opacity: 1 },
 };
 
 function addEdits(documentId: string, edits: PdfEdit[]) {
@@ -223,5 +232,31 @@ describe("pdfEditsReducer history", () => {
     expect(state["doc-a"].edits).toEqual([]);
     state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
     expect(state["doc-a"].edits).toEqual([textMarkupEdit]);
+  });
+
+  it("coalesces a slider drag into one dirty undoable freehand update", () => {
+    let state = addEdits("doc-a", [freehandEdit]);
+    state = pdfEditsReducer(state, { type: "mark_saved", documentId: "doc-a" });
+    const key = "freehand-1:opacity";
+    state = pdfEditsReducer(state, {
+      type: "replace",
+      documentId: "doc-a",
+      edit: { ...freehandEdit, style: { ...freehandEdit.style, opacity: 0.5 } },
+      coalesceKey: key,
+    });
+    state = pdfEditsReducer(state, {
+      type: "replace",
+      documentId: "doc-a",
+      edit: { ...freehandEdit, style: { ...freehandEdit.style, opacity: 0.35 } },
+      coalesceKey: key,
+    });
+    state = pdfEditsReducer(state, { type: "finish_coalescing", documentId: "doc-a", coalesceKey: key });
+
+    expect(state["doc-a"].isDirty).toBe(true);
+    expect(state["doc-a"].past).toHaveLength(2);
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toEqual([freehandEdit]);
+    state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
+    expect(state["doc-a"].edits[0]).toMatchObject({ style: { opacity: 0.35 } });
   });
 });

@@ -84,6 +84,7 @@ import {
   type AddTextEdit,
   type EditingTool,
   type FreehandEdit,
+  type FreehandStyle,
   type PdfEdit,
   type PdfRect,
   type SignatureEdit,
@@ -426,6 +427,7 @@ type PdfPageCanvasProps = {
   signatureImages: Record<string, SignatureImage>;
   selectedEditId: string | null;
   activeTool: EditingTool;
+  freehandStyle: FreehandStyle;
   pendingSignatureImage: SignatureImage | null;
   eyedropperTarget: "stroke" | "fill" | null;
   scrollRootRef: RefObject<HTMLElement | null>;
@@ -451,6 +453,7 @@ function PdfPageCanvas({
   signatureImages,
   selectedEditId,
   activeTool,
+  freehandStyle,
   pendingSignatureImage,
   eyedropperTarget,
   scrollRootRef,
@@ -742,6 +745,7 @@ function PdfPageCanvas({
             images={signatureImages}
             selectedEditId={selectedEditId}
             activeTool={activeTool}
+            freehandStyle={freehandStyle}
             pendingSignatureImage={pendingSignatureImage}
             onAddText={(rect) => onAddText(sourcePageNumber, rect)}
             onAddShape={(shapeType, rect) =>
@@ -767,6 +771,7 @@ type PdfViewerProps = {
   signatureImages: Record<string, SignatureImage>;
   selectedEditId: string | null;
   activeTool: EditingTool;
+  freehandStyle: FreehandStyle;
   pendingSignatureImage: SignatureImage | null;
   eyedropperTarget: "stroke" | "fill" | null;
   onZoomChange: (documentId: string, delta: number) => void;
@@ -793,6 +798,7 @@ function PdfViewer({
   signatureImages,
   selectedEditId,
   activeTool,
+  freehandStyle,
   pendingSignatureImage,
   eyedropperTarget,
   onZoomChange,
@@ -1135,6 +1141,7 @@ function PdfViewer({
               signatureImages={signatureImages}
               selectedEditId={selectedEditId}
               activeTool={isActiveDocumentSource ? activeTool : "select"}
+              freehandStyle={freehandStyle}
               pendingSignatureImage={
                 isActiveDocumentSource ? pendingSignatureImage : null
               }
@@ -2156,6 +2163,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("read");
   const [activeEditingTool, setActiveEditingTool] =
     useState<EditingTool>("select");
+  const [freehandToolStyle, setFreehandToolStyle] = useState<FreehandStyle>(
+    DEFAULT_FREEHAND_STYLE,
+  );
   const [pdfEditsByDocument, dispatchPdfEdits] = useReducer(
     pdfEditsReducer,
     {},
@@ -2275,6 +2285,18 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         edit.id === selectedEditId && edit.type === "shape",
     ) ?? null;
   const selectedFreehandEdit = activePdfEdits.find((edit): edit is FreehandEdit => edit.id === selectedEditId && edit.type === "freehand") ?? null;
+  const freehandInspectorEdit = selectedFreehandEdit ?? (
+    activeEditingTool === "freehand"
+      ? {
+          id: "freehand-tool-style",
+          type: "freehand" as const,
+          page: activePageNumber || 1,
+          rect: { x0: 0, y0: 0, x1: 0, y1: 0 },
+          points: [{ x: 0, y: 0 }, { x: 0, y: 0 }],
+          style: freehandToolStyle,
+        }
+      : null
+  );
   const selectedTextMarkupEdit = activePdfEdits.find((edit): edit is TextMarkupEdit => edit.id === selectedEditId && edit.type === "text_markup") ?? null;
   const selectedPdfEdit =
     activePdfEdits.find((edit) => edit.id === selectedEditId) ?? null;
@@ -2656,12 +2678,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     if (!activeDocument || points.length < 2) return;
     const xs = points.map((point) => point.x);
     const ys = points.map((point) => point.y);
-    const edit: FreehandEdit = { id: `freehand-${Date.now()}-${nextFreehandEditId.current++}`, type: "freehand", page: pageNumber, points, rect: { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs) + 0.1, y1: Math.max(...ys) + 0.1 }, style: { ...DEFAULT_FREEHAND_STYLE } };
+    const edit: FreehandEdit = { id: `freehand-${Date.now()}-${nextFreehandEditId.current++}`, type: "freehand", page: pageNumber, points, rect: { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs) + 0.1, y1: Math.max(...ys) + 0.1 }, style: { ...freehandToolStyle } };
     dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
     setSelectedEditId(edit.id);
     setActiveEditingTool("select");
     setExportFeedback(null);
-  }, [activeDocument]);
+  }, [activeDocument, freehandToolStyle]);
 
   const addTextMarkupEdit = useCallback((kind: TextMarkupKind, color: string) => {
     if (!activeDocument || !textMarkupSelection) return;
@@ -2702,12 +2724,26 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, [textMarkupSelection]);
 
   const updatePdfEdit = useCallback(
-    (edit: PdfEdit) => {
+    (edit: PdfEdit, coalesceKey?: string) => {
       if (!activeDocument) {
         return;
       }
-      dispatchPdfEdits({ type: "replace", documentId: activeDocument.id, edit });
+      dispatchPdfEdits({ type: "replace", documentId: activeDocument.id, edit, coalesceKey });
       setExportFeedback(null);
+    },
+    [activeDocument],
+  );
+
+  const finishPdfEditCoalescing = useCallback(
+    (editId: string, property: string) => {
+      if (!activeDocument) {
+        return;
+      }
+      dispatchPdfEdits({
+        type: "finish_coalescing",
+        documentId: activeDocument.id,
+        coalesceKey: `${editId}:${property}`,
+      });
     },
     [activeDocument],
   );
@@ -4480,6 +4516,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             signatureImages={signatureImages}
             selectedEditId={selectedEditId}
             activeTool={activeEditingTool}
+            freehandStyle={freehandToolStyle}
             pendingSignatureImage={pendingSignatureImage}
             eyedropperTarget={eyedropperTarget}
             onZoomChange={updateDocumentZoom}
@@ -4549,9 +4586,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <ShapeEditToolbar
               edit={selectedShapeEdit}
               eyedropperTarget={eyedropperTarget}
-              onUpdate={(patch) =>
-                updatePdfEdit({ ...selectedShapeEdit, ...patch })
+              onUpdate={(patch, coalesceKey) =>
+                updatePdfEdit(
+                  { ...selectedShapeEdit, ...patch },
+                  coalesceKey ? `${selectedShapeEdit.id}:${coalesceKey}` : undefined,
+                )
               }
+              onFinishUpdate={(coalesceKey) => finishPdfEditCoalescing(selectedShapeEdit.id, coalesceKey)}
               onPickColor={(target) =>
                 setEyedropperTarget((currentTarget) =>
                   currentTarget === target ? null : target,
@@ -4559,8 +4600,31 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               }
               onDelete={() => deletePdfEdit(selectedShapeEdit.id)}
             />
-          ) : workspaceMode === "read" && selectedFreehandEdit ? (
-            <FreehandEditToolbar edit={selectedFreehandEdit} onUpdate={(patch) => updatePdfEdit({ ...selectedFreehandEdit, ...patch })} onDelete={() => deletePdfEdit(selectedFreehandEdit.id)} />
+          ) : workspaceMode === "read" && freehandInspectorEdit ? (
+            <FreehandEditToolbar
+              edit={freehandInspectorEdit}
+              onUpdate={(patch, coalesceKey) => {
+                const edit = { ...freehandInspectorEdit, ...patch };
+                if (edit.style) {
+                  setFreehandToolStyle({
+                    ...edit.style,
+                    opacity: edit.style.opacity ?? 1,
+                  });
+                }
+                if (selectedFreehandEdit) {
+                  updatePdfEdit(
+                    edit,
+                    coalesceKey ? `${selectedFreehandEdit.id}:${coalesceKey}` : undefined,
+                  );
+                }
+              }}
+              onFinishUpdate={(coalesceKey) => {
+                if (selectedFreehandEdit) {
+                  finishPdfEditCoalescing(selectedFreehandEdit.id, coalesceKey);
+                }
+              }}
+              onDelete={selectedFreehandEdit ? () => deletePdfEdit(selectedFreehandEdit.id) : undefined}
+            />
           ) : workspaceMode === "read" && selectedTextMarkupEdit ? (
             <section className="shape-edit-toolbar" aria-label="Propriétés de l'annotation texte"><strong>{selectedTextMarkupEdit.kind === "highlight" ? "Surlignage" : selectedTextMarkupEdit.kind === "underline" ? "Soulignement" : "Barré"}</strong><ColorPicker label="Couleur de l'annotation" value={selectedTextMarkupEdit.color} onChange={(color) => updatePdfEdit({ ...selectedTextMarkupEdit, color })} /><button type="button" onClick={() => deletePdfEdit(selectedTextMarkupEdit.id)}>Supprimer l'annotation</button></section>
           ) : selectedPdfEdit?.type === "signature" ? (

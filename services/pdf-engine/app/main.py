@@ -139,6 +139,7 @@ class FreehandPoint(BaseModel):
 class FreehandStyle(BaseModel):
     color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
     stroke_width: float = Field(alias="strokeWidth", ge=0.5, le=50)
+    opacity: float = Field(default=1, ge=0, le=1, allow_inf_nan=False)
 
 
 class FreehandEdit(BaseModel):
@@ -671,7 +672,13 @@ def apply_visual_edits(
                             )
                     else:
                         points = [fitz.Point(point.x, point.y) * page.transformation_matrix for point in edit.points]
-                        page.draw_polyline(points, color=_parse_hex_color(edit.style.color), width=edit.style.stroke_width, overlay=True)
+                        page.draw_polyline(
+                            points,
+                            color=_parse_hex_color(edit.style.color),
+                            width=edit.style.stroke_width,
+                            stroke_opacity=edit.style.opacity,
+                            overlay=True,
+                        )
                 for markup in sorted(text_markup_edits_by_output_page.get(output_page_index, []), key=lambda item: item.order):
                     color = _parse_hex_color(markup.color)
                     for rect in markup.rects:

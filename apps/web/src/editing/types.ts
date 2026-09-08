@@ -34,7 +34,12 @@ export const ANNOTATION_COLORS = [
 ] as const;
 
 export type PdfPoint = { x: number; y: number };
-export type FreehandStyle = { color: string; strokeWidth: number };
+export type FreehandStyle = {
+  color: string;
+  strokeWidth: number;
+  /** Normalized opacity. Stored edits created before this property are opaque. */
+  opacity: number;
+};
 export type TextMarkupKind = "highlight" | "underline" | "strikeout";
 
 export type EditingTool =
@@ -107,4 +112,8 @@ export const DEFAULT_SHAPE_STYLE: ShapeStyle = {
   fillColor: null,
 };
 
-export const DEFAULT_FREEHAND_STYLE: FreehandStyle = { color: "#2563eb", strokeWidth: 3 };
+export const DEFAULT_FREEHAND_STYLE: FreehandStyle = {
+  color: "#2563eb",
+  strokeWidth: 3,
+  opacity: 1,
+};

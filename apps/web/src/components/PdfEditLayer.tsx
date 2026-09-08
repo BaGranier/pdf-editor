@@ -9,6 +9,7 @@ import {
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type {
   EditingTool,
+  FreehandStyle,
   PdfEdit,
   PdfRect,
   PdfPoint,
@@ -28,6 +29,7 @@ type PdfEditLayerProps = {
   images: Record<string, SignatureImage>;
   selectedEditId: string | null;
   activeTool: EditingTool;
+  freehandStyle: FreehandStyle;
   pendingSignatureImage: SignatureImage | null;
   onAddText: (rect: PdfRect) => void;
   onAddShape: (shapeType: ShapeType, rect: PdfRect) => void;
@@ -45,6 +47,7 @@ export function PdfEditLayer({
   images,
   selectedEditId,
   activeTool,
+  freehandStyle,
   pendingSignatureImage,
   onAddText,
   onAddShape,
@@ -210,7 +213,7 @@ export function PdfEditLayer({
           shapeType={activeTool.startsWith("shape_") ? activeTool.replace("shape_", "") as ShapeType : null}
         />
       ) : null}
-      {freehandPreview.length > 1 ? <FreehandPreview points={freehandPreview} viewport={viewport} /> : null}
+      {freehandPreview.length > 1 ? <FreehandPreview points={freehandPreview} viewport={viewport} style={freehandStyle} /> : null}
       {edits.map((edit) => {
         if (edit.type === "add_text") {
           return (
@@ -275,9 +278,10 @@ export function PdfEditLayer({
   );
 }
 
-function FreehandPreview({ points, viewport }: { points: PdfPoint[]; viewport: PageViewport }) {
+function FreehandPreview({ points, viewport, style }: { points: PdfPoint[]; viewport: PageViewport; style: FreehandStyle }) {
   const path = points.map((point, index) => { const [x, y] = viewport.convertToViewportPoint(point.x, point.y); return `${index ? "L" : "M"}${x} ${y}`; }).join(" ");
-  return <svg className="pdf-freehand-preview" viewBox={`0 0 ${viewport.width} ${viewport.height}`} aria-hidden="true"><path d={path} fill="none" stroke="var(--accent)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+  const scale = Math.hypot(viewport.transform[0], viewport.transform[1]);
+  return <svg className="pdf-freehand-preview" viewBox={`0 0 ${viewport.width} ${viewport.height}`} aria-hidden="true"><path d={path} fill="none" stroke={style.color} strokeOpacity={style.opacity ?? 1} strokeWidth={Math.max(1, style.strokeWidth * scale)} strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
 function CreationPreview({

@@ -16,13 +16,15 @@ export type DocumentEditingState = {
   savedRevision: number;
   nextRevision: number;
   externalDirty: boolean;
+  coalescingKey: string | null;
 };
 
 export type PdfEditsByDocument = Record<string, DocumentEditingState>;
 
 export type PdfEditsAction =
   | { type: "add"; documentId: string; edit: PdfEdit }
-  | { type: "replace"; documentId: string; edit: PdfEdit }
+  | { type: "replace"; documentId: string; edit: PdfEdit; coalesceKey?: string }
+  | { type: "finish_coalescing"; documentId: string; coalesceKey: string }
   | { type: "delete"; documentId: string; editId: string }
   | { type: "undo"; documentId: string }
   | { type: "redo"; documentId: string }
@@ -44,6 +46,7 @@ const EMPTY_DOCUMENT_EDITING_STATE: DocumentEditingState = {
   savedRevision: 0,
   nextRevision: 1,
   externalDirty: false,
+  coalescingKey: null,
 };
 
 export function getDocumentEditingState(
@@ -91,7 +94,7 @@ function editsAreEqual(left: PdfEdit, right: PdfEdit) {
   }
 
   if (left.type === "freehand" && right.type === "freehand") {
-    return left.style.color === right.style.color && left.style.strokeWidth === right.style.strokeWidth && JSON.stringify(left.points) === JSON.stringify(right.points);
+    return left.style.color === right.style.color && left.style.strokeWidth === right.style.strokeWidth && (left.style.opacity ?? 1) === (right.style.opacity ?? 1) && JSON.stringify(left.points) === JSON.stringify(right.points);
   }
 
   if (left.type === "text_markup" && right.type === "text_markup") {
@@ -130,6 +133,7 @@ function commitEdits(
     savedRevision: current.savedRevision,
     nextRevision: current.nextRevision + 1,
     externalDirty: current.externalDirty,
+    coalescingKey: null,
   });
 }
 
@@ -153,14 +157,39 @@ export function pdfEditsReducer(
         return state;
       }
 
+      if (action.coalesceKey && current.coalescingKey === action.coalesceKey) {
+        return {
+          ...state,
+          [action.documentId]: withDerivedState({
+            ...current,
+            edits: current.edits.map((edit) =>
+              edit.id === action.edit.id ? action.edit : edit,
+            ),
+          }),
+        };
+      }
+
+      const committed = commitEdits(
+        current,
+        current.edits.map((edit) =>
+          edit.id === action.edit.id ? action.edit : edit,
+        ),
+      );
       return {
         ...state,
-        [action.documentId]: commitEdits(
-          current,
-          current.edits.map((edit) =>
-            edit.id === action.edit.id ? action.edit : edit,
-          ),
-        ),
+        [action.documentId]: action.coalesceKey
+          ? { ...committed, coalescingKey: action.coalesceKey }
+          : committed,
+      };
+    }
+    case "finish_coalescing": {
+      const current = getDocumentEditingState(state, action.documentId);
+      if (current.coalescingKey !== action.coalesceKey) {
+        return state;
+      }
+      return {
+        ...state,
+        [action.documentId]: { ...current, coalescingKey: null },
       };
     }
     case "delete": {
@@ -199,6 +228,7 @@ export function pdfEditsReducer(
           savedRevision: current.savedRevision,
           nextRevision: current.nextRevision,
           externalDirty: current.externalDirty,
+          coalescingKey: null,
         }),
       };
     }
@@ -223,6 +253,7 @@ export function pdfEditsReducer(
           savedRevision: current.savedRevision,
           nextRevision: current.nextRevision,
           externalDirty: current.externalDirty,
+          coalescingKey: null,
         }),
       };
     }
