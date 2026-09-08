@@ -115,9 +115,11 @@ export function ShapeEditBlock({
 
   const fill = edit.shapeType === "line" ? "none" : edit.style.fillColor ?? "none";
   const strokeWidth = Math.max(1, edit.style.strokeWidth * viewportScale);
+  const opacity = Math.min(1, Math.max(0, edit.style.opacity ?? 1));
   const shapeStyle = {
     stroke: edit.style.strokeColor,
     strokeWidth,
+    opacity,
     vectorEffect: "non-scaling-stroke" as const,
   };
 

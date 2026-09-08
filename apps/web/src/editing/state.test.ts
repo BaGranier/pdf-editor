@@ -202,7 +202,7 @@ describe("pdfEditsReducer history", () => {
     let state = addEdits("doc-a", [shapeEdit]);
     const styledShape = {
       ...shapeEdit,
-      style: { ...shapeEdit.style, fillColor: "#abcdef", strokeWidth: 4 },
+      style: { ...shapeEdit.style, fillColor: "#abcdef", strokeWidth: 4, opacity: 0.5 },
     };
     state = pdfEditsReducer(state, {
       type: "replace",
@@ -256,6 +256,32 @@ describe("pdfEditsReducer history", () => {
     expect(state["doc-a"].past).toHaveLength(2);
     state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
     expect(state["doc-a"].edits).toEqual([freehandEdit]);
+    state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
+    expect(state["doc-a"].edits[0]).toMatchObject({ style: { opacity: 0.35 } });
+  });
+
+  it("coalesces a shape opacity drag and treats missing opacity as fully opaque", () => {
+    let state = addEdits("doc-a", [shapeEdit]);
+    state = pdfEditsReducer(state, { type: "mark_saved", documentId: "doc-a" });
+    const key = "shape-1:opacity";
+    state = pdfEditsReducer(state, {
+      type: "replace",
+      documentId: "doc-a",
+      edit: { ...shapeEdit, style: { ...shapeEdit.style, opacity: 0.5 } },
+      coalesceKey: key,
+    });
+    state = pdfEditsReducer(state, {
+      type: "replace",
+      documentId: "doc-a",
+      edit: { ...shapeEdit, style: { ...shapeEdit.style, opacity: 0.35 } },
+      coalesceKey: key,
+    });
+    state = pdfEditsReducer(state, { type: "finish_coalescing", documentId: "doc-a", coalesceKey: key });
+
+    expect(state["doc-a"].isDirty).toBe(true);
+    expect(state["doc-a"].past).toHaveLength(2);
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toEqual([shapeEdit]);
     state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
     expect(state["doc-a"].edits[0]).toMatchObject({ style: { opacity: 0.35 } });
   });

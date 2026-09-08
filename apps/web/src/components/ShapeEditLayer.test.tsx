@@ -25,6 +25,35 @@ const rectangle: ShapeEdit = {
 };
 
 describe("ShapeEditBlock", () => {
+  it("defaults legacy shapes to full opacity and applies an explicit opacity to SVG primitives", () => {
+    const { container, rerender } = render(
+      <ShapeEditBlock edit={rectangle} viewport={viewport} selected={false} onSelect={vi.fn()} onMove={vi.fn()} />,
+    );
+    expect(container.querySelector("rect")).toHaveStyle({ opacity: "1" });
+
+    rerender(
+      <ShapeEditBlock
+        edit={{ ...rectangle, style: { ...rectangle.style, opacity: 0.35 } }}
+        viewport={viewport}
+        selected={false}
+        onSelect={vi.fn()}
+        onMove={vi.fn()}
+      />,
+    );
+    expect(container.querySelector("rect")).toHaveStyle({ opacity: "0.35" });
+
+    rerender(
+      <ShapeEditBlock
+        edit={{ ...rectangle, style: { ...rectangle.style, opacity: 0 } }}
+        viewport={viewport}
+        selected={false}
+        onSelect={vi.fn()}
+        onMove={vi.fn()}
+      />,
+    );
+    expect(container.querySelector("rect")).toHaveStyle({ opacity: "0" });
+  });
+
   it.each(["rectangle", "ellipse", "line"] as const)(
     "renders and selects a %s",
     (shapeType) => {

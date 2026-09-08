@@ -2877,6 +2877,11 @@ button:disabled {
   border-radius: 999px;
 }
 
+.property-slider__preview > .property-slider__preview-shape {
+  box-sizing: border-box;
+  border-radius: 4px;
+}
+
 .color-picker { display: grid; gap: 0.45rem; }
 .color-picker__label { color: var(--text-primary); font-weight: 650; }
 .color-picker__presets { display: grid; grid-template-columns: repeat(5, 1.6rem); gap: 0.35rem; }

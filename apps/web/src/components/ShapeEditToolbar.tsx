@@ -27,6 +27,8 @@ export function ShapeEditToolbar({
   onDelete,
 }: ShapeEditToolbarProps) {
   const supportsFill = edit.shapeType !== "line";
+  const opacity = Math.min(1, Math.max(0, edit.style.opacity ?? 1));
+  const opacityPercent = Math.round(opacity * 100);
   const lastFillColor = useRef(edit.style.fillColor ?? "#dbeafe");
   if (edit.style.fillColor !== null) {
     lastFillColor.current = edit.style.fillColor;
@@ -76,6 +78,22 @@ export function ShapeEditToolbar({
           <label className="shape-edit-toolbar__transparent"><input type="checkbox" aria-label="Remplissage transparent" checked={edit.style.fillColor === null} onChange={(event) => onUpdate({ style: { ...edit.style, fillColor: event.target.checked ? null : lastFillColor.current } })} /> Transparent</label>
         </>
       ) : null}
+      <PropertySlider
+        label="Opacité de la forme"
+        value={opacityPercent}
+        min={0}
+        max={100}
+        step={1}
+        unit="%"
+        color={edit.style.strokeColor}
+        opacity={opacity}
+        previewThickness={edit.style.strokeWidth}
+        previewKind={edit.shapeType === "line" ? "line" : "shape"}
+        previewFillColor={edit.style.fillColor}
+        previewLabel={`Aperçu de la forme à ${opacityPercent} % d’opacité`}
+        onChange={(nextPercent) => onUpdate({ style: { ...edit.style, opacity: nextPercent / 100 } }, "opacity")}
+        onCommit={() => onFinishUpdate("opacity")}
+      />
       <button type="button" className="shape-edit-toolbar__delete" onClick={onDelete}>
         Supprimer la forme
       </button>

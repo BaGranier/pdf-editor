@@ -115,6 +115,7 @@ class ShapeStyle(BaseModel):
         alias="fillColor",
         pattern=r"^#[0-9A-Fa-f]{6}$",
     )
+    opacity: float = Field(default=1, ge=0, le=1, allow_inf_nan=False)
 
 
 class ShapeEdit(BaseModel):
@@ -652,6 +653,8 @@ def apply_visual_edits(
                                 color=stroke,
                                 fill=fill,
                                 width=edit.style.stroke_width,
+                                stroke_opacity=edit.style.opacity,
+                                fill_opacity=edit.style.opacity,
                                 overlay=True,
                             )
                         elif edit.shape_type == "ellipse":
@@ -660,6 +663,8 @@ def apply_visual_edits(
                                 color=stroke,
                                 fill=fill,
                                 width=edit.style.stroke_width,
+                                stroke_opacity=edit.style.opacity,
+                                fill_opacity=edit.style.opacity,
                                 overlay=True,
                             )
                         else:
@@ -668,6 +673,7 @@ def apply_visual_edits(
                                 page_rect.br,
                                 color=stroke,
                                 width=edit.style.stroke_width,
+                                stroke_opacity=edit.style.opacity,
                                 overlay=True,
                             )
                     else:

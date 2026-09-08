@@ -8,6 +8,8 @@ type PropertySliderProps = {
   color: string;
   opacity?: number;
   previewThickness?: number;
+  previewKind?: "line" | "shape";
+  previewFillColor?: string | null;
   previewLabel: string;
   onChange: (value: number) => void;
   onCommit: () => void;
@@ -23,6 +25,8 @@ export function PropertySlider({
   color,
   opacity = 1,
   previewThickness = value,
+  previewKind = "line",
+  previewFillColor,
   previewLabel,
   onChange,
   onCommit,
@@ -54,9 +58,11 @@ export function PropertySlider({
       </div>
       <div className="property-slider__preview" aria-label={previewLabel}>
         <span
+          className={previewKind === "shape" ? "property-slider__preview-shape" : undefined}
           style={{
-            height: `${previewHeight}px`,
-            backgroundColor: color,
+            height: previewKind === "shape" ? "1.45rem" : `${previewHeight}px`,
+            backgroundColor: previewKind === "shape" ? previewFillColor ?? "transparent" : color,
+            border: previewKind === "shape" ? `${Math.min(8, previewHeight)}px solid ${color}` : undefined,
             opacity,
           }}
         />

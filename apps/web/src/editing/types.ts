@@ -24,6 +24,8 @@ export type ShapeStyle = {
   strokeColor: string;
   strokeWidth: number;
   fillColor: string | null;
+  /** Normalized opacity. Shapes created before this property are opaque. */
+  opacity?: number;
 };
 
 export const ANNOTATION_COLORS = [
@@ -110,6 +112,7 @@ export const DEFAULT_SHAPE_STYLE: ShapeStyle = {
   strokeColor: "#2563eb",
   strokeWidth: 2,
   fillColor: null,
+  opacity: 1,
 };
 
 export const DEFAULT_FREEHAND_STYLE: FreehandStyle = {

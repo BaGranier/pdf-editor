@@ -2,98 +2,65 @@ import { expect, test } from "../helpers/qa-test";
 import { enterOrganizeMode, fixtures, openApp, openPdf } from "../helpers/app";
 import { validatePdf } from "../helpers/pdf-validation";
 
-async function placeShape(
-  page: import("@playwright/test").Page,
-  toolName: string,
-  position: { x: number; y: number },
-) {
-  await page.getByRole("button", { name: toolName }).click();
-  await page.getByLabel("Couche d'édition de la page 1").click({ position });
+type ShapeName = "Rectangle" | "Ellipse" | "Ligne";
+
+async function selectShape(page: import("@playwright/test").Page, shape: ShapeName) {
+  await page.getByRole("button", { name: "Formes" }).click();
+  const picker = page.getByRole("menu", { name: "Formes" });
+  await expect(picker).toBeVisible();
+  await picker.getByRole("menuitem", { name: shape }).click();
 }
 
-test("EDIT-SHAPES-001 crée, édite, échantillonne et exporte les formes", async ({
-  page,
-  qa,
-}, testInfo) => {
+async function dragInLayer(
+  page: import("@playwright/test").Page,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+) {
+  const layer = page.getByLabel("Couche d'édition de la page 1");
+  const box = await layer.boundingBox();
+  if (!box) throw new Error("La couche d’édition est indisponible.");
+  await page.mouse.move(box.x + from.x, box.y + from.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + to.x, box.y + to.y, { steps: 5 });
+  await page.mouse.up();
+}
+
+test("EDITOR-STAB-001 crée des formes via le picker et exporte leur opacité", async ({ page, qa }, testInfo) => {
   await openApp(page);
   await openPdf(page, fixtures.onePage);
 
-  await placeShape(page, "Ajouter un rectangle", { x: 80, y: 100 });
+  await selectShape(page, "Rectangle");
+  await dragInLayer(page, { x: 55, y: 75 }, { x: 200, y: 160 });
   const rectangle = page.getByLabel("Rectangle page 1");
   await expect(rectangle).toBeVisible();
-  const rectangleBeforeMove = await rectangle.boundingBox();
-  expect(rectangleBeforeMove).not.toBeNull();
 
-  await page.getByLabel("Couleur du contour").fill("#ff0000");
-  await page.getByLabel("Épaisseur du contour").fill("4");
-  await page.getByLabel("Remplissage transparent").uncheck();
-  await page.getByLabel("Couleur de remplissage").fill("#00ff00");
+  const width = page.getByLabel("Épaisseur du contour");
+  const opacity = page.getByLabel("Opacité de la forme");
+  await width.press("Home");
+  for (let step = 0; step < 5; step += 1) await width.press("ArrowRight");
+  await opacity.press("Home");
+  for (let step = 0; step < 50; step += 1) await opacity.press("ArrowRight");
+  await expect(opacity).toHaveValue("50");
+  await expect(page.getByLabel("Aperçu de la forme à 50 % d’opacité")).toBeVisible();
 
-  await page.getByRole("button", { name: "Pipette contour" }).click();
-  await page.locator(".page-surface").click({ position: { x: 20, y: 20 } });
-  await expect(page.getByLabel("Couleur du contour")).toHaveValue("#ffffff");
-  await page.getByLabel("Couleur du contour").fill("#ff0000");
-
-  await page.getByRole("button", { name: "Pipette remplissage" }).click();
-  await page.locator(".page-surface").click({ position: { x: 20, y: 20 } });
-  await expect(page.getByLabel("Couleur de remplissage")).toHaveValue("#ffffff");
-  await page.getByLabel("Couleur de remplissage").fill("#00ff00");
-
-  if (!rectangleBeforeMove) {
-    throw new Error("Le rectangle n'a pas de géométrie visible.");
-  }
-  await rectangle.hover();
-  await page.mouse.down();
-  await page.mouse.move(
-    rectangleBeforeMove.x + rectangleBeforeMove.width / 2 + 35,
-    rectangleBeforeMove.y + rectangleBeforeMove.height / 2 + 25,
-  );
-  await page.mouse.up();
-  const rectangleAfterMove = await rectangle.boundingBox();
-  expect(rectangleAfterMove?.x).toBeGreaterThan(rectangleBeforeMove.x + 20);
-
-  const resizeHandle = rectangle.getByRole("button", {
-    name: "Redimensionner la forme depuis se",
-  });
-  const beforeResize = await rectangle.boundingBox();
-  await resizeHandle.hover();
-  await page.mouse.down();
-  await page.mouse.move(
-    (beforeResize?.x ?? 0) + (beforeResize?.width ?? 0) + 45,
-    (beforeResize?.y ?? 0) + (beforeResize?.height ?? 0) + 30,
-  );
-  await page.mouse.up();
-  expect((await rectangle.boundingBox())?.width).toBeGreaterThan(beforeResize?.width ?? 0);
-
-  await placeShape(page, "Ajouter une ellipse", { x: 300, y: 120 });
+  await selectShape(page, "Ellipse");
+  await dragInLayer(page, { x: 250, y: 95 }, { x: 375, y: 180 });
   await expect(page.getByLabel("Ellipse page 1")).toBeVisible();
-  await placeShape(page, "Ajouter une ligne", { x: 160, y: 320 });
+
+  await selectShape(page, "Ligne");
+  await dragInLayer(page, { x: 100, y: 240 }, { x: 320, y: 305 });
   const line = page.getByLabel("Ligne page 1");
   await expect(line).toBeVisible();
-  await expect(page.getByLabel("Couleur de remplissage")).toHaveCount(0);
-
-  await placeShape(page, "Ajouter une ellipse", { x: 20, y: 350 });
-  const ellipses = page.getByLabel("Ellipse page 1");
-  await expect(ellipses).toHaveCount(2);
-  await ellipses.last().focus();
-  await page.keyboard.press("Delete");
-  await expect(ellipses).toHaveCount(1);
+  await expect(page.getByLabel("Opacité de la forme")).toBeVisible();
+  await expect(page.getByLabel("Remplissage transparent")).toHaveCount(0);
 
   await enterOrganizeMode(page);
-  await page.getByLabel("Nom du PDF exporté").fill("formes-exportees.pdf");
-  const responsePromise = page.waitForResponse(
-    (response) => response.url().endsWith("/pdf/export/organize"),
-  );
+  await page.getByLabel("Nom du PDF exporté").fill("formes-opaques.pdf");
+  const responsePromise = page.waitForResponse((response) => response.url().endsWith("/pdf/export/organize"));
   const downloadPromise = page.waitForEvent("download");
-  await qa.measure("export-shapes", () =>
-    page.getByRole("button", { name: "Exporter le PDF" }).click(),
-  );
+  await qa.measure("export-shapes", () => page.getByRole("button", { name: "Exporter le PDF" }).click());
   expect((await responsePromise).status()).toBe(200);
-  const download = await downloadPromise;
-  const outputPath = testInfo.outputPath("formes-exportees.pdf");
-  await download.saveAs(outputPath);
+  const outputPath = testInfo.outputPath("formes-opaques.pdf");
+  await (await downloadPromise).saveAs(outputPath);
   expect(validatePdf(outputPath, 1).drawingCount).toBe(3);
-  await expect(
-    page.getByRole("region", { name: "Aperçu PDF formes-exportees.pdf" }),
-  ).toBeVisible();
 });

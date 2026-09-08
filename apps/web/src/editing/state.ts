@@ -89,7 +89,8 @@ function editsAreEqual(left: PdfEdit, right: PdfEdit) {
       left.shapeType === right.shapeType &&
       left.style.strokeColor === right.style.strokeColor &&
       left.style.strokeWidth === right.style.strokeWidth &&
-      left.style.fillColor === right.style.fillColor
+      left.style.fillColor === right.style.fillColor &&
+      (left.style.opacity ?? 1) === (right.style.opacity ?? 1)
     );
   }
 
