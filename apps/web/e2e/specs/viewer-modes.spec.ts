@@ -14,6 +14,11 @@ test("VIEWER-MODES-001 @smoke bascule entre continu, page unique et présentatio
   await expect(page.getByRole("button", { name: "Page précédente" })).toBeDisabled();
   await page.getByRole("button", { name: "Page suivante" }).click();
   await expect(viewer.locator(".pdf-page")).toHaveAttribute("data-page-number", "2");
+  await page.keyboard.press("ArrowRight");
+  await expect(viewer.locator(".pdf-page")).toHaveAttribute("data-page-number", "3");
+  await expect(viewerMode).toHaveValue("single-page");
+  await page.getByRole("button", { name: "Page précédente" }).click();
+  await expect(viewer.locator(".pdf-page")).toHaveAttribute("data-page-number", "2");
 
   await page.getByRole("button", { name: "Aller à la page 5" }).click();
   await expect(viewer.locator(".pdf-page")).toHaveAttribute("data-page-number", "5");

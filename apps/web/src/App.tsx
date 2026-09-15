@@ -108,6 +108,7 @@ import {
 } from "./editing/state";
 import { downloadPdfToBrowser } from "./saving/destination";
 import { getSuggestedPdfSaveName } from "./saving/fileName";
+import { computeFitScale } from "./viewer/fit";
 import "./App.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -814,6 +815,7 @@ type PdfViewerProps = {
   pendingSignatureImage: SignatureImage | null;
   eyedropperTarget: "stroke" | "fill" | null;
   onZoomChange: (documentId: string, delta: number) => void;
+  onZoomSet: (documentId: string, zoom: number) => void;
   onScrollPositionChange: (documentId: string, scrollLeft: number, scrollTop: number) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect) => void;
@@ -831,6 +833,7 @@ type PdfViewerProps = {
   viewerMode: ViewerMode;
   activePageNumber: number;
   onExitPresentation: () => void;
+  shouldFitToPage: boolean;
 };
 
 function PdfViewer({
@@ -845,6 +848,7 @@ function PdfViewer({
   pendingSignatureImage,
   eyedropperTarget,
   onZoomChange,
+  onZoomSet,
   onScrollPositionChange,
   onAddText,
   onAddShape,
@@ -862,6 +866,7 @@ function PdfViewer({
   viewerMode,
   activePageNumber,
   onExitPresentation,
+  shouldFitToPage,
 }: PdfViewerProps) {
   const viewerRef = useRef<HTMLElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
@@ -874,6 +879,7 @@ function PdfViewer({
     startScrollTop: number;
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [fitLayoutVersion, setFitLayoutVersion] = useState(0);
   const previousViewerModeRef = useRef<ViewerMode>(viewerMode);
   const pages = useMemo(
     () =>
@@ -894,6 +900,10 @@ function PdfViewer({
 
     pageRefs.current.set(pageNumber, node);
   }, []);
+
+  const goToPage = useCallback((pageNumber: number) => {
+    onActivePageChange(document.id, Math.min(pages.length, Math.max(1, pageNumber)));
+  }, [document.id, onActivePageChange, pages.length]);
 
   const getCurrentPageNumber = useCallback(() => {
     const viewer = viewerRef.current;
@@ -928,8 +938,10 @@ function PdfViewer({
   }, [pages]);
 
   useEffect(() => {
-    onActivePageChange(document.id, getCurrentPageNumber());
-  }, [document.id, getCurrentPageNumber, onActivePageChange]);
+    if (viewerMode === "continuous") {
+      onActivePageChange(document.id, getCurrentPageNumber());
+    }
+  }, [document.id, getCurrentPageNumber, onActivePageChange, viewerMode]);
 
   const scrollPageIntoView = useCallback((pageNumber: number, direct = false) => {
     const viewer = viewerRef.current;
@@ -994,6 +1006,62 @@ function PdfViewer({
   }, [document.id, document.scrollLeft, document.scrollTop]);
 
   useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewerMode === "continuous" || !shouldFitToPage) {
+      return;
+    }
+
+    let frame = 0;
+    const updateLayout = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => setFitLayoutVersion((currentVersion) => currentVersion + 1));
+    };
+    const observer = "ResizeObserver" in window ? new ResizeObserver(updateLayout) : null;
+    observer?.observe(viewer);
+    window.addEventListener("resize", updateLayout);
+    updateLayout();
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("resize", updateLayout);
+    };
+  }, [shouldFitToPage, viewerMode]);
+
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const page = pages.find((candidate) => candidate.displayPageNumber === activePageNumber);
+
+    if (!viewer || !page || viewerMode === "continuous" || !shouldFitToPage) {
+      return;
+    }
+
+    let cancelled = false;
+    void page.sourceDocument.pdfDocument.getPage(page.sourcePageIndex + 1).then((sourcePage) => {
+      if (cancelled) return;
+      const viewport = sourcePage.getViewport({
+        scale: 1,
+        rotation: ((sourcePage.rotate ?? 0) + page.rotation) % 360,
+      });
+      const navigationHeight = viewer.querySelector<HTMLElement>(".viewer-page-navigation")?.offsetHeight ?? 0;
+      const scale = computeFitScale({
+        pageWidth: viewport.width,
+        pageHeight: viewport.height,
+        containerWidth: viewer.clientWidth,
+        containerHeight: Math.max(1, viewer.clientHeight - navigationHeight),
+        padding: viewerMode === "presentation" ? 16 : 20,
+        minScale: MIN_ZOOM,
+        maxScale: MAX_ZOOM,
+      });
+      onZoomSet(document.id, scale);
+    }).catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePageNumber, document.id, fitLayoutVersion, onZoomSet, pages, shouldFitToPage, viewerMode]);
+
+  useEffect(() => {
     const previousViewerMode = previousViewerModeRef.current;
     previousViewerModeRef.current = viewerMode;
 
@@ -1019,7 +1087,7 @@ function PdfViewer({
     if (!pageNavigationRequest) {
       return;
     }
-    onActivePageChange(document.id, pageNavigationRequest.pageNumber);
+    goToPage(pageNavigationRequest.pageNumber);
     if (!pageNavigationRequest.commentId) {
       scrollPageIntoView(pageNavigationRequest.pageNumber, true);
       const frame = window.requestAnimationFrame(() => {
@@ -1043,7 +1111,7 @@ function PdfViewer({
     return () => {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
-  }, [document.id, onActivePageChange, pageNavigationRequest, scrollCommentIntoView, scrollPageIntoView]);
+  }, [goToPage, pageNavigationRequest, scrollCommentIntoView, scrollPageIntoView]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -1155,10 +1223,6 @@ function PdfViewer({
       const maxScrollTop = Math.max(0, viewer.scrollHeight - viewer.clientHeight);
 
       if (viewerMode !== "continuous") {
-        const goToPage = (pageNumber: number) => {
-          onActivePageChange(document.id, Math.min(pages.length, Math.max(1, pageNumber)));
-        };
-
         switch (event.key) {
           case "ArrowRight":
           case "PageDown":
@@ -1225,7 +1289,7 @@ function PdfViewer({
           return;
       }
     },
-    [activePageNumber, document.id, getCurrentPageNumber, onActivePageChange, pages.length, scrollPageIntoView, viewerMode],
+    [activePageNumber, document.id, getCurrentPageNumber, goToPage, pages.length, scrollPageIntoView, viewerMode],
   );
 
   const handleMouseDown = useCallback((event: MouseEvent<HTMLElement>) => {
@@ -1319,7 +1383,7 @@ function PdfViewer({
         <nav className="viewer-page-navigation" aria-label="Navigation des pages">
           <button
             type="button"
-            onClick={() => onActivePageChange(document.id, activePageNumber - 1)}
+            onClick={() => goToPage(activePageNumber - 1)}
             disabled={activePageNumber <= 1}
             aria-label="Page précédente"
             title="Page précédente"
@@ -1329,7 +1393,7 @@ function PdfViewer({
           <output aria-label={`Page ${activePageNumber} sur ${pages.length}`}>{activePageNumber} / {pages.length}</output>
           <button
             type="button"
-            onClick={() => onActivePageChange(document.id, activePageNumber + 1)}
+            onClick={() => goToPage(activePageNumber + 1)}
             disabled={activePageNumber >= pages.length}
             aria-label="Page suivante"
             title="Page suivante"
@@ -2344,6 +2408,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const nextDocumentId = useRef(1);
   const documentsRef = useRef<OpenPdfDocument[]>([]);
   const openFileInputRef = useRef<HTMLInputElement | null>(null);
+  const presentationContainerRef = useRef<HTMLElement | null>(null);
   const documentButtonRefs = useRef(new Map<string, HTMLButtonElement | null>());
   const pendingFocusTargetRef = useRef<FocusTarget>(null);
   const sidebarId = "documents-sidebar";
@@ -2369,6 +2434,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [viewerMode, setViewerMode] = useState<ViewerMode>(
     () => storedPreferences?.viewerMode ?? "continuous",
   );
+  const [fitToPageByDocument, setFitToPageByDocument] = useState<Record<string, boolean>>({});
   const [activeEditingTool, setActiveEditingTool] =
     useState<EditingTool>("select");
   const [freehandToolStyle, setFreehandToolStyle] = useState<FreehandStyle>(
@@ -2576,7 +2642,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setSelectedEditId(null);
     setPendingSignatureImageId(null);
     setEyedropperTarget(null);
-    void document.documentElement.requestFullscreen?.().catch(() => undefined);
   }, [viewerMode]);
 
   useEffect(() => {
@@ -2822,6 +2887,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, [documents, isRestoringDocuments, organizationPlans, selectedPageIdsByDocument]);
 
   const updateDocumentZoom = useCallback((documentId: string, delta: number) => {
+    setFitToPageByDocument((currentModes) => ({ ...currentModes, [documentId]: false }));
     setDocuments((currentDocuments) =>
       currentDocuments.map((document) => {
         if (document.id !== documentId) {
@@ -2832,6 +2898,21 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         return nextZoom === document.zoom ? document : { ...document, zoom: nextZoom };
       }),
     );
+  }, []);
+
+  const setDocumentZoom = useCallback((documentId: string, zoom: number) => {
+    const nextZoom = clampZoom(zoom);
+    setDocuments((currentDocuments) => {
+      let changed = false;
+      const nextDocuments = currentDocuments.map((document) => {
+        if (document.id !== documentId || Math.abs(document.zoom - nextZoom) <= 0.001) {
+          return document;
+        }
+        changed = true;
+        return { ...document, zoom: nextZoom };
+      });
+      return changed ? nextDocuments : currentDocuments;
+    });
   }, []);
 
   const recordActivePage = useCallback(
@@ -2846,14 +2927,39 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     [],
   );
 
-  useEffect(() => {
-    function exitPresentation() {
-      if (document.fullscreenElement) {
-        void document.exitFullscreen?.().catch(() => undefined);
-      }
-      setViewerMode("single-page");
+  const goToActivePage = useCallback((pageNumber: number) => {
+    if (!activeDocument) return;
+    const pageCount = activeOrganizationPlan?.pages.length ?? activeDocument.pageCount;
+    recordActivePage(activeDocument.id, Math.min(pageCount, Math.max(1, pageNumber)));
+  }, [activeDocument, activeOrganizationPlan, recordActivePage]);
+
+  const changeViewerMode = useCallback((nextMode: ViewerMode) => {
+    if (!activeDocument || nextMode === viewerMode) return;
+
+    if (nextMode !== "continuous") {
+      setFitToPageByDocument((currentModes) => ({ ...currentModes, [activeDocument.id]: true }));
     }
 
+    if (nextMode === "presentation") {
+      const container = presentationContainerRef.current;
+      if (container && document.fullscreenEnabled && container.requestFullscreen) {
+        void container.requestFullscreen().catch((error: unknown) => {
+          console.info("Le plein écran natif est indisponible ; présentation applicative conservée.", error);
+        });
+      }
+    }
+
+    setViewerMode(nextMode);
+  }, [activeDocument, viewerMode]);
+
+  const exitPresentation = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen?.().catch(() => undefined);
+    }
+    setViewerMode("single-page");
+  }, []);
+
+  useEffect(() => {
     function handlePresentationShortcuts(event: globalThis.KeyboardEvent) {
       if (viewerMode !== "presentation") return;
       if (event.key === "Escape") {
@@ -2863,36 +2969,32 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       }
       if (!activeDocument || isEditableKeyboardTarget(event.target)) return;
 
-      const pageCount = activeOrganizationPlan?.pages.length ?? activeDocument.pageCount;
-      const goToPage = (pageNumber: number) =>
-        recordActivePage(activeDocument.id, Math.min(pageCount, Math.max(1, pageNumber)));
-
       switch (event.key) {
         case "ArrowRight":
         case "PageDown":
         case " ":
           event.preventDefault();
-          goToPage(activePageNumber + 1);
+          goToActivePage(activePageNumber + 1);
           break;
         case "ArrowLeft":
         case "PageUp":
           event.preventDefault();
-          goToPage(activePageNumber - 1);
+          goToActivePage(activePageNumber - 1);
           break;
         case "Home":
           event.preventDefault();
-          goToPage(1);
+          goToActivePage(1);
           break;
         case "End":
           event.preventDefault();
-          goToPage(pageCount);
+          goToActivePage(activeOrganizationPlan?.pages.length ?? activeDocument.pageCount);
           break;
       }
     }
 
     window.addEventListener("keydown", handlePresentationShortcuts);
     return () => window.removeEventListener("keydown", handlePresentationShortcuts);
-  }, [activeDocument, activeOrganizationPlan, activePageNumber, recordActivePage, viewerMode]);
+  }, [activeDocument, activeOrganizationPlan, activePageNumber, exitPresentation, goToActivePage, viewerMode]);
 
   const updateDocumentScrollPosition = useCallback(
     (documentId: string, scrollLeft: number, scrollTop: number) => {
@@ -4480,7 +4582,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }
 
   return (
-    <main className={viewerMode === "presentation" ? "app-shell app-shell--presentation" : "app-shell"}>
+    <main
+      ref={presentationContainerRef}
+      className={viewerMode === "presentation" ? "app-shell app-shell--presentation" : "app-shell"}
+    >
       <header
         className="toolbar toolbar--sticky"
         role="region"
@@ -4896,10 +5001,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             pageNavigationRequest={pageNavigationRequest}
             viewerMode={viewerMode}
             activePageNumber={activePageNumber}
-            onExitPresentation={() => {
-              if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined);
-              setViewerMode("single-page");
-            }}
+            onExitPresentation={exitPresentation}
+            onZoomSet={setDocumentZoom}
+            shouldFitToPage={fitToPageByDocument[activeDocument.id] ?? true}
           />
         ) : activeDocument && activeOrganizationPlan ? (
           <OrganizePages
@@ -5085,7 +5189,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <span className="sr-only">Mode d'affichage</span>
             <select
               value={viewerMode}
-              onChange={(event) => setViewerMode(event.target.value as ViewerMode)}
+              onChange={(event) => changeViewerMode(event.target.value as ViewerMode)}
               disabled={!activeDocument || workspaceMode === "organize"}
               aria-label="Mode d'affichage"
               title="Choisir le mode d'affichage"
@@ -5095,6 +5199,19 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               <option value="presentation">Présentation</option>
             </select>
           </label>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeDocument) {
+                setFitToPageByDocument((currentModes) => ({ ...currentModes, [activeDocument.id]: true }));
+              }
+            }}
+            disabled={!activeDocument || workspaceMode === "organize" || viewerMode === "continuous"}
+            aria-label="Ajuster à la page"
+            title="Ajuster la page à l'espace disponible"
+          >
+            Ajuster
+          </button>
           <button
             type="button"
             onClick={() => {

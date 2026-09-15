@@ -159,7 +159,7 @@ describe("App", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Page suivante" }));
-    expect(screen.getByLabelText("Page 2 sur 5")).toBeInTheDocument();
+    expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("2 / 5");
     fireEvent.change(screen.getByLabelText("Mode d'affichage"), { target: { value: "continuous" } });
 
     await waitFor(() => expect(document.querySelectorAll(".pdf-page")).toHaveLength(5));
@@ -186,7 +186,9 @@ describe("App", () => {
       expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("1 / 3");
     });
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("2 / 3");
+    await waitFor(() => {
+      expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("2 / 3");
+    });
     fireEvent.keyDown(window, { key: "Escape" });
 
     await waitFor(() => {
@@ -194,6 +196,54 @@ describe("App", () => {
       expect(screen.getByLabelText("Mode d'affichage")).toHaveValue("single-page");
       expect(screen.getByRole("contentinfo", { name: "État du document" })).toHaveTextContent("Page 2 / 3");
     });
+  });
+
+  it("keeps single-page mode while buttons and arrows change only the current page", async () => {
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.resolve(createPdfDocumentMock(3)),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: { files: [new File(["%PDF-1.4"], "keys.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(screen.getByLabelText("Mode d'affichage")).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Aller à la page 2" }));
+    fireEvent.change(screen.getByLabelText("Mode d'affichage"), { target: { value: "single-page" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Page suivante" }));
+    await waitFor(() => expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("3 / 3"));
+    expect(screen.getByLabelText("Mode d'affichage")).toHaveValue("single-page");
+
+    fireEvent.keyDown(screen.getByTestId("pdf-viewer"), { key: "ArrowLeft" });
+    await waitFor(() => expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("2 / 3"));
+    expect(screen.getByLabelText("Mode d'affichage")).toHaveValue("single-page");
+  });
+
+  it("requests native fullscreen directly when presentation is selected", async () => {
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: true });
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", {
+      configurable: true,
+      value: requestFullscreen,
+    });
+
+    render(<App />);
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: { files: [new File(["%PDF-1.4"], "fullscreen.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(screen.getByLabelText("Mode d'affichage")).toBeEnabled());
+
+    fireEvent.change(screen.getByLabelText("Mode d'affichage"), { target: { value: "presentation" } });
+
+    expect(requestFullscreen).toHaveBeenCalledWith();
+    expect(requestFullscreen.mock.instances[0]).toBe(screen.getByRole("main"));
+    fireEvent(document, new Event("fullscreenchange"));
+    await waitFor(() => expect(screen.getByLabelText("Mode d'affichage")).toHaveValue("single-page"));
+    delete (HTMLElement.prototype as Partial<HTMLElement>).requestFullscreen;
   });
 
   it("warns without blocking when an opened PDF exceeds the recommended page limit", async () => {
