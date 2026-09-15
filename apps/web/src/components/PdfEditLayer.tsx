@@ -73,6 +73,7 @@ export function PdfEditLayer({
     activeTool.startsWith("shape_") ||
     (activeTool === "signature" && pendingSignatureImage !== null);
   const freehandPointsRef = useRef<PdfPoint[] | null>(null);
+  const ignoreCompletionClickRef = useRef(false);
   const [freehandPreview, setFreehandPreview] = useState<PdfPoint[]>([]);
   const previewRect = creation
     ? createPdfRectFromScreenPoints(viewport, creation.start, creation.end)
@@ -105,7 +106,10 @@ export function PdfEditLayer({
       event.currentTarget.releasePointerCapture?.(event.pointerId);
       freehandPointsRef.current = null;
       setFreehandPreview([]);
-      if (points.length > 1) onAddFreehand(points);
+      if (points.length > 1) {
+        ignoreCompletionClickRef.current = true;
+        onAddFreehand(points);
+      }
       return;
     }
     const currentCreation = creationRef.current;
@@ -123,10 +127,13 @@ export function PdfEditLayer({
     const rect = createPdfRectFromScreenPoints(viewport, currentCreation.start, end);
 
     if (activeTool === "add_text") {
+      ignoreCompletionClickRef.current = true;
       onAddText(rect);
     } else if (activeTool.startsWith("shape_")) {
+      ignoreCompletionClickRef.current = true;
       onAddShape(activeTool.replace("shape_", "") as ShapeType, rect);
     } else if (pendingSignatureImage) {
+      ignoreCompletionClickRef.current = true;
       onPlaceSignature(
         fitPdfRectToAspectRatio(
           rect,
@@ -191,6 +198,17 @@ export function PdfEditLayer({
       // React unit tests use a synthetic click without pointer events. Real pointer
       // interaction always follows the drag path above, including the click threshold.
       onClick={(event) => {
+        if (ignoreCompletionClickRef.current) {
+          ignoreCompletionClickRef.current = false;
+          event.stopPropagation();
+          return;
+        }
+        // An edit created or selected inside this layer owns its click. Let empty
+        // surface clicks continue to the page so they can deselect as before.
+        if (event.target !== event.currentTarget) {
+          event.stopPropagation();
+          return;
+        }
         if (!creationActive || event.target !== event.currentTarget || event.detail !== 0) {
           return;
         }
@@ -255,7 +273,7 @@ export function PdfEditLayer({
         }
 
         if (edit.type === "freehand") {
-          return <FreehandEditBlock key={edit.id} edit={edit} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} />;
+          return <FreehandEditBlock key={edit.id} edit={edit} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} onMove={onUpdate} />;
         }
 
         if (edit.type === "text_markup") return <TextMarkupLayer key={edit.id} edit={edit} viewport={viewport} />;

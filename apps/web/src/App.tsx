@@ -883,18 +883,27 @@ function PdfViewer({
     onActivePageChange(document.id, getCurrentPageNumber());
   }, [document.id, getCurrentPageNumber, onActivePageChange]);
 
-  const scrollPageIntoView = useCallback((pageNumber: number) => {
+  const scrollPageIntoView = useCallback((pageNumber: number, direct = false) => {
     const viewer = viewerRef.current;
-    const pageElement = pageRefs.current.get(pageNumber);
+    const pageElement = pageRefs.current.get(pageNumber)
+      ?? viewer?.querySelector<HTMLElement>(`.pdf-page[data-page-number="${pageNumber}"]`);
 
     if (!viewer || !pageElement) {
-      return;
+      return false;
     }
 
-    viewer.scrollTo({
-      top: pageElement.offsetTop,
-      behavior: "smooth",
-    });
+    if (direct) {
+      const viewerBounds = viewer.getBoundingClientRect();
+      const pageBounds = pageElement.getBoundingClientRect();
+      if (pageBounds.height > 0 && viewerBounds.height > 0) {
+        viewer.scrollTop = Math.max(0, viewer.scrollTop + pageBounds.top - viewerBounds.top - 8);
+      } else {
+        viewer.scrollTo({ top: pageElement.offsetTop, behavior: "smooth" });
+      }
+    } else {
+      viewer.scrollTo({ top: pageElement.offsetTop, behavior: "smooth" });
+    }
+    return true;
   }, []);
 
   useEffect(() => {
@@ -923,7 +932,13 @@ function PdfViewer({
     if (!pageNavigationRequest) {
       return;
     }
-    scrollPageIntoView(pageNavigationRequest.pageNumber);
+    if (scrollPageIntoView(pageNavigationRequest.pageNumber, true)) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      scrollPageIntoView(pageNavigationRequest.pageNumber, true);
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [pageNavigationRequest, scrollPageIntoView]);
 
   useEffect(() => {
@@ -4163,9 +4178,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         </div>
 
         <div className="toolbar-actions" aria-label="Actions PDF">
-          <button type="button" className="toolbar-icon-button" aria-label="Ouvrir un PDF" title="Ouvrir un PDF" onClick={() => openFileInputRef.current?.click()}><ToolbarIcon name="open" /></button>
-          <button type="button" className="toolbar-icon-button" aria-label="Enregistrer sous…" title="Enregistrer sous… (Ctrl+Shift+S)" onClick={openActiveSaveAsDialog} disabled={!activeDocument || !isActiveDocumentDirty || isExporting}><ToolbarIcon name="save-as" /></button>
-          <button type="button" className="toolbar-icon-button toolbar-icon-button--danger" aria-label="Réinitialiser les données locales" title="Réinitialiser les données locales" onClick={clearLocalData}><ResetIcon /></button>
+          <div className="toolbar-action-group toolbar-actions__primary" aria-label="Actions principales">
+            <button type="button" className="toolbar-icon-button" aria-label="Ouvrir un PDF" title="Ouvrir un PDF" onClick={() => openFileInputRef.current?.click()}><ToolbarIcon name="open" /></button>
+            <button type="button" className="toolbar-icon-button" aria-label="Enregistrer sous…" title="Enregistrer sous… (Ctrl+Shift+S)" onClick={openActiveSaveAsDialog} disabled={!activeDocument || !isActiveDocumentDirty || isExporting}><ToolbarIcon name="save-as" /></button>
+            <button type="button" className="toolbar-icon-button toolbar-icon-button--danger" aria-label="Réinitialiser les données locales" title="Réinitialiser les données locales" onClick={clearLocalData}><ResetIcon /></button>
+          </div>
+          <span className="toolbar-actions__spacer" aria-hidden="true" />
           <button type="button" className="toolbar-icon-button" role="switch" aria-label="Basculer le thème" aria-checked={theme === "dark"} title={theme === "light" ? "Passer au thème sombre" : "Passer au thème clair"} onClick={toggleTheme}><span aria-hidden="true">{theme === "light" ? "☾" : "☀"}</span></button>
           <div className="toolbar-action-group" aria-label="Fichier">
             <div className="insert-menu file-menu">

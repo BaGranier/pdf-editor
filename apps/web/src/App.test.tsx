@@ -401,7 +401,8 @@ describe("App", () => {
     fireEvent.change(screen.getByLabelText("Taille du texte"), {
       target: { value: "24" },
     });
-    fireEvent.change(screen.getByLabelText("Couleur du texte"), {
+    fireEvent.click(screen.getByRole("button", { name: "Couleur du texte" }));
+    fireEvent.change(screen.getByLabelText("Couleur personnalisée Couleur du texte"), {
       target: { value: "#c026d3" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Gras" }));
