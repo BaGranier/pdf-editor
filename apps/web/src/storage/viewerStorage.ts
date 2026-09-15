@@ -1,12 +1,14 @@
 import type { OrganizePagePlan, OrganizedPage, PageRotation } from "../organize/pagePlan";
 
 export type ThemeMode = "light" | "dark";
+export type ViewerMode = "continuous" | "single-page";
 
 export type ViewerPreferences = {
   theme: ThemeMode;
   sidebarVisible: boolean;
   activeDocumentId: string | null;
   documentOrder: string[];
+  viewerMode?: ViewerMode;
   /** Last author entered for a locally-created PDF comment. */
   commentAuthor?: string;
 };
@@ -55,6 +57,7 @@ type RawViewerPreferences = {
   activeDocumentId?: unknown;
   documentOrder?: unknown;
   commentAuthor?: unknown;
+  viewerMode?: unknown;
 };
 
 type RawStoredOrganizationPlan = {
@@ -64,6 +67,10 @@ type RawStoredOrganizationPlan = {
 
 function isThemeMode(value: unknown): value is ThemeMode {
   return value === "light" || value === "dark";
+}
+
+function isViewerMode(value: unknown): value is ViewerMode {
+  return value === "continuous" || value === "single-page";
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -144,6 +151,7 @@ export function parseViewerPreferences(serialized: string | null): ViewerPrefere
       sidebarVisible: parsed.sidebarVisible,
       activeDocumentId: parsed.activeDocumentId,
       documentOrder: parsed.documentOrder,
+      ...(isViewerMode(parsed.viewerMode) ? { viewerMode: parsed.viewerMode } : {}),
       ...(typeof parsed.commentAuthor === "string" ? { commentAuthor: parsed.commentAuthor } : {}),
     };
   } catch {

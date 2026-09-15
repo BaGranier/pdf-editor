@@ -1005,6 +1005,120 @@ button:disabled {
   outline: none;
 }
 
+.viewer--single-page,
+.viewer--presentation {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  place-items: stretch;
+  padding: 1rem;
+}
+
+.viewer--single-page .pdf-document,
+.viewer--presentation .pdf-document {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+}
+
+.viewer--single-page .pdf-page,
+.viewer--presentation .pdf-page {
+  margin: 0;
+}
+
+.viewer-page-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  padding-top: 0.65rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.viewer-page-navigation button {
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+}
+
+.viewer-page-navigation output {
+  min-width: 4.5rem;
+  text-align: center;
+}
+
+.viewer--presentation {
+  background: #101318;
+}
+
+.viewer--presentation .pdf-document {
+  overflow: auto;
+}
+
+.viewer--presentation .viewer-page-navigation {
+  position: absolute;
+  z-index: 2;
+  right: 50%;
+  bottom: 1rem;
+  transform: translateX(50%);
+  padding: 0.35rem 0.5rem;
+  color: #e5e7eb;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 999px;
+  background: rgb(15 18 24 / 72%);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.viewer--presentation:hover .viewer-page-navigation,
+.viewer--presentation:focus-within .viewer-page-navigation {
+  opacity: 1;
+}
+
+.viewer-page-navigation__exit {
+  width: auto !important;
+  padding-inline: 0.55rem !important;
+  color: inherit;
+  border-color: currentColor;
+  background: transparent;
+}
+
+.viewer-mode-control select {
+  min-height: 2rem;
+  max-width: 8rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--button-border);
+  border-radius: 6px;
+  background: var(--button-bg);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.app-shell--presentation {
+  grid-template-rows: minmax(0, 1fr);
+  background: #101318;
+}
+
+.app-shell--presentation .toolbar,
+.app-shell--presentation .tool-rail,
+.app-shell--presentation .document-sidebar,
+.app-shell--presentation .sidebar-rail-toggle,
+.app-shell--presentation .properties-panel,
+.app-shell--presentation .properties-panel-toggle,
+.app-shell--presentation .status-bar,
+.app-shell--presentation .export-read-feedback,
+.app-shell--presentation .text-markup-toolbar {
+  display: none;
+}
+
+.app-shell--presentation .content-area,
+.app-shell--presentation .content-area--sidebar-hidden,
+.app-shell--presentation .content-area--properties-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .viewer:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;

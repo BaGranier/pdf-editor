@@ -136,6 +136,66 @@ describe("App", () => {
     });
   });
 
+  it("keeps the current page while switching between continuous and single-page modes", async () => {
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.resolve(createPdfDocumentMock(5)),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: { files: [new File(["%PDF-1.4"], "modes.pdf", { type: "application/pdf" })] },
+    });
+
+    await waitFor(() => expect(document.querySelectorAll(".pdf-page")).toHaveLength(5));
+    fireEvent.click(screen.getByRole("button", { name: "Aller à la page 1" }));
+    fireEvent.change(screen.getByLabelText("Mode d'affichage"), { target: { value: "single-page" } });
+
+    await waitFor(() => {
+      expect(document.querySelectorAll(".pdf-page")).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "Page précédente" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Page suivante" })).toBeEnabled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Page suivante" }));
+    expect(screen.getByLabelText("Page 2 sur 5")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Mode d'affichage"), { target: { value: "continuous" } });
+
+    await waitFor(() => expect(document.querySelectorAll(".pdf-page")).toHaveLength(5));
+  });
+
+  it("enters presentation, navigates pages, then leaves it with Escape", async () => {
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.resolve(createPdfDocumentMock(3)),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: { files: [new File(["%PDF-1.4"], "slides.pdf", { type: "application/pdf" })] },
+    });
+
+    await waitFor(() => expect(screen.getByLabelText("Mode d'affichage")).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Aller à la page 1" }));
+    fireEvent.change(screen.getByLabelText("Mode d'affichage"), { target: { value: "presentation" } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("main")).toHaveClass("app-shell--presentation");
+      expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("1 / 3");
+    });
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("2 / 3");
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(screen.getByRole("main")).not.toHaveClass("app-shell--presentation");
+      expect(screen.getByLabelText("Mode d'affichage")).toHaveValue("single-page");
+      expect(screen.getByRole("contentinfo", { name: "État du document" })).toHaveTextContent("Page 2 / 3");
+    });
+  });
+
   it("warns without blocking when an opened PDF exceeds the recommended page limit", async () => {
     vi.mocked(pdfjsLib.getDocument).mockReturnValue({
       promise: Promise.resolve(createPdfDocumentMock(251)),

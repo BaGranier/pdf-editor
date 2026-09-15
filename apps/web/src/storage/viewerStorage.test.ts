@@ -27,6 +27,7 @@ describe("viewerStorage", () => {
       sidebarVisible: false,
       activeDocumentId: "pdf-1",
       documentOrder: ["pdf-1", "pdf-2"],
+      viewerMode: "single-page" as const,
     };
 
     const serialized = serializeViewerPreferences(preferences);

@@ -36,6 +36,7 @@ import {
   type ThemeMode,
   type ViewerDocumentSnapshot,
   type ViewerPreferences,
+  type ViewerMode as PersistedViewerMode,
 } from "./storage/viewerStorage";
 import {
   createInitialPagePlan,
@@ -121,6 +122,7 @@ const DEFAULT_RECOMMENDED_MAX_OPEN_DOCUMENTS = 8;
 
 type RenderState = "idle" | "loading" | "ready" | "error";
 type WorkspaceMode = "read" | "organize";
+type ViewerMode = PersistedViewerMode | "presentation";
 type ExportFeedback = {
   kind: "success" | "warning" | "error";
   message: string;
@@ -826,6 +828,9 @@ type PdfViewerProps = {
   onSampleColor: (color: string) => void;
   focusRequest: number;
   pageNavigationRequest: { pageNumber: number; requestId: number; commentId?: string } | null;
+  viewerMode: ViewerMode;
+  activePageNumber: number;
+  onExitPresentation: () => void;
 };
 
 function PdfViewer({
@@ -854,6 +859,9 @@ function PdfViewer({
   onSampleColor,
   focusRequest,
   pageNavigationRequest,
+  viewerMode,
+  activePageNumber,
+  onExitPresentation,
 }: PdfViewerProps) {
   const viewerRef = useRef<HTMLElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
@@ -866,6 +874,7 @@ function PdfViewer({
     startScrollTop: number;
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const previousViewerModeRef = useRef<ViewerMode>(viewerMode);
   const pages = useMemo(
     () =>
       pagePlan.pages.flatMap((plannedPage) => {
@@ -985,6 +994,17 @@ function PdfViewer({
   }, [document.id, document.scrollLeft, document.scrollTop]);
 
   useEffect(() => {
+    const previousViewerMode = previousViewerModeRef.current;
+    previousViewerModeRef.current = viewerMode;
+
+    if (viewerMode === "continuous" && previousViewerMode !== "continuous") {
+      window.requestAnimationFrame(() => {
+        scrollPageIntoView(activePageNumber, true);
+      });
+    }
+  }, [activePageNumber, scrollPageIntoView, viewerMode]);
+
+  useEffect(() => {
     const viewer = viewerRef.current;
 
     if (!viewer || lastFocusRequestRef.current === focusRequest) {
@@ -999,6 +1019,7 @@ function PdfViewer({
     if (!pageNavigationRequest) {
       return;
     }
+    onActivePageChange(document.id, pageNavigationRequest.pageNumber);
     if (!pageNavigationRequest.commentId) {
       scrollPageIntoView(pageNavigationRequest.pageNumber, true);
       const frame = window.requestAnimationFrame(() => {
@@ -1022,7 +1043,7 @@ function PdfViewer({
     return () => {
       if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
-  }, [pageNavigationRequest, scrollCommentIntoView, scrollPageIntoView]);
+  }, [document.id, onActivePageChange, pageNavigationRequest, scrollCommentIntoView, scrollPageIntoView]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -1133,6 +1154,36 @@ function PdfViewer({
       const currentPageNumber = getCurrentPageNumber();
       const maxScrollTop = Math.max(0, viewer.scrollHeight - viewer.clientHeight);
 
+      if (viewerMode !== "continuous") {
+        const goToPage = (pageNumber: number) => {
+          onActivePageChange(document.id, Math.min(pages.length, Math.max(1, pageNumber)));
+        };
+
+        switch (event.key) {
+          case "ArrowRight":
+          case "PageDown":
+          case " ":
+            event.preventDefault();
+            goToPage(activePageNumber + 1);
+            return;
+          case "ArrowLeft":
+          case "PageUp":
+            event.preventDefault();
+            goToPage(activePageNumber - 1);
+            return;
+          case "Home":
+            event.preventDefault();
+            goToPage(1);
+            return;
+          case "End":
+            event.preventDefault();
+            goToPage(pages.length);
+            return;
+          default:
+            return;
+        }
+      }
+
       switch (event.key) {
         case "ArrowLeft":
           event.preventDefault();
@@ -1174,7 +1225,7 @@ function PdfViewer({
           return;
       }
     },
-    [document.id, getCurrentPageNumber, pages.length, scrollPageIntoView],
+    [activePageNumber, document.id, getCurrentPageNumber, onActivePageChange, pages.length, scrollPageIntoView, viewerMode],
   );
 
   const handleMouseDown = useCallback((event: MouseEvent<HTMLElement>) => {
@@ -1206,6 +1257,10 @@ function PdfViewer({
       className={
         isDragging
           ? "viewer viewer--pan-enabled is-panning"
+          : viewerMode === "presentation"
+            ? "viewer viewer--presentation"
+            : viewerMode === "single-page"
+              ? "viewer viewer--single-page viewer--pan-enabled"
           : activeTool !== "select"
             ? "viewer viewer--text-tool"
             : eyedropperTarget
@@ -1219,7 +1274,7 @@ function PdfViewer({
     >
       {document.error ? <p className="status">{document.error}</p> : null}
       <div className="pdf-document" aria-label={`Document PDF ${document.fileName}`}>
-        {pages.map((page) => {
+        {(viewerMode === "continuous" ? pages : pages.filter((page) => page.displayPageNumber === activePageNumber)).map((page) => {
           const isActiveDocumentSource = page.sourceDocumentId === document.id;
           return (
             <PdfPageCanvas
@@ -1230,18 +1285,18 @@ function PdfViewer({
               rotation={page.rotation}
               zoom={document.zoom}
               edits={
-                isActiveDocumentSource
+                viewerMode !== "presentation" && isActiveDocumentSource
                   ? edits.filter(
                       (edit) => edit.page === page.sourcePageIndex + 1,
                     )
                   : []
               }
               signatureImages={signatureImages}
-              selectedEditId={selectedEditId}
-              activeTool={isActiveDocumentSource ? activeTool : "select"}
+              selectedEditId={viewerMode === "presentation" ? null : selectedEditId}
+              activeTool={viewerMode === "presentation" ? "select" : isActiveDocumentSource ? activeTool : "select"}
               freehandStyle={freehandStyle}
               pendingSignatureImage={
-                isActiveDocumentSource ? pendingSignatureImage : null
+                viewerMode !== "presentation" && isActiveDocumentSource ? pendingSignatureImage : null
               }
               eyedropperTarget={isActiveDocumentSource ? eyedropperTarget : null}
               scrollRootRef={viewerRef}
@@ -1260,6 +1315,40 @@ function PdfViewer({
           );
         })}
       </div>
+      {viewerMode !== "continuous" ? (
+        <nav className="viewer-page-navigation" aria-label="Navigation des pages">
+          <button
+            type="button"
+            onClick={() => onActivePageChange(document.id, activePageNumber - 1)}
+            disabled={activePageNumber <= 1}
+            aria-label="Page précédente"
+            title="Page précédente"
+          >
+            ←
+          </button>
+          <output aria-label={`Page ${activePageNumber} sur ${pages.length}`}>{activePageNumber} / {pages.length}</output>
+          <button
+            type="button"
+            onClick={() => onActivePageChange(document.id, activePageNumber + 1)}
+            disabled={activePageNumber >= pages.length}
+            aria-label="Page suivante"
+            title="Page suivante"
+          >
+            →
+          </button>
+          {viewerMode === "presentation" ? (
+            <button
+              type="button"
+              className="viewer-page-navigation__exit"
+              onClick={onExitPresentation}
+              aria-label="Quitter la présentation"
+              title="Quitter la présentation"
+            >
+              Quitter
+            </button>
+          ) : null}
+        </nav>
+      ) : null}
     </section>
   );
 }
@@ -2277,6 +2366,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [documents, setDocuments] = useState<OpenPdfDocument[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("read");
+  const [viewerMode, setViewerMode] = useState<ViewerMode>(
+    () => storedPreferences?.viewerMode ?? "continuous",
+  );
   const [activeEditingTool, setActiveEditingTool] =
     useState<EditingTool>("select");
   const [freehandToolStyle, setFreehandToolStyle] = useState<FreehandStyle>(
@@ -2462,6 +2554,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   useEffect(() => {
     if (documents.length === 0) {
       setWorkspaceMode("read");
+      setViewerMode((currentMode) => currentMode === "presentation" ? "continuous" : currentMode);
     }
   }, [documents.length]);
 
@@ -2472,6 +2565,30 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       setPendingSignatureImageId(null);
     }
   }, [workspaceMode]);
+
+  useEffect(() => {
+    if (viewerMode !== "presentation") {
+      return;
+    }
+
+    setWorkspaceMode("read");
+    setActiveEditingTool("select");
+    setSelectedEditId(null);
+    setPendingSignatureImageId(null);
+    setEyedropperTarget(null);
+    void document.documentElement.requestFullscreen?.().catch(() => undefined);
+  }, [viewerMode]);
+
+  useEffect(() => {
+    function handleFullscreenChange() {
+      if (viewerMode === "presentation" && !document.fullscreenElement) {
+        setViewerMode("single-page");
+      }
+    }
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, [viewerMode]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -2648,12 +2765,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       activeDocumentId,
       documentOrder: documents.map((document) => document.id),
       ...(lastCommentAuthor ? { commentAuthor: lastCommentAuthor } : {}),
+      viewerMode: viewerMode === "presentation" ? "single-page" : viewerMode,
     });
 
     if (!preferencesSaved) {
       setStorageWarning("Les préférences locales n'ont pas pu être enregistrées. Vérifiez l'espace de stockage du navigateur.");
     }
-  }, [activeDocumentId, documents, isRestoringDocuments, isSidebarVisible, lastCommentAuthor, theme]);
+  }, [activeDocumentId, documents, isRestoringDocuments, isSidebarVisible, lastCommentAuthor, theme, viewerMode]);
 
   useEffect(() => {
     if (isRestoringDocuments) {
@@ -2727,6 +2845,54 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     },
     [],
   );
+
+  useEffect(() => {
+    function exitPresentation() {
+      if (document.fullscreenElement) {
+        void document.exitFullscreen?.().catch(() => undefined);
+      }
+      setViewerMode("single-page");
+    }
+
+    function handlePresentationShortcuts(event: globalThis.KeyboardEvent) {
+      if (viewerMode !== "presentation") return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        exitPresentation();
+        return;
+      }
+      if (!activeDocument || isEditableKeyboardTarget(event.target)) return;
+
+      const pageCount = activeOrganizationPlan?.pages.length ?? activeDocument.pageCount;
+      const goToPage = (pageNumber: number) =>
+        recordActivePage(activeDocument.id, Math.min(pageCount, Math.max(1, pageNumber)));
+
+      switch (event.key) {
+        case "ArrowRight":
+        case "PageDown":
+        case " ":
+          event.preventDefault();
+          goToPage(activePageNumber + 1);
+          break;
+        case "ArrowLeft":
+        case "PageUp":
+          event.preventDefault();
+          goToPage(activePageNumber - 1);
+          break;
+        case "Home":
+          event.preventDefault();
+          goToPage(1);
+          break;
+        case "End":
+          event.preventDefault();
+          goToPage(pageCount);
+          break;
+      }
+    }
+
+    window.addEventListener("keydown", handlePresentationShortcuts);
+    return () => window.removeEventListener("keydown", handlePresentationShortcuts);
+  }, [activeDocument, activeOrganizationPlan, activePageNumber, recordActivePage, viewerMode]);
 
   const updateDocumentScrollPosition = useCallback(
     (documentId: string, scrollLeft: number, scrollTop: number) => {
@@ -4314,7 +4480,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }
 
   return (
-    <main className="app-shell">
+    <main className={viewerMode === "presentation" ? "app-shell app-shell--presentation" : "app-shell"}>
       <header
         className="toolbar toolbar--sticky"
         role="region"
@@ -4728,6 +4894,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onSampleColor={applySampledShapeColor}
             focusRequest={viewerFocusRequest}
             pageNavigationRequest={pageNavigationRequest}
+            viewerMode={viewerMode}
+            activePageNumber={activePageNumber}
+            onExitPresentation={() => {
+              if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined);
+              setViewerMode("single-page");
+            }}
           />
         ) : activeDocument && activeOrganizationPlan ? (
           <OrganizePages
@@ -4909,6 +5081,20 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           {activeDocument?.fileName ?? ""}
         </span>
         <div className="page-controls">
+          <label className="viewer-mode-control">
+            <span className="sr-only">Mode d'affichage</span>
+            <select
+              value={viewerMode}
+              onChange={(event) => setViewerMode(event.target.value as ViewerMode)}
+              disabled={!activeDocument || workspaceMode === "organize"}
+              aria-label="Mode d'affichage"
+              title="Choisir le mode d'affichage"
+            >
+              <option value="continuous">Continu</option>
+              <option value="single-page">Page unique</option>
+              <option value="presentation">Présentation</option>
+            </select>
+          </label>
           <button
             type="button"
             onClick={() => {
