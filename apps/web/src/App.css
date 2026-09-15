@@ -1051,10 +1051,17 @@ button:disabled {
 
 .viewer--presentation {
   background: #101318;
+  overflow: hidden;
 }
 
 .viewer--presentation .pdf-document {
+  width: 100%;
+  height: 100%;
   overflow: auto;
+}
+
+.viewer--presentation .page-number {
+  display: none;
 }
 
 .viewer--presentation .viewer-page-navigation {
@@ -1068,12 +1075,6 @@ button:disabled {
   border: 1px solid rgb(255 255 255 / 18%);
   border-radius: 999px;
   background: rgb(15 18 24 / 72%);
-  opacity: 0;
-  transition: opacity 160ms ease;
-}
-
-.viewer--presentation:hover .viewer-page-navigation,
-.viewer--presentation:focus-within .viewer-page-navigation {
   opacity: 1;
 }
 
@@ -1096,9 +1097,20 @@ button:disabled {
   font-size: 0.78rem;
 }
 
-.app-shell--presentation {
+.app-shell.app-shell--presentation {
   grid-template-rows: minmax(0, 1fr);
   background: #101318;
+}
+
+/* The fullscreen root must not inherit the workspace grid or browser margins. */
+.app-shell.app-shell--presentation:fullscreen {
+  width: 100%;
+  min-width: 100%;
+  height: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .app-shell--presentation .toolbar,
@@ -1117,6 +1129,15 @@ button:disabled {
 .app-shell--presentation .content-area--sidebar-hidden,
 .app-shell--presentation .content-area--properties-hidden {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell--presentation .content-area,
+.app-shell--presentation .workspace-stage,
+.app-shell--presentation .viewer--presentation {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
 }
 
 .viewer:focus-visible {

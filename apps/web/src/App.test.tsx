@@ -222,6 +222,64 @@ describe("App", () => {
     expect(screen.getByLabelText("Mode d'affichage")).toHaveValue("single-page");
   });
 
+  it("navigates single pages from window without focusing the PDF", async () => {
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.resolve(createPdfDocumentMock(4)),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: { files: [new File(["%PDF-1.4"], "window-keys.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(screen.getByLabelText("Mode d'affichage")).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Aller à la page 1" }));
+    const modeControl = screen.getByLabelText("Mode d'affichage");
+    modeControl.focus();
+    fireEvent.change(modeControl, { target: { value: "single-page" } });
+    expect(modeControl).not.toHaveFocus();
+
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    await waitFor(() => expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("2 / 4"));
+
+    const nextButton = screen.getByRole("button", { name: "Page suivante" });
+    fireEvent.click(nextButton);
+    await waitFor(() => expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("3 / 4"));
+    nextButton.focus();
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    await waitFor(() => expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("4 / 4"));
+    expect(screen.getByLabelText("Mode d'affichage")).toHaveValue("single-page");
+  });
+
+  it("does not navigate single pages while an editable field has focus", async () => {
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.resolve(createPdfDocumentMock(3)),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: { files: [new File(["%PDF-1.4"], "editable-keys.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(screen.getByLabelText("Mode d'affichage")).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Aller à la page 1" }));
+    fireEvent.change(screen.getByLabelText("Mode d'affichage"), { target: { value: "single-page" } });
+
+    const input = document.createElement("input");
+    const textarea = document.createElement("textarea");
+    document.body.append(input, textarea);
+    input.focus();
+    fireEvent.keyDown(input, { key: "ArrowRight" });
+    textarea.focus();
+    fireEvent.keyDown(textarea, { key: "ArrowLeft" });
+
+    expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("1 / 3");
+    input.remove();
+    textarea.remove();
+  });
+
   it("requests native fullscreen directly when presentation is selected", async () => {
     const requestFullscreen = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: true });
@@ -241,9 +299,25 @@ describe("App", () => {
 
     expect(requestFullscreen).toHaveBeenCalledWith();
     expect(requestFullscreen.mock.instances[0]).toBe(screen.getByRole("main"));
+    const viewer = screen.getByTestId("pdf-viewer");
+    Object.defineProperties(viewer, {
+      clientWidth: { configurable: true, value: 1200 },
+      clientHeight: { configurable: true, value: 900 },
+    });
+    Object.defineProperty(document, "fullscreenElement", {
+      configurable: true,
+      value: screen.getByRole("main"),
+    });
+    fireEvent(document, new Event("fullscreenchange"));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Mode d'affichage")).toHaveValue("presentation");
+      expect(screen.getByTestId("zoom-level")).toHaveTextContent("87%");
+    });
+    Object.defineProperty(document, "fullscreenElement", { configurable: true, value: null });
     fireEvent(document, new Event("fullscreenchange"));
     await waitFor(() => expect(screen.getByLabelText("Mode d'affichage")).toHaveValue("single-page"));
     delete (HTMLElement.prototype as Partial<HTMLElement>).requestFullscreen;
+    delete (document as { fullscreenElement?: Element | null }).fullscreenElement;
   });
 
   it("warns without blocking when an opened PDF exceeds the recommended page limit", async () => {

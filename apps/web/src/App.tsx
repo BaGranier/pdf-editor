@@ -834,6 +834,7 @@ type PdfViewerProps = {
   activePageNumber: number;
   onExitPresentation: () => void;
   shouldFitToPage: boolean;
+  fitRefreshToken: number;
 };
 
 function PdfViewer({
@@ -867,6 +868,7 @@ function PdfViewer({
   activePageNumber,
   onExitPresentation,
   shouldFitToPage,
+  fitRefreshToken,
 }: PdfViewerProps) {
   const viewerRef = useRef<HTMLElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
@@ -1059,7 +1061,7 @@ function PdfViewer({
     return () => {
       cancelled = true;
     };
-  }, [activePageNumber, document.id, fitLayoutVersion, onZoomSet, pages, shouldFitToPage, viewerMode]);
+  }, [activePageNumber, document.id, fitLayoutVersion, fitRefreshToken, onZoomSet, pages, shouldFitToPage, viewerMode]);
 
   useEffect(() => {
     const previousViewerMode = previousViewerModeRef.current;
@@ -1218,35 +1220,15 @@ function PdfViewer({
         return;
       }
 
+      // Page unique and présentation are owned by the window-level navigation
+      // listener so they never depend on focus remaining on this scroll area.
+      if (viewerMode !== "continuous") {
+        return;
+      }
+
       const arrowStep = event.shiftKey ? 280 : VIEWER_PAN_STEP;
       const currentPageNumber = getCurrentPageNumber();
       const maxScrollTop = Math.max(0, viewer.scrollHeight - viewer.clientHeight);
-
-      if (viewerMode !== "continuous") {
-        switch (event.key) {
-          case "ArrowRight":
-          case "PageDown":
-          case " ":
-            event.preventDefault();
-            goToPage(activePageNumber + 1);
-            return;
-          case "ArrowLeft":
-          case "PageUp":
-            event.preventDefault();
-            goToPage(activePageNumber - 1);
-            return;
-          case "Home":
-            event.preventDefault();
-            goToPage(1);
-            return;
-          case "End":
-            event.preventDefault();
-            goToPage(pages.length);
-            return;
-          default:
-            return;
-        }
-      }
 
       switch (event.key) {
         case "ArrowLeft":
@@ -1289,7 +1271,7 @@ function PdfViewer({
           return;
       }
     },
-    [activePageNumber, document.id, getCurrentPageNumber, goToPage, pages.length, scrollPageIntoView, viewerMode],
+    [document.id, getCurrentPageNumber, pages.length, scrollPageIntoView, viewerMode],
   );
 
   const handleMouseDown = useCallback((event: MouseEvent<HTMLElement>) => {
@@ -2435,6 +2417,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     () => storedPreferences?.viewerMode ?? "continuous",
   );
   const [fitToPageByDocument, setFitToPageByDocument] = useState<Record<string, boolean>>({});
+  const [presentationFitRefreshToken, setPresentationFitRefreshToken] = useState(0);
   const [activeEditingTool, setActiveEditingTool] =
     useState<EditingTool>("select");
   const [freehandToolStyle, setFreehandToolStyle] = useState<FreehandStyle>(
@@ -2645,14 +2628,40 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, [viewerMode]);
 
   useEffect(() => {
+    let firstFrame: number | null = null;
+    let secondFrame: number | null = null;
+
+    const requestPresentationFitRefresh = () => {
+      firstFrame = window.requestAnimationFrame(() => {
+        secondFrame = window.requestAnimationFrame(() => {
+          setPresentationFitRefreshToken((currentToken) => currentToken + 1);
+        });
+      });
+    };
+
     function handleFullscreenChange() {
-      if (viewerMode === "presentation" && !document.fullscreenElement) {
+      if (viewerMode !== "presentation") {
+        return;
+      }
+
+      if (document.fullscreenElement === presentationContainerRef.current) {
+        // Firefox can dispatch fullscreenchange before the fullscreen layout has
+        // settled. Two frames ensure the measured viewer bounds are final.
+        requestPresentationFitRefresh();
+        return;
+      }
+
+      if (!document.fullscreenElement) {
         setViewerMode("single-page");
       }
     }
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      if (firstFrame !== null) window.cancelAnimationFrame(firstFrame);
+      if (secondFrame !== null) window.cancelAnimationFrame(secondFrame);
+    };
   }, [viewerMode]);
 
   useEffect(() => {
@@ -2960,21 +2969,32 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, []);
 
   useEffect(() => {
-    function handlePresentationShortcuts(event: globalThis.KeyboardEvent) {
-      if (viewerMode !== "presentation") return;
-      if (event.key === "Escape") {
+    function handleViewerNavigation(event: globalThis.KeyboardEvent) {
+      if (
+        viewerMode === "continuous" ||
+        !activeDocument ||
+        isEditableKeyboardTarget(event.target)
+      ) {
+        return;
+      }
+
+      if (event.key === "Escape" && viewerMode === "presentation") {
         event.preventDefault();
         exitPresentation();
         return;
       }
-      if (!activeDocument || isEditableKeyboardTarget(event.target)) return;
 
       switch (event.key) {
         case "ArrowRight":
         case "PageDown":
-        case " ":
           event.preventDefault();
           goToActivePage(activePageNumber + 1);
+          break;
+        case " ":
+          if (viewerMode === "presentation") {
+            event.preventDefault();
+            goToActivePage(activePageNumber + 1);
+          }
           break;
         case "ArrowLeft":
         case "PageUp":
@@ -2992,8 +3012,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       }
     }
 
-    window.addEventListener("keydown", handlePresentationShortcuts);
-    return () => window.removeEventListener("keydown", handlePresentationShortcuts);
+    window.addEventListener("keydown", handleViewerNavigation);
+    return () => window.removeEventListener("keydown", handleViewerNavigation);
   }, [activeDocument, activeOrganizationPlan, activePageNumber, exitPresentation, goToActivePage, viewerMode]);
 
   const updateDocumentScrollPosition = useCallback(
@@ -5004,6 +5024,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onExitPresentation={exitPresentation}
             onZoomSet={setDocumentZoom}
             shouldFitToPage={fitToPageByDocument[activeDocument.id] ?? true}
+            fitRefreshToken={presentationFitRefreshToken}
           />
         ) : activeDocument && activeOrganizationPlan ? (
           <OrganizePages
@@ -5189,7 +5210,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <span className="sr-only">Mode d'affichage</span>
             <select
               value={viewerMode}
-              onChange={(event) => changeViewerMode(event.target.value as ViewerMode)}
+              onChange={(event) => {
+                changeViewerMode(event.target.value as ViewerMode);
+                // A native select keeps focus after selection and would otherwise
+                // intentionally suppress the global page-navigation shortcuts.
+                event.currentTarget.blur();
+              }}
               disabled={!activeDocument || workspaceMode === "organize"}
               aria-label="Mode d'affichage"
               title="Choisir le mode d'affichage"
