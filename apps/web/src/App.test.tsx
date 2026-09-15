@@ -1454,6 +1454,40 @@ describe("App", () => {
     );
   });
 
+  it("keeps the page view mode while comment navigation hides page-only controls", async () => {
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({
+      promise: Promise.resolve(createPdfDocumentMock(2)),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    } as never);
+
+    render(<App />);
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: { files: [new File(["%PDF-1.4"], "comments.pdf", { type: "application/pdf" })] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Couche d'édition de la page 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Vue grille" }));
+    expect(screen.getByRole("button", { name: "Vue grille" })).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Ajouter un commentaire" }));
+    fireEvent.pointerDown(screen.getByLabelText("Couche d'édition de la page 1"), { button: 0, clientX: 120, clientY: 160 });
+    const dialog = await screen.findByRole("dialog", { name: "Nouveau commentaire" });
+    fireEvent.change(within(dialog).getByLabelText("Texte du commentaire"), { target: { value: "Note de navigation" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Ajouter" }));
+
+    fireEvent.click(screen.getByRole("tab", { name: /commentaires/i }));
+    expect(screen.getByRole("tab", { name: /commentaires/i })).toHaveTextContent("Commentaires");
+    expect(screen.getByRole("tab", { name: /commentaires/i })).toHaveTextContent("1");
+    expect(screen.queryByRole("group", { name: "Affichage des pages" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Pages" }));
+    expect(screen.getByRole("button", { name: "Vue grille" })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("switches to organize mode and shows a grid for the active PDF", async () => {
     vi.mocked(pdfjsLib.getDocument).mockReturnValue({
       promise: Promise.resolve(createPdfDocumentMock(3)),

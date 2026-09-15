@@ -100,6 +100,7 @@ import { findTextMarkupAtPoint } from "./pdf/textMarkupHitTest";
 import { loadPdfComments } from "./pdf/comments";
 import { getCommentTypeLabel } from "./editing/comments";
 import { offsetPdfRectWithinPage } from "./editing/coordinates";
+import { getAnnotationScrollTop } from "./pdf/annotationNavigation";
 import {
   getDocumentEditingState,
   pdfEditsReducer,
@@ -824,7 +825,7 @@ type PdfViewerProps = {
   onActivePageChange: (documentId: string, pageNumber: number) => void;
   onSampleColor: (color: string) => void;
   focusRequest: number;
-  pageNavigationRequest: { pageNumber: number; requestId: number } | null;
+  pageNavigationRequest: { pageNumber: number; requestId: number; commentId?: string } | null;
 };
 
 function PdfViewer({
@@ -944,6 +945,34 @@ function PdfViewer({
     return true;
   }, []);
 
+  const scrollCommentIntoView = useCallback((pageNumber: number, commentId: string) => {
+    const viewer = viewerRef.current;
+    const pageElement = pageRefs.current.get(pageNumber)
+      ?? viewer?.querySelector<HTMLElement>(`.pdf-page[data-page-number="${pageNumber}"]`);
+
+    if (!viewer || !pageElement) {
+      return false;
+    }
+
+    const marker = [...pageElement.querySelectorAll<HTMLElement>("[data-comment-id]")]
+      .find((candidate) => candidate.dataset.commentId === commentId);
+
+    if (!marker) {
+      return false;
+    }
+
+    const viewerBounds = viewer.getBoundingClientRect();
+    const markerBounds = marker.getBoundingClientRect();
+    const annotationTop = viewer.scrollTop + markerBounds.top - viewerBounds.top;
+    viewer.scrollTop = getAnnotationScrollTop({
+      annotationTop,
+      annotationHeight: markerBounds.height,
+      viewportHeight: viewer.clientHeight,
+      scrollHeight: viewer.scrollHeight,
+    });
+    return true;
+  }, []);
+
   useEffect(() => {
     const viewer = viewerRef.current;
 
@@ -970,14 +999,30 @@ function PdfViewer({
     if (!pageNavigationRequest) {
       return;
     }
-    if (scrollPageIntoView(pageNavigationRequest.pageNumber, true)) {
-      return;
-    }
-    const frame = window.requestAnimationFrame(() => {
+    if (!pageNavigationRequest.commentId) {
       scrollPageIntoView(pageNavigationRequest.pageNumber, true);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [pageNavigationRequest, scrollPageIntoView]);
+      const frame = window.requestAnimationFrame(() => {
+        scrollPageIntoView(pageNavigationRequest.pageNumber, true);
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    let attempts = 0;
+    let retryTimer: number | null = null;
+    const focusComment = () => {
+      if (scrollCommentIntoView(pageNavigationRequest.pageNumber, pageNavigationRequest.commentId!)) {
+        return;
+      }
+      scrollPageIntoView(pageNavigationRequest.pageNumber, true);
+      if (attempts++ < 20) {
+        retryTimer = window.setTimeout(focusComment, 50);
+      }
+    };
+    focusComment();
+    return () => {
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+    };
+  }, [pageNavigationRequest, scrollCommentIntoView, scrollPageIntoView]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -2018,12 +2063,15 @@ function DocumentSidebar({
       onKeyDown={onKeyDown}
     >
       <div className="sidebar-header">
-        <div className="sidebar-section-tabs" role="tablist" aria-label="Navigation latérale"><button type="button" role="tab" aria-selected={!commentsView} onClick={() => onCommentsViewChange(false)}>Pages</button><button type="button" role="tab" aria-selected={commentsView} onClick={() => onCommentsViewChange(true)}>Commentaires ({comments.length})</button></div>
-        <div className="sidebar-page-view" role="group" aria-label="Affichage des pages">
+        <div className="sidebar-section-tabs" role="tablist" aria-label="Navigation latérale">
+          <button type="button" role="tab" aria-selected={!commentsView} onClick={() => onCommentsViewChange(false)}>Pages</button>
+          <button type="button" role="tab" aria-selected={commentsView} onClick={() => onCommentsViewChange(true)}><span>Commentaires</span>{comments.length > 0 ? <span className="sidebar-tab-badge" aria-label={`${comments.length} commentaires`}>{comments.length}</span> : null}</button>
+        </div>
+        {!commentsView ? <div className="sidebar-page-view" role="group" aria-label="Affichage des pages">
           <button type="button" aria-label="Vue liste" aria-pressed={pageView === "list"} onClick={() => onPageViewChange("list")}>▤</button>
           <button type="button" aria-label="Vue grille" aria-pressed={pageView === "grid"} onClick={() => onPageViewChange("grid")}>▦</button>
           <span className="sidebar-count">{pagePlan?.pages.length ?? 0}</span>
-        </div>
+        </div> : null}
       </div>
 
       <div className="document-sidebar__content">
@@ -2252,6 +2300,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [pageNavigationRequest, setPageNavigationRequest] = useState<{
     pageNumber: number;
     requestId: number;
+    commentId?: string;
   } | null>(null);
   const [signatureImages, setSignatureImages] = useState<
     Record<string, SignatureImage>
@@ -4618,7 +4667,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               setSelectedEditId(comment.id);
               setIsCommentsView(true);
               recordActivePage(activeDocument?.id ?? "", comment.page);
-              setPageNavigationRequest({ pageNumber: comment.page, requestId: ++pageNavigationRequestId.current });
+              setPageNavigationRequest({ pageNumber: comment.page, commentId: comment.id, requestId: ++pageNavigationRequestId.current });
             }}
           />
         ) : null}

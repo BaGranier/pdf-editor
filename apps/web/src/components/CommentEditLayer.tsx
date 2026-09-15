@@ -11,6 +11,7 @@ export function CommentEditMarker({ edit, viewport, selected, onSelect }: {
   return <button
     type="button"
     className={selected ? "pdf-comment-marker is-selected" : "pdf-comment-marker"}
+    data-comment-id={edit.id}
     style={pdfRectToViewportStyle(viewport, edit.rect)}
     aria-label={`Commentaire page ${edit.page}: ${edit.content}`}
     title={edit.content}

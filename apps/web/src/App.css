@@ -190,9 +190,12 @@ body {
 .pdf-comment-marker:hover, .pdf-comment-marker.is-selected { outline: 2px solid var(--selection); outline-offset: 2px; }
 .pdf-comment-marker svg { width: 100%; height: 100%; fill: currentColor; stroke: none; }
 .comment-dialog textarea, .shape-edit-toolbar textarea { width: 100%; resize: vertical; box-sizing: border-box; }
-.sidebar-section-tabs { display: flex; min-width: 0; gap: .2rem; }
-.sidebar-section-tabs button { border: 0; padding: .22rem .32rem; background: transparent; color: var(--text-secondary); font: inherit; font-weight: 700; font-size: .75rem; white-space: nowrap; }
+.sidebar-section-tabs { display: grid; flex: 1; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sidebar-section-tabs button { position: relative; display: inline-flex; min-width: 0; align-items: center; justify-content: center; border: 0; padding: .22rem .32rem; background: transparent; color: var(--text-secondary); font: inherit; font-weight: 700; font-size: .75rem; white-space: nowrap; }
 .sidebar-section-tabs button[aria-selected="true"] { color: var(--accent); border-bottom: 2px solid var(--accent); }
+.sidebar-section-tabs button > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.sidebar-tab-badge { position: absolute; right: .2rem; display: grid; min-width: 1.15rem; height: 1.15rem; padding: 0 .22rem; place-items: center; border-radius: 999px; color: var(--text-secondary); background: var(--surface-muted); font-size: .65rem; font-variant-numeric: tabular-nums; }
+.sidebar-section-tabs button[aria-selected="true"] .sidebar-tab-badge { color: var(--accent); background: var(--selection); }
 .comment-list { display: grid; gap: .35rem; margin: 0; padding: .25rem; list-style: none; }
 .comment-list button { width: 100%; display: grid; gap: .14rem; text-align: left; padding: .48rem; border: 1px solid var(--border); border-radius: .42rem; background: var(--surface); color: var(--text-primary); }
 .comment-list button.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--selection); }
@@ -2517,11 +2520,11 @@ button:disabled {
 
 .sidebar-header {
   display: flex;
-  min-height: 3.2rem;
+  min-height: 2.65rem;
   align-items: center;
   justify-content: space-between;
   margin: 0;
-  padding: 0.8rem 0.9rem 0.6rem;
+  padding: 0.45rem 0.65rem 0.35rem;
 }
 
 .sidebar-page-view {

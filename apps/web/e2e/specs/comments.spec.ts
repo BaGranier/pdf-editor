@@ -11,7 +11,8 @@ test("EDIT-COMMENTS-001 lit, crée et exporte des commentaires natifs", async ({
   await existingMarker.click();
   await expect(page.getByRole("region", { name: "Propriétés du commentaire" })).toContainText("Commentaire existant");
 
-  await page.getByRole("tab", { name: /commentaires \(1\)/i }).click();
+  await page.getByRole("tab", { name: /commentaires/i }).click();
+  await expect(page.getByRole("group", { name: "Affichage des pages" })).toHaveCount(0);
   await page.locator(".comment-list").getByRole("button", { name: /page 1.*commentaire existant/i }).click();
 
   await page.getByRole("button", { name: "Ajouter un commentaire" }).click();
