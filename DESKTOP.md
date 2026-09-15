@@ -115,6 +115,15 @@ npm run dev
 Il utilise `VITE_PDF_ENGINE_URL` lorsqu’elle est définie, sinon
 `http://localhost:8000`. Il n’importe le pont Tauri qu’en environnement desktop.
 
+### Modes de lecture
+
+Le frontend propose les modes Continu, Page unique et Présentation dans la
+WebView. La Présentation demande la Fullscreen API standard sur le root du
+viewer lorsqu'elle est supportée ; aucun fullscreen natif spécifique à Tauri
+n'est actuellement implémenté. Si la WebView refuse cette API, la Présentation
+reste disponible dans toute la surface applicative. `Escape` revient à Page
+unique et conserve la page active.
+
 ### WSLg et rendu WebKitGTK
 
 Sous WSLg, si la WebView reste blanche alors que le terminal confirme la bonne

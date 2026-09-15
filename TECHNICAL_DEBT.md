@@ -60,3 +60,29 @@ cargo clean
 ```
 
 Le prochain `cargo check` ou build recompilera les dépendances nécessaires.
+
+## VIEWER-QA-001 — Validation navigateur finale des modes viewer
+
+Les modes Continu, Page unique et Présentation sont fonctionnellement terminés.
+Il reste à exécuter leur scénario Playwright dans Chromium et Firefox lorsque
+les binaires correspondants sont installés, puis à effectuer une QA manuelle sur
+un écran HiDPI. Les contrôles doivent couvrir portrait, paysage, fullscreen,
+sortie `Escape`, navigation clavier et netteté du texte fin.
+
+Le code ne contient pas de branche Firefox : le canvas PDF.js utilise le même
+backing store proportionnel au DPR dans les deux navigateurs.
+
+## PDF-PERF-001 — Limites mémoire et exports extrêmes
+
+Les seuils de 50 Mo, 250 pages et huit documents ouverts restent des
+avertissements non bloquants. PDF.js charge les documents en mémoire et
+IndexedDB les persiste intégralement ; les exports de plusieurs milliers de
+pages et les quotas navigateur doivent encore être mesurés sur les machines
+cibles. Le warning Vite sur la taille du bundle PDF.js reste non bloquant.
+
+## BACKEND-TEST-001 — Multipart FastAPI d'intégration
+
+Les validations unitaires du moteur PDF sont couvertes, mais le multipart HTTP
+complet n'a pas encore de couverture d'intégration dédiée. Ajouter ce parcours
+avec un corpus de PDF synthétique si la dépendance de test correspondante est
+acceptée.

@@ -76,6 +76,40 @@ Résultat global : `[ ] validé  [ ] anomalies consignées`
   disponibles.
 - Résultat attendu : zoom et défilement restent fluides ; le focus clavier ne se perd pas ; le retour sur un document conserve sa position.
 
+### Modes Continu, Page unique et Présentation
+
+- Statut : `[ ]`
+- Objectif : vérifier les trois modes de lecture et la conservation de la page active.
+- Étapes : ouvrir `pdf-small-5-pages.pdf`, passer du mode Continu à Page unique
+  autour de la page 3, utiliser Previous/Next, puis revenir en Continu. Passer
+  ensuite en Présentation sans cliquer dans le PDF.
+- Résultat attendu : Page unique n'affiche qu'une page avec fit automatique ;
+  Continu revient autour de la même page ; Présentation affiche uniquement le
+  PDF et son fond, sans compteur ni bouton visible.
+
+### Présentation, fullscreen et raccourcis
+
+- Statut : `[ ]`
+- Objectif : vérifier la lecture immersive en portrait et paysage.
+- Étapes : avec `pdf-landscape-portrait.pdf`, entrer en Présentation, accepter
+  le fullscreen si le navigateur le propose, puis tester `ArrowLeft`,
+  `ArrowRight`, `PageUp`, `PageDown`, `Home`, `End`, `Space` et `Escape`.
+- Résultat attendu : la page utilise toute la surface compatible avec son ratio,
+  reste centrée, les raccourcis changent uniquement la page et `Escape` revient
+  à Page unique sur la dernière page affichée. Aucun contrôle visuel ni hitbox
+  de navigation ne reste dans la Présentation.
+
+### Netteté HiDPI et ajustement
+
+- Statut : `[ ]`
+- Objectif : vérifier le rerendu PDF.js après fit, resize et fullscreen.
+- Étapes : sur un écran DPR supérieur à 1 si disponible, utiliser un PDF avec
+  texte fin, alterner Page unique, Présentation, `Ajuster`, zoom manuel et
+  redimensionnement de fenêtre.
+- Résultat attendu : le texte, les lignes, la text layer et les annotations
+  restent alignés et ne deviennent pas visiblement flous après un changement de
+  fit ou de fullscreen.
+
 ### Sidebar et thème
 
 - Statut : `[ ]`

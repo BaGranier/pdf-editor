@@ -32,6 +32,10 @@ PLAYWRIGHT_BROWSERS_PATH=../../.playwright-browsers \
 `PLAYWRIGHT_BROWSERS_PATH` est facultatif. Il permet de garder les navigateurs
 Playwright dans le dépôt de travail (le dossier est ignoré par Git).
 
+Si les binaires ne sont pas installés et qu'aucune installation n'est autorisée,
+ne pas lancer de téléchargement implicite : consigner les E2E comme **non
+exécutés**. Un scénario écrit ne vaut pas une validation navigateur.
+
 ## Exécution
 
 Depuis `apps/web` :
@@ -53,6 +57,16 @@ npm run qa:e2e:firefox
 # Diagnostic interactif
 npm run qa:e2e:headed
 npm run qa:e2e:debug
+```
+
+Le scénario `viewer-modes.spec.ts` couvre Continu, Page unique et Présentation :
+navigation clavier, sortie `Escape`, absence totale de chrome en Présentation et
+rapport entre la résolution du canvas et sa taille CSS. Le rejouer dans Chromium
+et Firefox après toute modification du viewer :
+
+```bash
+npm run qa:e2e:chromium -- --grep VIEWER-MODES
+npm run qa:e2e:firefox -- --grep VIEWER-MODES
 ```
 
 La commande vérifie d'abord les ports `5173` et `8000`. Si un service attendu y
@@ -195,5 +209,8 @@ Ces contrôles sont documentés dans le résumé, mais ne bloquent pas la campag
 - acceptabilité du décalage Firefox ;
 - consommation mémoire totale réelle du navigateur et du système ;
 - raccourcis dépendant du clavier physique ;
+- modes Page unique et Présentation sur PDF portrait et paysage, avec entrée et
+  sortie fullscreen ;
+- netteté HiDPI du texte fin et des lignes après un changement de fit ;
 - comportement avec des PDF confidentiels ou non reproductibles ;
 - validation finale du niveau de gravité des anomalies.

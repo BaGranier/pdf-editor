@@ -27,6 +27,23 @@ Le développement et le packaging natifs sont documentés dans
 - conversion en DOCX éditable ou visuel, TXT, HTML, PNG et JPEG ;
 - exécution web ou desktop avec cycle de vie du backend géré par Tauri.
 
+### Modes de lecture
+
+Le viewer propose trois modes complémentaires :
+
+- **Continu** affiche toutes les pages avec défilement ;
+- **Page unique** affiche une page, applique un ajustement automatique, conserve
+  la page active entre les modes et laisse disponibles le zoom manuel et
+  **Ajuster** ;
+- **Présentation** demande le plein écran via l'API navigateur lorsqu'elle est
+  disponible, sinon utilise toute la surface applicative. Elle n'affiche que le
+  PDF et son fond, sans chrome d'édition.
+
+En Page unique et Présentation, `ArrowLeft`/`PageUp` vont à la page précédente,
+`ArrowRight`/`PageDown` à la suivante, `Home` à la première et `End` à la
+dernière. En Présentation, `Space` avance et `Escape` revient à Page unique en
+conservant la page active. Les miniatures et commentaires ouvrent la page ciblée.
+
 La reconstruction DOCX éditable, la qualité OCR sur des scans réels et le
 packaging desktop multi-plateforme restent soumis aux limites décrites dans
 [CONVERSION.md](CONVERSION.md), [DESKTOP.md](DESKTOP.md) et

@@ -2,9 +2,15 @@
 
 > Rapport historique figé : cette campagne a été exécutée le 16 juillet 2026
 > sur le commit `0256126`, avant l'ajout des parcours OCR, conversion et édition
-> actuels. Elle ne décrit pas l'état courant du dépôt. Le protocole automatisé
+> actuels, ainsi que des modes Page unique et Présentation finaux. Elle ne
+> décrit pas l'état courant du dépôt. Le protocole automatisé
 > actuel est documenté dans `QA_AUTOMATION.md`; `QA_AUTOMATED_REPORT.md`, lorsqu'il
 > existe localement, correspond à la dernière exécution automatisée.
+
+Les contrôles manuels actuels du viewer sont dans
+`QA_BROWSER_CHECKLIST.md`. Les E2E viewer sont écrits, mais leur exécution
+Chromium/Firefox reste à consigner séparément lorsque les binaires Playwright sont
+disponibles.
 
 Ce rapport accompagne [QA_BROWSER_CHECKLIST.md](QA_BROWSER_CHECKLIST.md). Une ligne ne peut être marquée `OK` qu'après une vérification réelle dans le navigateur concerné.
 

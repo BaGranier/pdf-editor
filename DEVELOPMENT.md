@@ -82,6 +82,15 @@ Les PDF de QA reproductibles sont générés sous `apps/web/e2e/fixtures`. Les
 résultats Playwright, téléchargements et rapports générés restent sous
 `apps/web/test-results` et sont ignorés par Git.
 
+## Rendu du viewer
+
+Les modes Continu, Page unique et Présentation partagent le même rendu PDF.js.
+Le canvas conserve sa taille CSS correspondant au viewport PDF, tandis que son
+backing store est dimensionné avec `window.devicePixelRatio`. PDF.js est rerendu
+après un changement de zoom, de fit, de redimensionnement ou de fullscreen ; la
+text layer et les overlays continuent à utiliser le viewport CSS. Cette logique
+est commune à Chromium et Firefox.
+
 ## Données locales et secrets
 
 - placer les documents utilisateur dans `data/input`, qui est ignoré hormis son
