@@ -109,6 +109,7 @@ import {
 import { downloadPdfToBrowser } from "./saving/destination";
 import { getSuggestedPdfSaveName } from "./saving/fileName";
 import { computeFitScale } from "./viewer/fit";
+import { getCanvasRenderDimensions } from "./viewer/rendering";
 import "./App.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -628,19 +629,23 @@ function PdfPageCanvas({
           throw new Error("Le canvas n'est pas disponible.");
         }
 
-        const outputScale = window.devicePixelRatio || 1;
-        canvas.width = Math.floor(viewport.width * outputScale);
-        canvas.height = Math.floor(viewport.height * outputScale);
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
-        surface.style.width = `${viewport.width}px`;
-        surface.style.height = `${viewport.height}px`;
+        const renderDimensions = getCanvasRenderDimensions(
+          viewport.width,
+          viewport.height,
+          window.devicePixelRatio,
+        );
+        canvas.width = renderDimensions.canvasWidth;
+        canvas.height = renderDimensions.canvasHeight;
+        canvas.style.width = `${renderDimensions.cssWidth}px`;
+        canvas.style.height = `${renderDimensions.cssHeight}px`;
+        surface.style.width = `${renderDimensions.cssWidth}px`;
+        surface.style.height = `${renderDimensions.cssHeight}px`;
         surface.style.minWidth = "0";
         surface.style.minHeight = "0";
         setViewport(viewport);
 
-        context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
-        context.clearRect(0, 0, viewport.width, viewport.height);
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.clearRect(0, 0, canvas.width, canvas.height);
 
         try {
           textLayerTask = renderPdfTextLayer({
@@ -663,6 +668,7 @@ function PdfPageCanvas({
           canvas,
           canvasContext: context,
           viewport,
+          transform: [renderDimensions.outputScale, 0, 0, renderDimensions.outputScale, 0, 0],
         });
 
         await renderTask.promise;
@@ -1045,13 +1051,15 @@ function PdfViewer({
         scale: 1,
         rotation: ((sourcePage.rotate ?? 0) + page.rotation) % 360,
       });
-      const navigationHeight = viewer.querySelector<HTMLElement>(".viewer-page-navigation")?.offsetHeight ?? 0;
+      const navigationHeight = viewerMode === "presentation"
+        ? 0
+        : viewer.querySelector<HTMLElement>(".viewer-page-navigation")?.offsetHeight ?? 0;
       const scale = computeFitScale({
         pageWidth: viewport.width,
         pageHeight: viewport.height,
         containerWidth: viewer.clientWidth,
         containerHeight: Math.max(1, viewer.clientHeight - navigationHeight),
-        padding: viewerMode === "presentation" ? 16 : 20,
+        padding: viewerMode === "presentation" ? 0 : 20,
         minScale: MIN_ZOOM,
         maxScale: MAX_ZOOM,
       });
@@ -1365,6 +1373,7 @@ function PdfViewer({
         <nav className="viewer-page-navigation" aria-label="Navigation des pages">
           <button
             type="button"
+            className={viewerMode === "presentation" ? "viewer-page-navigation__previous" : undefined}
             onClick={() => goToPage(activePageNumber - 1)}
             disabled={activePageNumber <= 1}
             aria-label="Page précédente"
@@ -1372,9 +1381,12 @@ function PdfViewer({
           >
             ←
           </button>
-          <output aria-label={`Page ${activePageNumber} sur ${pages.length}`}>{activePageNumber} / {pages.length}</output>
+          {viewerMode !== "presentation" ? (
+            <output aria-label={`Page ${activePageNumber} sur ${pages.length}`}>{activePageNumber} / {pages.length}</output>
+          ) : null}
           <button
             type="button"
+            className={viewerMode === "presentation" ? "viewer-page-navigation__next" : undefined}
             onClick={() => goToPage(activePageNumber + 1)}
             disabled={activePageNumber >= pages.length}
             aria-label="Page suivante"
@@ -5205,7 +5217,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         >
           {activeDocument?.fileName ?? ""}
         </span>
-        <div className="page-controls">
+        <div className="page-controls" aria-label="Affichage et zoom">
           <label className="viewer-mode-control">
             <span className="sr-only">Mode d'affichage</span>
             <select
@@ -5225,48 +5237,51 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               <option value="presentation">Présentation</option>
             </select>
           </label>
-          <button
-            type="button"
-            onClick={() => {
-              if (activeDocument) {
-                setFitToPageByDocument((currentModes) => ({ ...currentModes, [activeDocument.id]: true }));
-              }
-            }}
-            disabled={!activeDocument || workspaceMode === "organize" || viewerMode === "continuous"}
-            aria-label="Ajuster à la page"
-            title="Ajuster la page à l'espace disponible"
-          >
-            Ajuster
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (activeDocument) {
-                updateDocumentZoom(activeDocument.id, -ZOOM_STEP);
-              }
-            }}
-            disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom <= MIN_ZOOM}
-            aria-label="Réduire le zoom"
-            title="Réduire le zoom"
-          >
-            −
-          </button>
-          <span className="zoom-value" data-testid="zoom-level" aria-live="polite">
-            {activeDocument ? `${Math.round(activeDocument.zoom * 100)}%` : "—"}
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              if (activeDocument) {
-                updateDocumentZoom(activeDocument.id, ZOOM_STEP);
-              }
-            }}
-            disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom >= MAX_ZOOM}
-            aria-label="Augmenter le zoom"
-            title="Augmenter le zoom"
-          >
-            +
-          </button>
+          <div className="zoom-controls" role="group" aria-label="Zoom">
+            <button
+              type="button"
+              className="zoom-controls__fit"
+              onClick={() => {
+                if (activeDocument) {
+                  setFitToPageByDocument((currentModes) => ({ ...currentModes, [activeDocument.id]: true }));
+                }
+              }}
+              disabled={!activeDocument || workspaceMode === "organize" || viewerMode === "continuous"}
+              aria-label="Ajuster à la page"
+              title="Ajuster la page à l'espace disponible"
+            >
+              Ajuster
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (activeDocument) {
+                  updateDocumentZoom(activeDocument.id, -ZOOM_STEP);
+                }
+              }}
+              disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom <= MIN_ZOOM}
+              aria-label="Réduire le zoom"
+              title="Réduire le zoom"
+            >
+              −
+            </button>
+            <span className="zoom-value" data-testid="zoom-level" aria-live="polite">
+              {activeDocument ? `${Math.round(activeDocument.zoom * 100)}%` : "—"}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                if (activeDocument) {
+                  updateDocumentZoom(activeDocument.id, ZOOM_STEP);
+                }
+              }}
+              disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom >= MAX_ZOOM}
+              aria-label="Augmenter le zoom"
+              title="Augmenter le zoom"
+            >
+              +
+            </button>
+          </div>
         </div>
       </footer>
     </main>

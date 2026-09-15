@@ -98,6 +98,47 @@ describe("App", () => {
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
   });
 
+  it("keeps display mode and zoom controls as distinct actions", () => {
+    render(<App />);
+
+    const controls = screen.getByLabelText("Affichage et zoom");
+    const fitButton = within(controls).getByRole("button", { name: "Ajuster à la page" });
+    const decreaseButton = within(controls).getByRole("button", { name: "Réduire le zoom" });
+    const increaseButton = within(controls).getByRole("button", { name: "Augmenter le zoom" });
+
+    expect(within(controls).getByLabelText("Mode d'affichage")).toBeInTheDocument();
+    expect(within(controls).getByRole("group", { name: "Zoom" })).toContainElement(fitButton);
+    expect(fitButton).not.toBe(decreaseButton);
+    expect(decreaseButton).not.toBe(increaseButton);
+    expect(within(controls).getByTestId("zoom-level")).toHaveTextContent("—");
+  });
+
+  it("keeps fit, decrease, and increase as independent zoom actions", async () => {
+    render(<App />);
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents ouverts" });
+    fireEvent.change(within(sidebar).getByLabelText("Ouvrir un PDF"), {
+      target: { files: [new File(["%PDF-1.4"], "zoom-controls.pdf", { type: "application/pdf" })] },
+    });
+    await waitFor(() => expect(screen.getByLabelText("Mode d'affichage")).toBeEnabled());
+    const viewer = screen.getByTestId("pdf-viewer");
+    Object.defineProperties(viewer, {
+      clientWidth: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 900 },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Aller à la page 1" }));
+    fireEvent.change(screen.getByLabelText("Mode d'affichage"), { target: { value: "single-page" } });
+
+    await waitFor(() => expect(screen.getByTestId("zoom-level")).toHaveTextContent("86%"));
+    fireEvent.click(screen.getByRole("button", { name: "Augmenter le zoom" }));
+    await waitFor(() => expect(screen.getByTestId("zoom-level")).toHaveTextContent("96%"));
+    fireEvent.click(screen.getByRole("button", { name: "Réduire le zoom" }));
+    await waitFor(() => expect(screen.getByTestId("zoom-level")).toHaveTextContent("86%"));
+    fireEvent.click(screen.getByRole("button", { name: "Augmenter le zoom" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ajuster à la page" }));
+    await waitFor(() => expect(screen.getByTestId("zoom-level")).toHaveTextContent("86%"));
+  });
+
   it("opens PDFs in the sidebar and marks the active document", async () => {
     render(<App />);
 
@@ -183,11 +224,13 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("main")).toHaveClass("app-shell--presentation");
-      expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("1 / 3");
+      expect(document.querySelector(".viewer-page-navigation output")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Page précédente" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Page suivante" })).toBeInTheDocument();
     });
     fireEvent.keyDown(window, { key: "ArrowRight" });
     await waitFor(() => {
-      expect(document.querySelector(".viewer-page-navigation output")).toHaveTextContent("2 / 3");
+      expect(document.querySelector(".viewer--presentation .pdf-page")).toHaveAttribute("data-page-number", "2");
     });
     fireEvent.keyDown(window, { key: "Escape" });
 
@@ -311,7 +354,7 @@ describe("App", () => {
     fireEvent(document, new Event("fullscreenchange"));
     await waitFor(() => {
       expect(screen.getByLabelText("Mode d'affichage")).toHaveValue("presentation");
-      expect(screen.getByTestId("zoom-level")).toHaveTextContent("87%");
+      expect(screen.getByTestId("zoom-level")).toHaveTextContent("90%");
     });
     Object.defineProperty(document, "fullscreenElement", { configurable: true, value: null });
     fireEvent(document, new Event("fullscreenchange"));

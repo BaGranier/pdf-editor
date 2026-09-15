@@ -1005,12 +1005,18 @@ button:disabled {
   outline: none;
 }
 
-.viewer--single-page,
-.viewer--presentation {
+.viewer--single-page {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   place-items: stretch;
   padding: 1rem;
+}
+
+.viewer--presentation {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  place-items: stretch;
+  padding: 0;
 }
 
 .viewer--single-page .pdf-document,
@@ -1064,18 +1070,48 @@ button:disabled {
   display: none;
 }
 
+.viewer--presentation .pdf-page {
+  gap: 0;
+}
+
 .viewer--presentation .viewer-page-navigation {
   position: absolute;
   z-index: 2;
-  right: 50%;
-  bottom: 1rem;
-  transform: translateX(50%);
-  padding: 0.35rem 0.5rem;
+  inset: 0;
+  display: block;
+  min-height: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+.viewer--presentation .viewer-page-navigation button {
+  position: absolute;
+  top: 50%;
+  min-width: 2.5rem;
+  min-height: 3.5rem;
+  padding: 0;
   color: #e5e7eb;
-  border: 1px solid rgb(255 255 255 / 18%);
+  border-color: rgb(255 255 255 / 18%);
   border-radius: 999px;
   background: rgb(15 18 24 / 72%);
-  opacity: 1;
+  font-size: 1.4rem;
+  transform: translateY(-50%);
+  pointer-events: auto;
+}
+
+.viewer--presentation .viewer-page-navigation__previous {
+  left: 0.75rem;
+}
+
+.viewer--presentation .viewer-page-navigation__next {
+  right: 0.75rem;
+}
+
+.viewer--presentation .viewer-page-navigation__exit {
+  top: 0.75rem;
+  right: 0.75rem;
+  min-height: 2rem;
+  transform: none;
 }
 
 .viewer-page-navigation__exit {
@@ -3138,9 +3174,18 @@ button:disabled {
 
 .status-bar .page-controls {
   justify-self: end;
+  gap: 0.7rem;
 }
 
-.status-bar .page-controls button {
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding-left: 0.7rem;
+  border-left: 1px solid var(--border);
+}
+
+.status-bar .zoom-controls button {
   width: 1.75rem;
   min-width: 1.75rem;
   min-height: 1.75rem;
@@ -3150,9 +3195,31 @@ button:disabled {
   font-size: 1rem;
 }
 
+.status-bar .zoom-controls .zoom-controls__fit {
+  width: auto;
+  min-width: auto;
+  padding: 0 0.55rem;
+  font-size: 0.75rem;
+}
+
 .status-bar .zoom-value {
   min-width: 4rem;
   font-size: 0.75rem;
+}
+
+@media (max-width: 720px) {
+  .status-bar .page-controls {
+    gap: 0.35rem;
+  }
+
+  .zoom-controls {
+    gap: 0.15rem;
+    padding-left: 0.35rem;
+  }
+
+  .status-bar .zoom-controls .zoom-controls__fit {
+    padding: 0 0.35rem;
+  }
 }
 
 @media (max-width: 1120px) {

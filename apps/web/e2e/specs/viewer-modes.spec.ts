@@ -28,7 +28,14 @@ test("VIEWER-MODES-001 @smoke bascule entre continu, page unique et présentatio
   await viewerMode.selectOption("presentation");
   await expect(page.locator(".app-shell")).toHaveClass(/app-shell--presentation/);
   await expect(viewer.locator(".pdf-page")).toHaveAttribute("data-page-number", "4");
+  await expect(viewer.locator(".viewer-page-navigation output")).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Outils d'édition" })).toBeHidden();
+  const canvasIsSharpForItsCssSize = await viewer.locator(".pdf-canvas").evaluate((canvas) => {
+    if (!(canvas instanceof HTMLCanvasElement)) return false;
+    const bounds = canvas.getBoundingClientRect();
+    return bounds.width > 0 && canvas.width >= Math.floor(bounds.width * window.devicePixelRatio) - 1;
+  });
+  expect(canvasIsSharpForItsCssSize).toBe(true);
   await page.keyboard.press("ArrowRight");
   await expect(viewer.locator(".pdf-page")).toHaveAttribute("data-page-number", "5");
   await page.keyboard.press("Escape");
