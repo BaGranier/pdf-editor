@@ -23,6 +23,7 @@ export type PdfEditsByDocument = Record<string, DocumentEditingState>;
 
 export type PdfEditsAction =
   | { type: "add"; documentId: string; edit: PdfEdit }
+  | { type: "hydrate"; documentId: string; edits: PdfEdit[] }
   | { type: "replace"; documentId: string; edit: PdfEdit; coalesceKey?: string }
   | { type: "finish_coalescing"; documentId: string; coalesceKey: string }
   | { type: "delete"; documentId: string; editId: string }
@@ -102,6 +103,12 @@ function editsAreEqual(left: PdfEdit, right: PdfEdit) {
     return left.kind === right.kind && left.color === right.color && JSON.stringify(left.rects) === JSON.stringify(right.rects);
   }
 
+  if (left.type === "comment" && right.type === "comment") {
+    return left.commentType === right.commentType && left.content === right.content &&
+      left.author === right.author && left.createdAt === right.createdAt &&
+      left.modifiedAt === right.modifiedAt && left.source === right.source;
+  }
+
   return false;
 }
 
@@ -143,6 +150,13 @@ export function pdfEditsReducer(
   action: PdfEditsAction,
 ): PdfEditsByDocument {
   switch (action.type) {
+    case "hydrate": {
+      const current = getDocumentEditingState(state, action.documentId);
+      const known = new Set(current.edits.map((edit) => edit.id));
+      const additions = action.edits.filter((edit) => !known.has(edit.id));
+      if (additions.length === 0) return state;
+      return { ...state, [action.documentId]: withDerivedState({ ...current, edits: [...current.edits, ...additions] }) };
+    }
     case "add": {
       const current = getDocumentEditingState(state, action.documentId);
       return {

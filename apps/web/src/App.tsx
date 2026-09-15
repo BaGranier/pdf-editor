@@ -86,6 +86,7 @@ import {
   type FreehandEdit,
   type FreehandStyle,
   type PdfEdit,
+  type PdfCommentEdit,
   type PdfRect,
   type SignatureEdit,
   type SignatureImage,
@@ -96,6 +97,7 @@ import {
 } from "./editing/types";
 import { selectionClientRectsToPdfRects } from "./pdf/selectionGeometry";
 import { findTextMarkupAtPoint } from "./pdf/textMarkupHitTest";
+import { loadPdfComments } from "./pdf/comments";
 import { offsetPdfRectWithinPage } from "./editing/coordinates";
 import {
   getDocumentEditingState,
@@ -180,6 +182,11 @@ type DocumentSidebarProps = {
   onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
   pageView: "list" | "grid";
   onPageViewChange: (view: "list" | "grid") => void;
+  comments: PdfCommentEdit[];
+  commentsView: boolean;
+  selectedCommentId: string | null;
+  onCommentsViewChange: (value: boolean) => void;
+  onSelectComment: (comment: PdfCommentEdit) => void;
 };
 
 type SidebarKeyTarget = "file-input" | string | null;
@@ -372,6 +379,10 @@ function clonePdfEdit(edit: PdfEdit): PdfEdit {
     return { ...edit, rect: { ...edit.rect }, rects: edit.rects.map((rect) => ({ ...rect })) };
   }
 
+  if (edit.type === "comment") {
+    return { ...edit, rect: { ...edit.rect } };
+  }
+
   return { ...edit, rect: { ...edit.rect } };
 }
 
@@ -435,6 +446,7 @@ type PdfPageCanvasProps = {
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect) => void;
   onAddFreehand: (pageNumber: number, points: import("./editing/types").PdfPoint[]) => void;
+  onStartComment: (pageNumber: number, point: import("./editing/types").PdfPoint) => void;
   onPlaceSignature: (pageNumber: number, rect: PdfRect) => void;
   onSelectEdit: (editId: string) => void;
   onDeselectEdit: () => void;
@@ -461,6 +473,7 @@ function PdfPageCanvas({
   onAddText,
   onAddShape,
   onAddFreehand,
+  onStartComment,
   onPlaceSignature,
   onSelectEdit,
   onDeselectEdit,
@@ -752,6 +765,7 @@ function PdfPageCanvas({
               onAddShape(sourcePageNumber, shapeType, rect)
             }
             onAddFreehand={(points) => onAddFreehand(sourcePageNumber, points)}
+            onStartComment={(point) => onStartComment(sourcePageNumber, point)}
             onPlaceSignature={(rect) => onPlaceSignature(sourcePageNumber, rect)}
             onSelect={onSelectEdit}
             onUpdate={onUpdateEdit}
@@ -779,6 +793,7 @@ type PdfViewerProps = {
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect) => void;
   onAddFreehand: (pageNumber: number, points: import("./editing/types").PdfPoint[]) => void;
+  onStartComment: (pageNumber: number, point: import("./editing/types").PdfPoint) => void;
   onPlaceSignature: (pageNumber: number, rect: PdfRect) => void;
   onSelectEdit: (editId: string) => void;
   onDeselectEdit: () => void;
@@ -806,6 +821,7 @@ function PdfViewer({
   onAddText,
   onAddShape,
   onAddFreehand,
+  onStartComment,
   onPlaceSignature,
   onSelectEdit,
   onDeselectEdit,
@@ -1166,6 +1182,7 @@ function PdfViewer({
               onAddText={onAddText}
                 onAddShape={onAddShape}
                 onAddFreehand={onAddFreehand}
+                onStartComment={onStartComment}
               onPlaceSignature={onPlaceSignature}
               onSelectEdit={onSelectEdit}
               onDeselectEdit={onDeselectEdit}
@@ -1964,6 +1981,11 @@ function DocumentSidebar({
   onKeyDown,
   pageView,
   onPageViewChange,
+  comments,
+  commentsView,
+  selectedCommentId,
+  onCommentsViewChange,
+  onSelectComment,
 }: DocumentSidebarProps) {
   return (
     <aside
@@ -1974,7 +1996,7 @@ function DocumentSidebar({
       onKeyDown={onKeyDown}
     >
       <div className="sidebar-header">
-        <h2>Pages</h2>
+        <div className="sidebar-section-tabs" role="tablist" aria-label="Navigation latérale"><button type="button" role="tab" aria-selected={!commentsView} onClick={() => onCommentsViewChange(false)}>Pages</button><button type="button" role="tab" aria-selected={commentsView} onClick={() => onCommentsViewChange(true)}>Commentaires ({comments.length})</button></div>
         <div className="sidebar-page-view" role="group" aria-label="Affichage des pages">
           <button type="button" aria-label="Vue liste" aria-pressed={pageView === "list"} onClick={() => onPageViewChange("list")}>▤</button>
           <button type="button" aria-label="Vue grille" aria-pressed={pageView === "grid"} onClick={() => onPageViewChange("grid")}>▦</button>
@@ -1984,7 +2006,9 @@ function DocumentSidebar({
 
       <div className="document-sidebar__content">
         <div className="document-sidebar__scroll-area">
-          {pagePlan && pagePlan.pages.length > 0 ? (
+          {commentsView ? (
+            comments.length ? <ol className="comment-list" aria-label="Commentaires">{[...comments].sort((left, right) => left.page - right.page || left.rect.y0 - right.rect.y0).map((comment) => <li key={comment.id}><button type="button" className={comment.id === selectedCommentId ? "is-selected" : ""} onClick={() => onSelectComment(comment)}><strong>Page {comment.page}</strong><span>{comment.content}</span></button></li>)}</ol> : <p className="sidebar-hint">Aucun commentaire dans ce document.</p>
+          ) : pagePlan && pagePlan.pages.length > 0 ? (
             <SidebarPageList
               documents={documents}
               pagePlan={pagePlan}
@@ -2048,6 +2072,7 @@ type ToolbarIconName =
   | "signature"
   | "shape"
   | "freehand"
+  | "comment"
   | "organize"
   | "ocr"
   | "conversion"
@@ -2098,6 +2123,7 @@ function ToolbarIcon({ name }: { name: ToolbarIconName }) {
         </>
       ) : null}
       {name === "freehand" ? <path d="M3 15c2-6 3.5-8 5-8 1.8 0-.8 7 1 7 1.5 0 2-5 3.4-5 .9 0-.1 4 1.3 4 .8 0 1.2-1.3 2.3-1.3M3 17h14" /> : null}
+      {name === "comment" ? <path d="M3 3h14v10H8l-5 4V3Z" /> : null}
       {name === "organize" ? (
         <>
           <rect x="3" y="3" width="5" height="6" rx="1" />
@@ -2170,6 +2196,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [isShapePickerOpen, setIsShapePickerOpen] = useState(false);
   const [textMarkupSelection, setTextMarkupSelection] = useState<{ page: number; rects: PdfRect[]; top: number; left: number } | null>(null);
   const [textMarkupColor, setTextMarkupColor] = useState("#eab308");
+  const [pendingComment, setPendingComment] = useState<{ page: number; point: import("./editing/types").PdfPoint } | null>(null);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [isCommentsView, setIsCommentsView] = useState(false);
   const [shapePickerPosition, setShapePickerPosition] = useState({ top: 0, left: 0 });
   const shapePickerButtonRef = useRef<HTMLButtonElement | null>(null);
   const shapePickerRef = useRef<HTMLDivElement | null>(null);
@@ -2233,6 +2262,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const nextShapeEditId = useRef(1);
   const nextFreehandEditId = useRef(1);
   const nextTextMarkupEditId = useRef(1);
+  const nextCommentEditId = useRef(1);
   const textMarkupToolbarRef = useRef<HTMLDivElement | null>(null);
   const nextSignatureImageId = useRef(1);
   const nextSignatureEditId = useRef(1);
@@ -2313,11 +2343,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       : null
   );
   const selectedTextMarkupEdit = activePdfEdits.find((edit): edit is TextMarkupEdit => edit.id === selectedEditId && edit.type === "text_markup") ?? null;
+  const selectedCommentEdit = activePdfEdits.find((edit): edit is PdfCommentEdit => edit.id === selectedEditId && edit.type === "comment") ?? null;
   const selectedPdfEdit =
     activePdfEdits.find((edit) => edit.id === selectedEditId) ?? null;
   const pendingSignatureImage = pendingSignatureImageId
     ? (signatureImages[pendingSignatureImageId] ?? null)
     : null;
+  const activeComments = activePdfEdits.filter((edit): edit is PdfCommentEdit => edit.type === "comment");
   const hasPendingOrganizationChanges =
     activeDocument !== null &&
     activeOrganizationPlan !== null &&
@@ -2710,6 +2742,30 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     window.getSelection()?.removeAllRanges();
   }, [activeDocument, textMarkupSelection]);
 
+  const startComment = useCallback((page: number, point: import("./editing/types").PdfPoint) => {
+    if (!activeDocument) return;
+    setPendingComment({ page, point });
+    setCommentDraft("");
+  }, [activeDocument]);
+
+  const addComment = useCallback(() => {
+    if (!activeDocument || !pendingComment || !commentDraft.trim()) return;
+    const now = new Date().toISOString();
+    const edit: PdfCommentEdit = {
+      id: `comment-${Date.now()}-${nextCommentEditId.current++}`,
+      type: "comment",
+      commentType: "text",
+      page: pendingComment.page,
+      rect: { x0: pendingComment.point.x, y0: pendingComment.point.y, x1: pendingComment.point.x + 18, y1: pendingComment.point.y + 18 },
+      content: commentDraft.trim(), author: "PDF Studio Local", createdAt: now, modifiedAt: now, source: "local",
+    };
+    dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
+    setSelectedEditId(edit.id);
+    setPendingComment(null);
+    setCommentDraft("");
+    setActiveEditingTool("select");
+  }, [activeDocument, commentDraft, pendingComment]);
+
   useEffect(() => {
     const handleSelection = (event: Event) => setTextMarkupSelection((event as CustomEvent<{ page: number; rects: PdfRect[]; top: number; left: number }>).detail);
     const close = () => setTextMarkupSelection(null);
@@ -2768,6 +2824,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       if (!activeDocument) {
         return;
       }
+      const edit = getDocumentEditingState(pdfEditsByDocument, activeDocument.id).edits.find((candidate) => candidate.id === editId);
+      if (edit?.type === "comment" && edit.source === "pdf") {
+        return;
+      }
       dispatchPdfEdits({
         type: "delete",
         documentId: activeDocument.id,
@@ -2776,7 +2836,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       setSelectedEditId((currentId) => (currentId === editId ? null : currentId));
       setExportFeedback(null);
     },
-    [activeDocument],
+    [activeDocument, pdfEditsByDocument],
   );
 
   const undoPdfEdit = useCallback(() => {
@@ -3457,10 +3517,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       setDocuments((currentDocuments) => [...currentDocuments, openedDocument]);
       setActiveDocumentId(openedDocument.id);
       setWorkspaceMode("read");
+      if (!import.meta.env.MODE.startsWith("test")) void loadPdfComments(backendUrl, openedDocument.file).then((comments) => {
+        if (comments.length) dispatchPdfEdits({ type: "hydrate", documentId: openedDocument.id, edits: comments });
+      });
 
       return { openedDocument, usageWarnings };
     },
-    [documents, loadOpenPdfDocument],
+    [backendUrl, documents, loadOpenPdfDocument],
   );
 
   const addExternalPagesFromOpenDocument = useCallback(
@@ -3611,6 +3674,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     const exportedTextMarkupEdits = exportedPdfEdits.filter(
       (edit): edit is TextMarkupEdit & { sourceDocumentId: string; order: number } => edit.type === "text_markup",
     );
+    const exportedComments = exportedPdfEdits.filter(
+      (edit): edit is PdfCommentEdit & { sourceDocumentId: string; order: number } => edit.type === "comment" && edit.source === "local",
+    );
     const exportedSignatureImageIds = new Set(
       exportedSignatureEdits.map((edit) => edit.imageId),
     );
@@ -3644,6 +3710,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           : {}),
         ...(exportedFreehandEdits.length > 0 ? { freehands: exportedFreehandEdits } : {}),
         ...(exportedTextMarkupEdits.length > 0 ? { textMarkups: exportedTextMarkupEdits } : {}),
+        ...(exportedComments.length > 0 ? { comments: exportedComments } : {}),
       }),
     );
 
@@ -4043,6 +4110,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       setDocuments((currentDocuments) => [...currentDocuments, ...openedDocuments]);
       setActiveDocumentId(openedDocuments[openedDocuments.length - 1].id);
       pendingFocusTargetRef.current = "viewer";
+      openedDocuments.forEach((openedDocument) => {
+        if (!import.meta.env.MODE.startsWith("test")) void loadPdfComments(backendUrl, openedDocument.file).then((comments) => {
+          if (comments.length) dispatchPdfEdits({ type: "hydrate", documentId: openedDocument.id, edits: comments });
+        });
+      });
     }
 
     const usageWarnings = openedDocuments.flatMap((openedDocument, index) =>
@@ -4257,6 +4329,19 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         />
       ) : null}
 
+      {pendingComment ? (
+        <div className="unsaved-dialog-backdrop" role="presentation">
+          <section className="unsaved-dialog comment-dialog" role="dialog" aria-modal="true" aria-labelledby="comment-dialog-title">
+            <h2 id="comment-dialog-title">Nouveau commentaire</h2>
+            <textarea autoFocus value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} aria-label="Texte du commentaire" placeholder="Saisissez votre commentaire…" rows={4} />
+            <div className="unsaved-dialog__actions">
+              <button type="button" onClick={() => { setPendingComment(null); setCommentDraft(""); setActiveEditingTool("select"); }}>Annuler</button>
+              <button type="button" onClick={addComment} disabled={!commentDraft.trim()}>Ajouter</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {saveAsDocument ? (
         <SaveAsDialog
           suggestedName={getSuggestedPdfSaveName(
@@ -4365,6 +4450,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
           <button type="button" onClick={() => { setActiveEditingTool("freehand"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }} disabled={!activeDocument || workspaceMode !== "read"} aria-label="Dessiner" aria-pressed={activeEditingTool === "freehand"} title="Dessiner">
             <ToolbarIcon name="freehand" /><span>Dessin</span>
+          </button>
+          <button type="button" onClick={() => { setActiveEditingTool("comment"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }} disabled={!activeDocument || workspaceMode !== "read"} aria-label="Ajouter un commentaire" aria-pressed={activeEditingTool === "comment"} title="Ajouter un commentaire">
+            <ToolbarIcon name="comment" /><span>Commentaire</span>
           </button>
           <button
             type="button"
@@ -4493,6 +4581,16 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onKeyDown={handleSidebarKeyDown}
             pageView={pageView}
             onPageViewChange={setPageView}
+            comments={activeComments}
+            commentsView={isCommentsView}
+            selectedCommentId={selectedCommentEdit?.id ?? null}
+            onCommentsViewChange={setIsCommentsView}
+            onSelectComment={(comment) => {
+              setSelectedEditId(comment.id);
+              setIsCommentsView(true);
+              recordActivePage(activeDocument?.id ?? "", comment.page);
+              setPageNavigationRequest({ pageNumber: comment.page, requestId: ++pageNavigationRequestId.current });
+            }}
           />
         ) : null}
 
@@ -4542,6 +4640,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onAddText={addTextEdit}
             onAddShape={addShapeEdit}
             onAddFreehand={addFreehandEdit}
+            onStartComment={startComment}
             onPlaceSignature={placeSignature}
             onSelectEdit={setSelectedEditId}
             onDeselectEdit={() => setSelectedEditId(null)}
@@ -4645,6 +4744,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             />
           ) : workspaceMode === "read" && selectedTextMarkupEdit ? (
             <section className="shape-edit-toolbar" aria-label="Propriétés de l'annotation texte"><strong>{selectedTextMarkupEdit.kind === "highlight" ? "Surlignage" : selectedTextMarkupEdit.kind === "underline" ? "Soulignement" : "Barré"}</strong><ColorPicker label="Couleur de l'annotation" value={selectedTextMarkupEdit.color} onChange={(color) => updatePdfEdit({ ...selectedTextMarkupEdit, color })} /><button type="button" onClick={() => deletePdfEdit(selectedTextMarkupEdit.id)}>Supprimer l'annotation</button></section>
+          ) : workspaceMode === "read" && selectedCommentEdit ? (
+            <section className="shape-edit-toolbar" aria-label="Propriétés du commentaire">
+              <strong>{selectedCommentEdit.commentType === "text" ? "Commentaire" : selectedCommentEdit.commentType}</strong>
+              <p>{selectedCommentEdit.author ?? "PDF Studio Local"}</p>
+              {selectedCommentEdit.source === "local" ? <textarea aria-label="Modifier le commentaire" value={selectedCommentEdit.content} onChange={(event) => updatePdfEdit({ ...selectedCommentEdit, content: event.target.value, modifiedAt: new Date().toISOString() })} rows={4} /> : <p>{selectedCommentEdit.content}</p>}
+              {selectedCommentEdit.source === "local" ? <button type="button" onClick={() => deletePdfEdit(selectedCommentEdit.id)}>Supprimer le commentaire</button> : <span>Commentaire du PDF source</span>}
+            </section>
           ) : selectedPdfEdit?.type === "signature" ? (
             <section className="properties-panel__empty">
               <strong>Signature</strong>

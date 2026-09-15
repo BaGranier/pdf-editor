@@ -4,7 +4,7 @@ import {
   pdfEditsReducer,
   type PdfEditsByDocument,
 } from "./state";
-import type { AddTextEdit, FreehandEdit, PdfEdit, ShapeEdit, SignatureEdit, TextMarkupEdit } from "./types";
+import type { AddTextEdit, FreehandEdit, PdfCommentEdit, PdfEdit, ShapeEdit, SignatureEdit, TextMarkupEdit } from "./types";
 
 const textEdit: AddTextEdit = {
   id: "text-1",
@@ -61,6 +61,11 @@ const freehandEdit: FreehandEdit = {
   rect: { x0: 20, y0: 20, x1: 90, y1: 90 },
   points: [{ x: 20, y: 20 }, { x: 90, y: 90 }],
   style: { color: "#2563eb", strokeWidth: 3, opacity: 1 },
+};
+
+const commentEdit: PdfCommentEdit = {
+  id: "comment-1", type: "comment", commentType: "text", page: 1,
+  rect: { x0: 20, y0: 20, x1: 38, y1: 38 }, content: "À revoir", source: "local",
 };
 
 function addEdits(documentId: string, edits: PdfEdit[]) {
@@ -232,6 +237,17 @@ describe("pdfEditsReducer history", () => {
     expect(state["doc-a"].edits).toEqual([]);
     state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
     expect(state["doc-a"].edits).toEqual([textMarkupEdit]);
+  });
+
+  it("hydrates imported comments without dirtying then tracks local comment edits", () => {
+    let state = pdfEditsReducer({}, { type: "hydrate", documentId: "doc-a", edits: [{ ...commentEdit, id: "source-comment", source: "pdf" }] });
+    expect(state["doc-a"].isDirty).toBe(false);
+    state = pdfEditsReducer(state, { type: "add", documentId: "doc-a", edit: commentEdit });
+    state = pdfEditsReducer(state, { type: "replace", documentId: "doc-a", edit: { ...commentEdit, content: "Mis à jour" } });
+    state = pdfEditsReducer(state, { type: "delete", documentId: "doc-a", editId: commentEdit.id });
+    expect(state["doc-a"].isDirty).toBe(true);
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toContainEqual({ ...commentEdit, content: "Mis à jour" });
   });
 
   it("coalesces a slider drag into one dirty undoable freehand update", () => {

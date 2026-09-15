@@ -166,6 +166,32 @@ class TextMarkupEdit(BaseModel):
     order: int = Field(default=0, ge=0)
 
 
+class PdfCommentEdit(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    type: Literal["comment"]
+    source_document_id: str | None = Field(default=None, alias="sourceDocumentId")
+    page: int = Field(ge=1)
+    rect: PdfEditRect
+    comment_type: Literal["text"] = Field(default="text", alias="commentType")
+    content: str = Field(min_length=1, max_length=10_000)
+    author: str | None = Field(default=None, max_length=200)
+    created_at: str | None = Field(default=None, alias="createdAt")
+    modified_at: str | None = Field(default=None, alias="modifiedAt")
+    source: Literal["local"] = "local"
+    order: int = Field(default=0, ge=0)
+
+
+class PdfAnnotationResponse(BaseModel):
+    id: str
+    page_index: int = Field(alias="pageIndex")
+    type: str
+    rect: PdfEditRect
+    content: str = ""
+    author: str | None = None
+    created_at: str | None = Field(default=None, alias="createdAt")
+    modified_at: str | None = Field(default=None, alias="modifiedAt")
+
+
 class OrganizeExportPlan(BaseModel):
     output_name: str | None = Field(default=None, alias="outputName")
     pages: list[OrganizeExportPage]
@@ -174,6 +200,7 @@ class OrganizeExportPlan(BaseModel):
     shapes: list[ShapeEdit] = Field(default_factory=list)
     freehands: list[FreehandEdit] = Field(default_factory=list)
     text_markups: list[TextMarkupEdit] = Field(default_factory=list, alias="textMarkups")
+    comments: list[PdfCommentEdit] = Field(default_factory=list)
     signature_images: list[SignatureImagePayload] = Field(
         default_factory=list,
         alias="signatureImages",
@@ -576,16 +603,19 @@ def apply_visual_edits(
     shape_edits_by_output_page: dict[int, list[ShapeEdit]] | None = None,
     freehand_edits_by_output_page: dict[int, list[FreehandEdit]] | None = None,
     text_markup_edits_by_output_page: dict[int, list[TextMarkupEdit]] | None = None,
+    comment_edits_by_output_page: dict[int, list[PdfCommentEdit]] | None = None,
 ) -> bytes:
     shape_edits_by_output_page = shape_edits_by_output_page or {}
     freehand_edits_by_output_page = freehand_edits_by_output_page or {}
     text_markup_edits_by_output_page = text_markup_edits_by_output_page or {}
+    comment_edits_by_output_page = comment_edits_by_output_page or {}
     if (
         not text_edits_by_output_page
         and not signature_edits_by_output_page
         and not shape_edits_by_output_page
         and not freehand_edits_by_output_page
         and not text_markup_edits_by_output_page
+        and not comment_edits_by_output_page
     ):
         return source
 
@@ -597,6 +627,7 @@ def apply_visual_edits(
                 | set(shape_edits_by_output_page)
                 | set(freehand_edits_by_output_page)
                 | set(text_markup_edits_by_output_page)
+                | set(comment_edits_by_output_page)
             )
             for output_page_index in sorted(output_page_indexes):
                 page = document[output_page_index]
@@ -697,6 +728,11 @@ def apply_visual_edits(
                             annotation = page.add_strikeout_annot(page_rect)
                         annotation.set_colors(stroke=color)
                         annotation.update()
+                for comment in sorted(comment_edits_by_output_page.get(output_page_index, []), key=lambda item: item.order):
+                    point = fitz.Point(comment.rect.x0, comment.rect.y0) * page.transformation_matrix
+                    annotation = page.add_text_annot(point, comment.content)
+                    annotation.set_info(title=comment.author or "PDF Studio Local", content=comment.content)
+                    annotation.update()
             return document.tobytes(garbage=4, deflate=True)
     except HTTPException:
         raise
@@ -807,11 +843,19 @@ def export_organized_pdf(
             raise HTTPException(status_code=422, detail=f"La page {markup.page} de l'annotation {markup.id!r} est invalide.")
         text_markups_by_source_page.setdefault((source_document_id, markup.page - 1), []).append(markup)
 
+    comments_by_source_page: dict[tuple[str, int], list[PdfCommentEdit]] = {}
+    for comment in plan.comments:
+        source_document_id = _resolve_source_document_id(comment.source_document_id, readers)
+        if comment.page > len(readers[source_document_id].pages):
+            raise HTTPException(status_code=422, detail=f"La page {comment.page} du commentaire {comment.id!r} est invalide.")
+        comments_by_source_page.setdefault((source_document_id, comment.page - 1), []).append(comment)
+
     edits_by_output_page: dict[int, list[AddTextEdit]] = {}
     signatures_by_output_page: dict[int, list[SignatureEdit]] = {}
     shapes_by_output_page: dict[int, list[ShapeEdit]] = {}
     freehands_by_output_page: dict[int, list[FreehandEdit]] = {}
     text_markups_by_output_page: dict[int, list[TextMarkupEdit]] = {}
+    comments_by_output_page: dict[int, list[PdfCommentEdit]] = {}
 
     for output_page_index, page_plan in enumerate(plan.pages):
         source_document_id = _resolve_source_document_id(
@@ -853,6 +897,9 @@ def export_organized_pdf(
         page_text_markups = text_markups_by_source_page.get((source_document_id, page_plan.source_page_index))
         if page_text_markups:
             text_markups_by_output_page[output_page_index] = page_text_markups
+        page_comments = comments_by_source_page.get((source_document_id, page_plan.source_page_index))
+        if page_comments:
+            comments_by_output_page[output_page_index] = page_comments
 
     output = io.BytesIO()
     writer.write(output)
@@ -865,6 +912,7 @@ def export_organized_pdf(
         shape_edits_by_output_page=shapes_by_output_page,
         freehand_edits_by_output_page=freehands_by_output_page,
         text_markup_edits_by_output_page=text_markups_by_output_page,
+        comment_edits_by_output_page=comments_by_output_page,
     )
 
 
@@ -878,6 +926,50 @@ def get_output_path(output_name: str) -> Path:
         suffix += 1
 
     return candidate
+
+
+def _annotation_type_name(annotation: fitz.Annot) -> str:
+    name = str(annotation.type[1]).lower().replace(" ", "_")
+    return {
+        "text": "text",
+        "free_text": "free_text",
+        "highlight": "highlight",
+        "underline": "underline",
+        "strike-out": "strikeout",
+        "strikeout": "strikeout",
+    }.get(name, "other")
+
+
+@app.post("/pdf/annotations", response_model=dict[str, list[PdfAnnotationResponse]])
+async def extract_pdf_annotations(
+    file: Annotated[UploadFile, File(description="PDF source")],
+) -> dict[str, list[PdfAnnotationResponse]]:
+    source = await file.read()
+    if not source:
+        raise HTTPException(status_code=400, detail="Le fichier PDF est vide.")
+    try:
+        with fitz.open(stream=source, filetype="pdf") as document:
+            annotations: list[PdfAnnotationResponse] = []
+            for page_index, page in enumerate(document):
+                annotation = page.first_annot
+                inverse = ~page.transformation_matrix
+                while annotation:
+                    info = annotation.info or {}
+                    rect = annotation.rect * inverse
+                    annotations.append(PdfAnnotationResponse(
+                        id=f"pdf-annot-{page_index}-{annotation.xref}",
+                        pageIndex=page_index,
+                        type=_annotation_type_name(annotation),
+                        rect=PdfEditRect(x0=rect.x0, y0=rect.y0, x1=rect.x1, y1=rect.y1),
+                        content=str(info.get("content") or ""),
+                        author=(str(info.get("title")) if info.get("title") else None),
+                        createdAt=(str(info.get("creationDate")) if info.get("creationDate") else None),
+                        modifiedAt=(str(info.get("modDate")) if info.get("modDate") else None),
+                    ))
+                    annotation = annotation.next
+            return {"annotations": annotations}
+    except (fitz.FileDataError, RuntimeError, ValueError) as error:
+        raise HTTPException(status_code=422, detail="Les annotations du PDF sont illisibles.") from error
 
 
 @app.post("/pdf/export/organize", response_class=Response)

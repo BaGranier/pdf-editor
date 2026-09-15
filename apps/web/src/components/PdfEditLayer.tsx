@@ -18,6 +18,7 @@ import type {
 } from "../editing/types";
 import { FreehandEditBlock } from "./FreehandEditLayer";
 import { TextMarkupLayer } from "./TextMarkupLayer";
+import { CommentEditMarker } from "./CommentEditLayer";
 import { SignatureEditBlock } from "./SignatureEditLayer";
 import { ShapeEditBlock } from "./ShapeEditLayer";
 import { TextEditBlock } from "./TextEditLayer";
@@ -35,6 +36,7 @@ type PdfEditLayerProps = {
   onAddShape: (shapeType: ShapeType, rect: PdfRect) => void;
   onPlaceSignature: (rect: PdfRect) => void;
   onAddFreehand: (points: PdfPoint[]) => void;
+  onStartComment: (point: PdfPoint) => void;
   onSelect: (editId: string) => void;
   onUpdate: (edit: PdfEdit) => void;
   onDelete: (editId: string) => void;
@@ -53,6 +55,7 @@ export function PdfEditLayer({
   onAddShape,
   onPlaceSignature,
   onAddFreehand,
+  onStartComment,
   onSelect,
   onUpdate,
   onDelete,
@@ -69,7 +72,7 @@ export function PdfEditLayer({
   };
   const creationActive =
     activeTool === "add_text" ||
-    activeTool === "freehand" ||
+    activeTool === "freehand" || activeTool === "comment" ||
     activeTool.startsWith("shape_") ||
     (activeTool === "signature" && pendingSignatureImage !== null);
   const freehandPointsRef = useRef<PdfPoint[] | null>(null);
@@ -153,6 +156,13 @@ export function PdfEditLayer({
       aria-label={`Couche d'édition de la page ${pageNumber}`}
       data-active-editing-tool={activeTool}
       onPointerDown={(event) => {
+        if (activeTool === "comment" && event.button === 0) {
+          event.preventDefault();
+          const point = pointForEvent(event);
+          const [x, y] = viewport.convertToPdfPoint(point.x, point.y);
+          onStartComment({ x, y });
+          return;
+        }
         if (activeTool === "freehand" && event.button === 0) {
           event.preventDefault();
           event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -277,6 +287,10 @@ export function PdfEditLayer({
         }
 
         if (edit.type === "text_markup") return <TextMarkupLayer key={edit.id} edit={edit} viewport={viewport} />;
+
+        if (edit.type === "comment") {
+          return <CommentEditMarker key={edit.id} edit={edit} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} />;
+        }
 
         const image = images[edit.imageId];
         return image ? (

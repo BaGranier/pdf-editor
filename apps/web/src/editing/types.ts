@@ -43,6 +43,7 @@ export type FreehandStyle = {
   opacity: number;
 };
 export type TextMarkupKind = "highlight" | "underline" | "strikeout";
+export type PdfCommentType = "text" | "free_text" | "highlight" | "underline" | "strikeout" | "other";
 
 export type EditingTool =
   | "select"
@@ -51,7 +52,8 @@ export type EditingTool =
   | "shape_rectangle"
   | "shape_ellipse"
   | "shape_line"
-  | "freehand";
+  | "freehand"
+  | "comment";
 
 export type BasePdfEdit = {
   id: string;
@@ -91,7 +93,19 @@ export type TextMarkupEdit = BasePdfEdit & {
   color: string;
 };
 
-export type PdfEdit = AddTextEdit | SignatureEdit | ShapeEdit | FreehandEdit | TextMarkupEdit;
+/** A native PDF annotation imported from the source or created locally. */
+export type PdfCommentEdit = BasePdfEdit & {
+  type: "comment";
+  commentType: PdfCommentType;
+  content: string;
+  author?: string;
+  createdAt?: string;
+  modifiedAt?: string;
+  /** Source comments are readable and preserved by page copying, local notes are exported. */
+  source: "pdf" | "local";
+};
+
+export type PdfEdit = AddTextEdit | SignatureEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit;
 
 export type SignatureImage = {
   id: string;
