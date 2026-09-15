@@ -20,10 +20,19 @@ test("EDIT-COMMENTS-001 lit, crée et exporte des commentaires natifs", async ({
   if (!box) throw new Error("Couche d’édition non mesurable.");
   await page.mouse.click(box.x + 160, box.y + 160);
   const dialog = page.getByRole("dialog", { name: "Nouveau commentaire" });
+  await dialog.getByLabel("Rédacteur").fill("Baptiste Granier");
   await dialog.getByLabel("Texte du commentaire").fill("Note locale");
   await dialog.getByRole("button", { name: "Ajouter" }).click();
   await expect(page.getByRole("button", { name: /commentaire page 1: note locale/i })).toBeVisible();
   await expect(page.getByRole("region", { name: "Propriétés du commentaire" })).toContainText("Note locale");
+  const inspector = page.getByRole("region", { name: "Propriétés du commentaire" });
+  await expect(inspector.getByLabel("Rédacteur")).toHaveValue("Baptiste Granier");
+  await expect(inspector.getByLabel("Type de message")).toHaveText("Commentaire");
+  await expect(inspector.getByLabel("Source")).toHaveText("Créé dans PDF Studio Local");
+  await inspector.getByLabel("Rédacteur").fill("Baptiste Granier QA");
+  await inspector.getByLabel("Rédacteur").blur();
+  await inspector.getByLabel("Message", { exact: true }).fill("Note locale modifiée");
+  await inspector.getByLabel("Message", { exact: true }).blur();
 
   await enterOrganizeMode(page);
   await page.getByLabel("Nom du PDF exporté").fill("commentaires.pdf");

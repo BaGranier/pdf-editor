@@ -731,7 +731,12 @@ def apply_visual_edits(
                 for comment in sorted(comment_edits_by_output_page.get(output_page_index, []), key=lambda item: item.order):
                     point = fitz.Point(comment.rect.x0, comment.rect.y0) * page.transformation_matrix
                     annotation = page.add_text_annot(point, comment.content)
-                    annotation.set_info(title=comment.author or "PDF Studio Local", content=comment.content)
+                    annotation.set_info(
+                        title=comment.author or "",
+                        content=comment.content,
+                        creationDate=comment.created_at,
+                        modDate=comment.modified_at,
+                    )
                     annotation.update()
             return document.tobytes(garbage=4, deflate=True)
     except HTTPException:

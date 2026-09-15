@@ -45,13 +45,14 @@ def test_exports_local_comment_and_preserves_existing_annotation() -> None:
         "comments": [{
             "id": "comment-1", "type": "comment", "page": 1,
             "rect": {"x0": 120, "y0": 140, "x1": 138, "y1": 158},
-            "content": "Nouveau commentaire", "author": "PDF Studio Local", "source": "local",
+            "content": "Nouveau commentaire", "author": "Baptiste Granier", "source": "local",
         }],
     })
     exported = main.export_organized_pdf({"active-document": source_with_comment()}, plan)
     with fitz.open(stream=exported, filetype="pdf") as document:
-        annotation_data = [(annotation.type[1], annotation.info["content"]) for annotation in document[0].annots() or ()]
-        contents = [content for _, content in annotation_data]
-        assert [annotation_type for annotation_type, _ in annotation_data] == ["Text", "Text"]
+        annotation_data = [(annotation.type[1], annotation.info["content"], annotation.info["title"]) for annotation in document[0].annots() or ()]
+        contents = [content for _, content, _ in annotation_data]
+        assert [annotation_type for annotation_type, _, _ in annotation_data] == ["Text", "Text"]
     assert "À vérifier" in contents
     assert "Nouveau commentaire" in contents
+    assert "Baptiste Granier" in [author for _, _, author in annotation_data]

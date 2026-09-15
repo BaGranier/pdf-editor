@@ -50,6 +50,15 @@ describe("viewerStorage", () => {
     });
   });
 
+  it("persists the last locally-entered comment author without requiring one", () => {
+    const preferences = {
+      theme: "light" as const, sidebarVisible: true, activeDocumentId: null,
+      documentOrder: [], commentAuthor: "Baptiste Granier",
+    };
+    saveViewerPreferences(preferences);
+    expect(loadViewerPreferences()).toEqual(preferences);
+  });
+
   it("creates a stored pdf document snapshot", async () => {
     const snapshot: ViewerDocumentSnapshot = {
       id: "pdf-1",

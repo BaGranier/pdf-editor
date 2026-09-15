@@ -7,6 +7,8 @@ export type ViewerPreferences = {
   sidebarVisible: boolean;
   activeDocumentId: string | null;
   documentOrder: string[];
+  /** Last author entered for a locally-created PDF comment. */
+  commentAuthor?: string;
 };
 
 export type StoredPdfDocument = {
@@ -52,6 +54,7 @@ type RawViewerPreferences = {
   sidebarVisible?: unknown;
   activeDocumentId?: unknown;
   documentOrder?: unknown;
+  commentAuthor?: unknown;
 };
 
 type RawStoredOrganizationPlan = {
@@ -141,6 +144,7 @@ export function parseViewerPreferences(serialized: string | null): ViewerPrefere
       sidebarVisible: parsed.sidebarVisible,
       activeDocumentId: parsed.activeDocumentId,
       documentOrder: parsed.documentOrder,
+      ...(typeof parsed.commentAuthor === "string" ? { commentAuthor: parsed.commentAuthor } : {}),
     };
   } catch {
     return null;

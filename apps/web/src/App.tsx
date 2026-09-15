@@ -98,6 +98,7 @@ import {
 import { selectionClientRectsToPdfRects } from "./pdf/selectionGeometry";
 import { findTextMarkupAtPoint } from "./pdf/textMarkupHitTest";
 import { loadPdfComments } from "./pdf/comments";
+import { getCommentTypeLabel } from "./editing/comments";
 import { offsetPdfRectWithinPage } from "./editing/coordinates";
 import {
   getDocumentEditingState,
@@ -188,6 +189,27 @@ type DocumentSidebarProps = {
   onCommentsViewChange: (value: boolean) => void;
   onSelectComment: (comment: PdfCommentEdit) => void;
 };
+
+function CommentInspector({ edit, onUpdate, onDelete }: { edit: PdfCommentEdit; onUpdate: (edit: PdfCommentEdit) => void; onDelete: () => void }) {
+  const [author, setAuthor] = useState(edit.author ?? "");
+  const [content, setContent] = useState(edit.content);
+  useEffect(() => { setAuthor(edit.author ?? ""); setContent(edit.content); }, [edit]);
+  const editable = edit.source === "local";
+  const commit = () => {
+    const nextAuthor = author.trim() || undefined;
+    const nextContent = content.trim();
+    if (!editable || !nextContent || (nextAuthor === edit.author && nextContent === edit.content)) return;
+    onUpdate({ ...edit, author: nextAuthor, content: nextContent, modifiedAt: new Date().toISOString() });
+  };
+  return <section className="shape-edit-toolbar comment-inspector" aria-label="Propriétés du commentaire">
+    <strong>Commentaire</strong>
+    <label>Rédacteur<input aria-label="Rédacteur" value={author} readOnly={!editable} onChange={(event) => setAuthor(event.target.value)} onBlur={commit} placeholder="Non renseigné" /></label>
+    <label>Message<textarea aria-label="Message" value={content} readOnly={!editable} onChange={(event) => setContent(event.target.value)} onBlur={commit} rows={4} /></label>
+    <label>Type de message<output aria-label="Type de message">{getCommentTypeLabel(edit.commentType)}</output></label>
+    <label>Source<output aria-label="Source">{edit.source === "pdf" ? "PDF source" : "Créé dans PDF Studio Local"}</output></label>
+    {editable ? <button type="button" onClick={onDelete}>Supprimer le commentaire</button> : null}
+  </section>;
+}
 
 type SidebarKeyTarget = "file-input" | string | null;
 type ViewerFocusTarget = "viewer" | null;
@@ -2198,6 +2220,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [textMarkupColor, setTextMarkupColor] = useState("#eab308");
   const [pendingComment, setPendingComment] = useState<{ page: number; point: import("./editing/types").PdfPoint } | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
+  const [commentAuthorDraft, setCommentAuthorDraft] = useState(() => storedPreferences?.commentAuthor ?? "");
+  const [lastCommentAuthor, setLastCommentAuthor] = useState(() => storedPreferences?.commentAuthor ?? "");
   const [isCommentsView, setIsCommentsView] = useState(false);
   const [shapePickerPosition, setShapePickerPosition] = useState({ top: 0, left: 0 });
   const shapePickerButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -2574,12 +2598,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       sidebarVisible: isSidebarVisible,
       activeDocumentId,
       documentOrder: documents.map((document) => document.id),
+      ...(lastCommentAuthor ? { commentAuthor: lastCommentAuthor } : {}),
     });
 
     if (!preferencesSaved) {
       setStorageWarning("Les préférences locales n'ont pas pu être enregistrées. Vérifiez l'espace de stockage du navigateur.");
     }
-  }, [activeDocumentId, documents, isRestoringDocuments, isSidebarVisible, theme]);
+  }, [activeDocumentId, documents, isRestoringDocuments, isSidebarVisible, lastCommentAuthor, theme]);
 
   useEffect(() => {
     if (isRestoringDocuments) {
@@ -2746,7 +2771,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     if (!activeDocument) return;
     setPendingComment({ page, point });
     setCommentDraft("");
-  }, [activeDocument]);
+    setCommentAuthorDraft(lastCommentAuthor);
+  }, [activeDocument, lastCommentAuthor]);
 
   const addComment = useCallback(() => {
     if (!activeDocument || !pendingComment || !commentDraft.trim()) return;
@@ -2757,14 +2783,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       commentType: "text",
       page: pendingComment.page,
       rect: { x0: pendingComment.point.x, y0: pendingComment.point.y, x1: pendingComment.point.x + 18, y1: pendingComment.point.y + 18 },
-      content: commentDraft.trim(), author: "PDF Studio Local", createdAt: now, modifiedAt: now, source: "local",
+      content: commentDraft.trim(), author: commentAuthorDraft.trim() || undefined, createdAt: now, modifiedAt: now, source: "local",
     };
     dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
     setSelectedEditId(edit.id);
     setPendingComment(null);
     setCommentDraft("");
+    if (commentAuthorDraft.trim()) setLastCommentAuthor(commentAuthorDraft.trim());
     setActiveEditingTool("select");
-  }, [activeDocument, commentDraft, pendingComment]);
+  }, [activeDocument, commentAuthorDraft, commentDraft, pendingComment]);
 
   useEffect(() => {
     const handleSelection = (event: Event) => setTextMarkupSelection((event as CustomEvent<{ page: number; rects: PdfRect[]; top: number; left: number }>).detail);
@@ -4333,6 +4360,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         <div className="unsaved-dialog-backdrop" role="presentation">
           <section className="unsaved-dialog comment-dialog" role="dialog" aria-modal="true" aria-labelledby="comment-dialog-title">
             <h2 id="comment-dialog-title">Nouveau commentaire</h2>
+            <label>Rédacteur<input aria-label="Rédacteur" value={commentAuthorDraft} onChange={(event) => setCommentAuthorDraft(event.target.value)} placeholder="Non renseigné" /></label>
+            <label>Message</label>
             <textarea autoFocus value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} aria-label="Texte du commentaire" placeholder="Saisissez votre commentaire…" rows={4} />
             <div className="unsaved-dialog__actions">
               <button type="button" onClick={() => { setPendingComment(null); setCommentDraft(""); setActiveEditingTool("select"); }}>Annuler</button>
@@ -4745,12 +4774,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           ) : workspaceMode === "read" && selectedTextMarkupEdit ? (
             <section className="shape-edit-toolbar" aria-label="Propriétés de l'annotation texte"><strong>{selectedTextMarkupEdit.kind === "highlight" ? "Surlignage" : selectedTextMarkupEdit.kind === "underline" ? "Soulignement" : "Barré"}</strong><ColorPicker label="Couleur de l'annotation" value={selectedTextMarkupEdit.color} onChange={(color) => updatePdfEdit({ ...selectedTextMarkupEdit, color })} /><button type="button" onClick={() => deletePdfEdit(selectedTextMarkupEdit.id)}>Supprimer l'annotation</button></section>
           ) : workspaceMode === "read" && selectedCommentEdit ? (
-            <section className="shape-edit-toolbar" aria-label="Propriétés du commentaire">
-              <strong>{selectedCommentEdit.commentType === "text" ? "Commentaire" : selectedCommentEdit.commentType}</strong>
-              <p>{selectedCommentEdit.author ?? "PDF Studio Local"}</p>
-              {selectedCommentEdit.source === "local" ? <textarea aria-label="Modifier le commentaire" value={selectedCommentEdit.content} onChange={(event) => updatePdfEdit({ ...selectedCommentEdit, content: event.target.value, modifiedAt: new Date().toISOString() })} rows={4} /> : <p>{selectedCommentEdit.content}</p>}
-              {selectedCommentEdit.source === "local" ? <button type="button" onClick={() => deletePdfEdit(selectedCommentEdit.id)}>Supprimer le commentaire</button> : <span>Commentaire du PDF source</span>}
-            </section>
+            <CommentInspector edit={selectedCommentEdit} onUpdate={updatePdfEdit} onDelete={() => deletePdfEdit(selectedCommentEdit.id)} />
           ) : selectedPdfEdit?.type === "signature" ? (
             <section className="properties-panel__empty">
               <strong>Signature</strong>
