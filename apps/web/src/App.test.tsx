@@ -224,9 +224,26 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("main")).toHaveClass("app-shell--presentation");
-      expect(document.querySelector(".viewer-page-navigation output")).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Page précédente" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Page suivante" })).toBeInTheDocument();
+      expect(document.querySelector(".viewer-page-navigation")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Page précédente" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Page suivante" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Quitter la présentation" })).not.toBeInTheDocument();
+    });
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    await waitFor(() => {
+      expect(document.querySelector(".viewer--presentation .pdf-page")).toHaveAttribute("data-page-number", "2");
+    });
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    await waitFor(() => {
+      expect(document.querySelector(".viewer--presentation .pdf-page")).toHaveAttribute("data-page-number", "1");
+    });
+    fireEvent.keyDown(window, { key: "End" });
+    await waitFor(() => {
+      expect(document.querySelector(".viewer--presentation .pdf-page")).toHaveAttribute("data-page-number", "3");
+    });
+    fireEvent.keyDown(window, { key: "Home" });
+    await waitFor(() => {
+      expect(document.querySelector(".viewer--presentation .pdf-page")).toHaveAttribute("data-page-number", "1");
     });
     fireEvent.keyDown(window, { key: "ArrowRight" });
     await waitFor(() => {

@@ -838,7 +838,6 @@ type PdfViewerProps = {
   pageNavigationRequest: { pageNumber: number; requestId: number; commentId?: string } | null;
   viewerMode: ViewerMode;
   activePageNumber: number;
-  onExitPresentation: () => void;
   shouldFitToPage: boolean;
   fitRefreshToken: number;
 };
@@ -872,7 +871,6 @@ function PdfViewer({
   pageNavigationRequest,
   viewerMode,
   activePageNumber,
-  onExitPresentation,
   shouldFitToPage,
   fitRefreshToken,
 }: PdfViewerProps) {
@@ -1369,11 +1367,10 @@ function PdfViewer({
           );
         })}
       </div>
-      {viewerMode !== "continuous" ? (
+      {viewerMode === "single-page" ? (
         <nav className="viewer-page-navigation" aria-label="Navigation des pages">
           <button
             type="button"
-            className={viewerMode === "presentation" ? "viewer-page-navigation__previous" : undefined}
             onClick={() => goToPage(activePageNumber - 1)}
             disabled={activePageNumber <= 1}
             aria-label="Page précédente"
@@ -1381,12 +1378,9 @@ function PdfViewer({
           >
             ←
           </button>
-          {viewerMode !== "presentation" ? (
-            <output aria-label={`Page ${activePageNumber} sur ${pages.length}`}>{activePageNumber} / {pages.length}</output>
-          ) : null}
+          <output aria-label={`Page ${activePageNumber} sur ${pages.length}`}>{activePageNumber} / {pages.length}</output>
           <button
             type="button"
-            className={viewerMode === "presentation" ? "viewer-page-navigation__next" : undefined}
             onClick={() => goToPage(activePageNumber + 1)}
             disabled={activePageNumber >= pages.length}
             aria-label="Page suivante"
@@ -1394,17 +1388,6 @@ function PdfViewer({
           >
             →
           </button>
-          {viewerMode === "presentation" ? (
-            <button
-              type="button"
-              className="viewer-page-navigation__exit"
-              onClick={onExitPresentation}
-              aria-label="Quitter la présentation"
-              title="Quitter la présentation"
-            >
-              Quitter
-            </button>
-          ) : null}
         </nav>
       ) : null}
     </section>
@@ -5033,7 +5016,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             pageNavigationRequest={pageNavigationRequest}
             viewerMode={viewerMode}
             activePageNumber={activePageNumber}
-            onExitPresentation={exitPresentation}
             onZoomSet={setDocumentZoom}
             shouldFitToPage={fitToPageByDocument[activeDocument.id] ?? true}
             fitRefreshToken={presentationFitRefreshToken}

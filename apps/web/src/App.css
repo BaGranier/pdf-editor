@@ -1074,54 +1074,6 @@ button:disabled {
   gap: 0;
 }
 
-.viewer--presentation .viewer-page-navigation {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-  display: block;
-  min-height: 0;
-  padding: 0;
-  pointer-events: none;
-}
-
-.viewer--presentation .viewer-page-navigation button {
-  position: absolute;
-  top: 50%;
-  min-width: 2.5rem;
-  min-height: 3.5rem;
-  padding: 0;
-  color: #e5e7eb;
-  border-color: rgb(255 255 255 / 18%);
-  border-radius: 999px;
-  background: rgb(15 18 24 / 72%);
-  font-size: 1.4rem;
-  transform: translateY(-50%);
-  pointer-events: auto;
-}
-
-.viewer--presentation .viewer-page-navigation__previous {
-  left: 0.75rem;
-}
-
-.viewer--presentation .viewer-page-navigation__next {
-  right: 0.75rem;
-}
-
-.viewer--presentation .viewer-page-navigation__exit {
-  top: 0.75rem;
-  right: 0.75rem;
-  min-height: 2rem;
-  transform: none;
-}
-
-.viewer-page-navigation__exit {
-  width: auto !important;
-  padding-inline: 0.55rem !important;
-  color: inherit;
-  border-color: currentColor;
-  background: transparent;
-}
-
 .viewer-mode-control select {
   min-height: 2rem;
   max-width: 8rem;
