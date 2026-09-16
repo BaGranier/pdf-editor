@@ -10,10 +10,14 @@ export type PdfRect = {
 };
 
 export type AddTextStyle = {
-  fontFamily: TextFontFamily;
+  /** Legacy family is retained so persisted documents remain readable. */
+  fontFamily: string;
+  /** Stable registry identifier. Missing values are migrated from fontFamily. */
+  fontRef?: string;
   fontSize: number;
   color: string;
   bold: boolean;
+  fontStyle?: "normal" | "italic";
 };
 
 export const SHAPE_TYPES = ["rectangle", "ellipse", "line"] as const;
@@ -48,6 +52,7 @@ export type PdfCommentType = "text" | "free_text" | "highlight" | "underline" | 
 export type EditingTool =
   | "select"
   | "add_text"
+  | "edit_text"
   | "signature"
   | "shape_rectangle"
   | "shape_ellipse"
@@ -67,6 +72,30 @@ export type AddTextEdit = BasePdfEdit & {
   style: AddTextStyle;
   /** True until the user explicitly chooses a font size in the inspector. */
   autoSize?: boolean;
+};
+
+export type NativeTextSource = {
+  sourceId: string;
+  sourceText: string;
+  sourceBBox: PdfRect;
+  sourceOrigin: PdfPoint;
+  sourceFontName?: string;
+  sourceFontResourceId?: string;
+  sourceFontSize: number;
+  sourceColor: string;
+  sourceRotation: 0 | 90 | 180 | 270;
+  sourceFingerprint: string;
+  editable: boolean;
+  limitation?: "invisible_text" | "complex_transform" | "unsupported_writing_mode";
+  limitationMessage?: string;
+};
+
+export type NativeTextEdit = BasePdfEdit & {
+  type: "native_text";
+  source: NativeTextSource;
+  text: string;
+  style: AddTextStyle;
+  fontFallbackReason?: string;
 };
 
 export type SignatureEdit = BasePdfEdit & {
@@ -105,7 +134,7 @@ export type PdfCommentEdit = BasePdfEdit & {
   source: "pdf" | "local";
 };
 
-export type PdfEdit = AddTextEdit | SignatureEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit;
+export type PdfEdit = AddTextEdit | NativeTextEdit | SignatureEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit;
 
 export type SignatureImage = {
   id: string;
@@ -117,6 +146,7 @@ export type SignatureImage = {
 
 export const DEFAULT_TEXT_STYLE: AddTextStyle = {
   fontFamily: "Helvetica",
+  fontRef: "pdf-standard:helvetica:400:normal",
   fontSize: 18,
   color: "#111827",
   bold: false,

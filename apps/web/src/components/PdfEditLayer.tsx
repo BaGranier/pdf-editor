@@ -292,6 +292,8 @@ export function PdfEditLayer({
           return <CommentEditMarker key={edit.id} edit={edit} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} />;
         }
 
+        if (edit.type === "native_text") return null;
+
         const image = images[edit.imageId];
         return image ? (
           <SignatureEditBlock

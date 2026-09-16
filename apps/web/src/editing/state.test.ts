@@ -4,7 +4,7 @@ import {
   pdfEditsReducer,
   type PdfEditsByDocument,
 } from "./state";
-import type { AddTextEdit, FreehandEdit, PdfCommentEdit, PdfEdit, ShapeEdit, SignatureEdit, TextMarkupEdit } from "./types";
+import type { AddTextEdit, FreehandEdit, NativeTextEdit, PdfCommentEdit, PdfEdit, ShapeEdit, SignatureEdit, TextMarkupEdit } from "./types";
 
 const textEdit: AddTextEdit = {
   id: "text-1",
@@ -68,6 +68,18 @@ const commentEdit: PdfCommentEdit = {
   rect: { x0: 20, y0: 20, x1: 38, y1: 38 }, content: "À revoir", source: "local",
 };
 
+const nativeTextEdit: NativeTextEdit = {
+  id: "native-1", type: "native_text", page: 1,
+  rect: { x0: 40, y0: 100, x1: 180, y1: 120 }, text: "Montant : 1 375 €",
+  source: {
+    sourceId: "p0-b0-l0-s0", sourceText: "Montant : 1 250 €",
+    sourceBBox: { x0: 40, y0: 100, x1: 180, y1: 120 }, sourceOrigin: { x: 40, y: 103 },
+    sourceFontName: "Helvetica", sourceFontSize: 11, sourceColor: "#111827",
+    sourceRotation: 0, sourceFingerprint: "a".repeat(64), editable: true,
+  },
+  style: { fontFamily: "Helvetica", fontRef: "pdf-standard:helvetica:400:normal", fontSize: 11, color: "#111827", bold: false, fontStyle: "normal" },
+};
+
 function addEdits(documentId: string, edits: PdfEdit[]) {
   return edits.reduce<PdfEditsByDocument>(
     (state, edit) =>
@@ -77,6 +89,16 @@ function addEdits(documentId: string, edits: PdfEdit[]) {
 }
 
 describe("pdfEditsReducer history", () => {
+  it("tracks a native text replacement as one dirty undoable mutation", () => {
+    let state = pdfEditsReducer({}, { type: "add", documentId: "doc-a", edit: nativeTextEdit });
+    expect(getDocumentEditingState(state, "doc-a").isDirty).toBe(true);
+    expect(state["doc-a"].edits[0]).toEqual(expect.objectContaining({ type: "native_text", text: "Montant : 1 375 €" }));
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toEqual([]);
+    expect(state["doc-a"].isDirty).toBe(false);
+    state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toEqual([nativeTextEdit]);
+  });
   it("keeps heterogeneous edits ordered and histories isolated by document", () => {
     let state = addEdits("doc-a", [textEdit, signatureEdit]);
     state = pdfEditsReducer(state, {

@@ -68,6 +68,7 @@ import {
 import { getWebBackendBaseUrl } from "./api/backend";
 import { PdfEditLayer } from "./components/PdfEditLayer";
 import { TextEditToolbar } from "./components/TextEditToolbar";
+import { NativeTextLayer } from "./components/NativeTextLayer";
 import { ShapeEditToolbar } from "./components/ShapeEditToolbar";
 import { FreehandEditToolbar } from "./components/FreehandEditToolbar";
 import { AppLogo } from "./components/AppLogo";
@@ -95,7 +96,11 @@ import {
   type ShapeType,
   type TextMarkupEdit,
   type TextMarkupKind,
+  type NativeTextEdit,
 } from "./editing/types";
+import { loadNativeTextPage, renderNativeTextPreview, type NativeTextSpan } from "./pdf/nativeText";
+import { normalizeSubsetFontName } from "./fonts/catalog";
+import { fontRegistry, getCustomFont } from "./fonts/fontRegistry";
 import { selectionClientRectsToPdfRects } from "./pdf/selectionGeometry";
 import { findTextMarkupAtPoint } from "./pdf/textMarkupHitTest";
 import { loadPdfComments } from "./pdf/comments";
@@ -159,6 +164,15 @@ function parsePdfExportWarnings(value: string | null): PdfExportWarning[] {
   } catch {
     return [];
   }
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result)));
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("Lecture de ressource impossible.")));
+    reader.readAsDataURL(blob);
+  });
 }
 
 type OpenPdfDocument = {
@@ -316,7 +330,7 @@ function getInitialTheme(preferences: ViewerPreferences | null): ThemeMode {
   return preferences?.theme ?? getSystemTheme();
 }
 
-function buildViewerSnapshot(document: OpenPdfDocument): ViewerDocumentSnapshot {
+function buildViewerSnapshot(document: OpenPdfDocument, nativeTextEdits: NativeTextEdit[] = []): ViewerDocumentSnapshot {
   return {
     id: document.id,
     fileName: document.fileName,
@@ -327,6 +341,7 @@ function buildViewerSnapshot(document: OpenPdfDocument): ViewerDocumentSnapshot 
     zoom: document.zoom,
     scrollLeft: document.scrollLeft,
     scrollTop: document.scrollTop,
+    ...(nativeTextEdits.length ? { nativeTextEdits } : {}),
   };
 }
 
@@ -456,6 +471,8 @@ function scrollViewerByDelta(viewer: HTMLElement, left: number, top: number) {
 }
 
 type PdfPageCanvasProps = {
+  backendUrl: string;
+  sourceFile: File;
   pdfDocument: PDFDocumentProxy;
   sourcePageNumber: number;
   displayPageNumber: number;
@@ -471,6 +488,7 @@ type PdfPageCanvasProps = {
   scrollRootRef: RefObject<HTMLElement | null>;
   registerPageRef: (pageNumber: number, node: HTMLElement | null) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
+  onAddNativeText: (span: NativeTextSpan, text: string) => void;
   onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect) => void;
   onAddFreehand: (pageNumber: number, points: import("./editing/types").PdfPoint[]) => void;
   onStartComment: (pageNumber: number, point: import("./editing/types").PdfPoint) => void;
@@ -483,6 +501,8 @@ type PdfPageCanvasProps = {
 };
 
 function PdfPageCanvas({
+  backendUrl,
+  sourceFile,
   pdfDocument,
   sourcePageNumber,
   displayPageNumber,
@@ -498,6 +518,7 @@ function PdfPageCanvas({
   scrollRootRef,
   registerPageRef,
   onAddText,
+  onAddNativeText,
   onAddShape,
   onAddFreehand,
   onStartComment,
@@ -515,6 +536,52 @@ function PdfPageCanvas({
   const [shouldRender, setShouldRender] = useState(false);
   const [renderState, setRenderState] = useState<RenderState>("idle");
   const [viewport, setViewport] = useState<PageViewport | null>(null);
+  const [nativeTextSpans, setNativeTextSpans] = useState<NativeTextSpan[]>([]);
+  const [nativeTextError, setNativeTextError] = useState<string | null>(null);
+  const [nativeTextPreviewDraft, setNativeTextPreviewDraft] = useState<NativeTextEdit | null>(null);
+  const [nativeTextPreviewUrl, setNativeTextPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => () => {
+    if (nativeTextPreviewUrl) URL.revokeObjectURL(nativeTextPreviewUrl);
+  }, [nativeTextPreviewUrl]);
+
+  useEffect(() => {
+    const committed = edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text");
+    const previewEdits = nativeTextPreviewDraft
+      ? [...committed.filter((edit) => edit.source.sourceFingerprint !== nativeTextPreviewDraft.source.sourceFingerprint), nativeTextPreviewDraft]
+      : committed;
+    if (previewEdits.length === 0) {
+      setNativeTextPreviewUrl(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const refs = [...new Set(previewEdits.map((edit) => edit.style.fontRef).filter((fontRef): fontRef is string => Boolean(fontRef?.startsWith("custom:"))))];
+      const fontResources = await Promise.all(refs.map(async (fontRef) => {
+        const font = await getCustomFont(fontRef);
+        if (!font) throw new Error(`La police personnalisée ${fontRef} n'est plus disponible.`);
+        return { id: font.id, sha256: font.sha256, format: font.format, fileName: font.originalFileName, dataUrl: await blobToDataUrl(font.binary) };
+      }));
+      return renderNativeTextPreview(backendUrl, sourceFile, sourcePageNumber, previewEdits, rotation, fontResources);
+    })().then((blob) => {
+      if (cancelled) return;
+      const next = URL.createObjectURL(blob);
+      setNativeTextPreviewUrl(next);
+    }).catch((error: unknown) => {
+      if (!cancelled) setNativeTextError(error instanceof Error ? error.message : "Aperçu du texte impossible.");
+    });
+    return () => { cancelled = true; };
+  }, [backendUrl, edits, nativeTextPreviewDraft, rotation, sourceFile, sourcePageNumber]);
+
+  useEffect(() => {
+    if (activeTool !== "edit_text" || !shouldRender) return;
+    let cancelled = false;
+    setNativeTextError(null);
+    void loadNativeTextPage(backendUrl, sourceFile, sourcePageNumber)
+      .then((spans) => { if (!cancelled) setNativeTextSpans(spans); })
+      .catch((error: unknown) => { if (!cancelled) setNativeTextError(error instanceof Error ? error.message : "Analyse du texte impossible."); });
+    return () => { cancelled = true; };
+  }, [activeTool, backendUrl, shouldRender, sourceFile, sourcePageNumber]);
 
   const sampleRenderedColor = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
@@ -754,6 +821,7 @@ function PdfPageCanvas({
           </div>
         ) : null}
         <canvas ref={canvasRef} className="pdf-canvas" />
+        {nativeTextPreviewUrl ? <img className="native-text-preview" src={nativeTextPreviewUrl} alt="" aria-hidden="true" /> : null}
         <div
           ref={textLayerRef}
           className="textLayer pdf-text-layer"
@@ -782,6 +850,19 @@ function PdfPageCanvas({
             }, 0);
           }}
         />
+        {viewport && (activeTool === "edit_text" || edits.some((edit) => edit.type === "native_text")) ? (
+          <NativeTextLayer
+            spans={nativeTextSpans.length ? nativeTextSpans : edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text").map((edit) => ({ ...edit.source, page: edit.page, rect: edit.rect, fontWeight: edit.style.bold ? 700 : 400, fontStyle: edit.style.fontStyle ?? "normal" }))}
+            edits={edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text")}
+            viewport={viewport}
+            selectedEditId={selectedEditId}
+            onCreateEdit={onAddNativeText}
+            onSelectEdit={onSelectEdit}
+            onUpdateEdit={(edit) => onUpdateEdit(edit)}
+            onPreviewChange={setNativeTextPreviewDraft}
+          />
+        ) : null}
+        {nativeTextError && activeTool === "edit_text" ? <p className="native-text-layer__error" role="status">{nativeTextError}</p> : null}
         {viewport ? (
           <PdfEditLayer
             pageNumber={sourcePageNumber}
@@ -810,6 +891,7 @@ function PdfPageCanvas({
 }
 
 type PdfViewerProps = {
+  backendUrl: string;
   document: OpenPdfDocument;
   documents: OpenPdfDocument[];
   pagePlan: OrganizePagePlan;
@@ -824,6 +906,7 @@ type PdfViewerProps = {
   onZoomSet: (documentId: string, zoom: number) => void;
   onScrollPositionChange: (documentId: string, scrollLeft: number, scrollTop: number) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
+  onAddNativeText: (span: NativeTextSpan, text: string) => void;
   onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect) => void;
   onAddFreehand: (pageNumber: number, points: import("./editing/types").PdfPoint[]) => void;
   onStartComment: (pageNumber: number, point: import("./editing/types").PdfPoint) => void;
@@ -843,6 +926,7 @@ type PdfViewerProps = {
 };
 
 function PdfViewer({
+  backendUrl,
   document,
   documents,
   pagePlan,
@@ -857,6 +941,7 @@ function PdfViewer({
   onZoomSet,
   onScrollPositionChange,
   onAddText,
+  onAddNativeText,
   onAddShape,
   onAddFreehand,
   onStartComment,
@@ -1331,6 +1416,8 @@ function PdfViewer({
           return (
             <PdfPageCanvas
               key={page.id}
+              backendUrl={backendUrl}
+              sourceFile={page.sourceDocument.file}
               pdfDocument={page.sourceDocument.pdfDocument}
               sourcePageNumber={page.sourcePageIndex + 1}
               displayPageNumber={page.displayPageNumber}
@@ -1354,6 +1441,7 @@ function PdfViewer({
               scrollRootRef={viewerRef}
               registerPageRef={registerPageRef}
               onAddText={onAddText}
+              onAddNativeText={onAddNativeText}
                 onAddShape={onAddShape}
                 onAddFreehand={onAddFreehand}
                 onStartComment={onStartComment}
@@ -2468,6 +2556,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [viewerFocusRequest, setViewerFocusRequest] = useState(0);
   const nextOrganizedPageId = useRef(1);
   const nextTextEditId = useRef(1);
+  const nextNativeTextEditId = useRef(1);
   const nextShapeEditId = useRef(1);
   const nextFreehandEditId = useRef(1);
   const nextTextMarkupEditId = useRef(1);
@@ -2522,6 +2611,25 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       ),
     [pdfEditsByDocument],
   );
+  useEffect(() => {
+    const referencedFonts = Object.values(pdfEditsByDocument).flatMap((state) =>
+      state.edits.flatMap((edit) =>
+        (edit.type === "add_text" || edit.type === "native_text") && edit.style.fontRef
+          ? [edit.style.fontRef]
+          : [],
+      ),
+    );
+    fontRegistry.setProtectedFontRefs(referencedFonts);
+    [...new Set(referencedFonts)]
+      .filter((fontRef) => !fontRef.startsWith("pdf-standard:") && !fontRef.startsWith("document:"))
+      .forEach((fontRef) => {
+        void fontRegistry.ensureLoaded(fontRef).catch(() => {
+          setStorageWarning(
+            `La police ${fontRef} référencée par un document est indisponible. Choisissez une police de remplacement.`,
+          );
+        });
+      });
+  }, [pdfEditsByDocument]);
   const pendingCloseDocument = pendingCloseDocumentId
     ? documents.find((document) => document.id === pendingCloseDocumentId) ?? null
     : null;
@@ -2532,6 +2640,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     activePdfEdits.find(
       (edit): edit is AddTextEdit =>
         edit.id === selectedEditId && edit.type === "add_text",
+    ) ?? null;
+  const selectedNativeTextEdit =
+    activePdfEdits.find(
+      (edit): edit is NativeTextEdit =>
+        edit.id === selectedEditId && edit.type === "native_text",
     ) ?? null;
   const selectedShapeEdit =
     activePdfEdits.find(
@@ -2775,6 +2888,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         });
 
         setDocuments(restoredDocuments);
+        storedDocuments.forEach((storedDocument) => {
+          if (storedDocument.nativeTextEdits?.length) {
+            dispatchPdfEdits({ type: "hydrate", documentId: storedDocument.id, edits: storedDocument.nativeTextEdits });
+          }
+        });
         setOrganizationPlans(restoredPlans);
         setSelectedPageIdsByDocument(restoredSelectedPageIds);
         setActiveDocumentId(
@@ -2853,7 +2971,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         return;
       }
 
-      void Promise.all(documents.map((document) => saveStoredDocument(buildViewerSnapshot(document)))).then((results) => {
+      void Promise.all(documents.map((document) => saveStoredDocument(buildViewerSnapshot(
+        document,
+        getDocumentEditingState(pdfEditsByDocument, document.id).edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text"),
+      )))).then((results) => {
         if (results.some((saved) => !saved)) {
           setStorageWarning(
             "Les PDF ne peuvent pas être conservés durablement dans ce navigateur. Ils resteront ouverts jusqu'à la fermeture de l'onglet.",
@@ -2865,7 +2986,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     return () => {
       window.clearTimeout(saveTimeout);
     };
-  }, [documents, isRestoringDocuments]);
+  }, [documents, isRestoringDocuments, pdfEditsByDocument]);
 
   useEffect(() => {
     if (isRestoringDocuments) {
@@ -3051,6 +3172,62 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
       setSelectedEditId(edit.id);
       setActiveEditingTool("select");
+      setExportFeedback(null);
+    },
+    [activeDocument],
+  );
+
+  const addNativeTextEdit = useCallback(
+    (span: NativeTextSpan, text: string) => {
+      if (!activeDocument || text === span.sourceText) return;
+      const sourceFontName = normalizeSubsetFontName(span.sourceFontName ?? "Police du document");
+      const standardFamily = /^(Helvetica|Arial)/i.test(sourceFontName)
+        ? "Helvetica"
+        : /^Times/i.test(sourceFontName)
+          ? "Times"
+          : /^Courier/i.test(sourceFontName)
+            ? "Courier"
+            : null;
+      const fontRef = standardFamily
+        ? `pdf-standard:${standardFamily.toLowerCase()}:400:normal`
+        : span.sourceFontResourceId
+          ? `document:${span.sourceFontResourceId}`
+          : "bundled:noto-sans:400:normal";
+      const edit: NativeTextEdit = {
+        id: `native-text-${Date.now()}-${nextNativeTextEditId.current++}`,
+        type: "native_text",
+        page: span.page,
+        rect: span.rect,
+        source: {
+          sourceId: span.sourceId,
+          sourceText: span.sourceText,
+          sourceBBox: span.sourceBBox,
+          sourceOrigin: span.sourceOrigin,
+          sourceFontName: span.sourceFontName,
+          sourceFontResourceId: span.sourceFontResourceId,
+          sourceFontSize: span.sourceFontSize,
+          sourceColor: span.sourceColor,
+          sourceRotation: span.sourceRotation,
+          sourceFingerprint: span.sourceFingerprint,
+          editable: span.editable,
+          limitation: span.limitation,
+          limitationMessage: span.limitationMessage,
+        },
+        text,
+        style: {
+          fontFamily: standardFamily ?? (span.sourceFontResourceId ? sourceFontName : "Noto Sans"),
+          fontRef,
+          fontSize: span.sourceFontSize,
+          color: span.sourceColor,
+          bold: span.fontWeight >= 700,
+          fontStyle: span.fontStyle,
+        },
+        ...(!standardFamily && !span.sourceFontResourceId
+          ? { fontFallbackReason: "La police source ne peut pas être réutilisée. Noto Sans est proposée explicitement comme fallback exportable." }
+          : {}),
+      };
+      dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
+      setSelectedEditId(edit.id);
       setExportFeedback(null);
     },
     [activeDocument],
@@ -4015,6 +4192,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       (edit): edit is AddTextEdit & { sourceDocumentId: string; order: number } =>
         edit.type === "add_text",
     );
+    const exportedNativeTextEdits = exportedPdfEdits.filter(
+      (edit): edit is NativeTextEdit & { sourceDocumentId: string; order: number } =>
+        edit.type === "native_text",
+    );
     const exportedSignatureEdits = exportedPdfEdits.filter(
       (edit): edit is SignatureEdit & {
         sourceDocumentId: string;
@@ -4045,6 +4226,27 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         return image ? [image] : [];
       },
     );
+    const customFontRefs = [...new Set(
+      [...exportedTextEdits, ...exportedNativeTextEdits]
+        .map((edit) => edit.style.fontRef)
+        .filter((fontRef): fontRef is string => Boolean(fontRef?.startsWith("custom:"))),
+    )];
+    setIsExporting(true);
+    setExportFeedback(null);
+    let exportedFontResources: Array<{ id: string; sha256: string; format: "ttf" | "otf"; fileName: string; dataUrl: string }> = [];
+    try {
+      if (customFontRefs.length > 0) {
+        exportedFontResources = await Promise.all(customFontRefs.map(async (fontRef) => {
+          const font = await getCustomFont(fontRef);
+          if (!font) throw new Error(`La police personnalisée ${fontRef} n'est plus disponible. Remplacez-la avant l'export.`);
+          return { id: font.id, sha256: font.sha256, format: font.format, fileName: font.originalFileName, dataUrl: await blobToDataUrl(font.binary) };
+        }));
+      }
+    } catch (error) {
+      setIsExporting(false);
+      setExportFeedback({ kind: "error", message: error instanceof Error ? error.message : "Une police personnalisée est indisponible." });
+      return false;
+    }
     formData.append(
       "plan",
       JSON.stringify({
@@ -4058,6 +4260,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         ...(exportedTextEdits.length > 0
           ? { edits: exportedTextEdits }
           : {}),
+        ...(exportedNativeTextEdits.length > 0 ? { nativeTextEdits: exportedNativeTextEdits } : {}),
+        ...(exportedFontResources.length > 0 ? { fontResources: exportedFontResources } : {}),
         ...(exportedSignatureEdits.length > 0
           ? {
               signatures: exportedSignatureEdits,
@@ -4072,9 +4276,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         ...(exportedComments.length > 0 ? { comments: exportedComments } : {}),
       }),
     );
-
-    setIsExporting(true);
-    setExportFeedback(null);
 
     try {
       const response = await fetch(`${backendUrl}/pdf/export/organize`, {
@@ -4839,6 +5040,23 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             type="button"
             onClick={() => {
               setExportFeedback(null);
+              setActiveEditingTool("edit_text");
+              setPendingSignatureImageId(null);
+              setSelectedEditId(null);
+              setEyedropperTarget(null);
+            }}
+            disabled={!activeDocument || workspaceMode !== "read"}
+            aria-label="Modifier le texte existant"
+            aria-pressed={activeEditingTool === "edit_text"}
+            title="Modifier le texte existant"
+          >
+            <ToolbarIcon name="text" />
+            <span>Modifier texte</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setExportFeedback(null);
               setActiveEditingTool("signature");
               setSelectedEditId(null);
               setPendingSignatureImageId(null);
@@ -4989,6 +5207,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
           {activeDocument && activeOrganizationPlan && workspaceMode === "read" ? (
           <PdfViewer
+            backendUrl={backendUrl}
             document={activeDocument}
             documents={documents}
             pagePlan={activeOrganizationPlan}
@@ -5002,6 +5221,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onZoomChange={updateDocumentZoom}
             onScrollPositionChange={updateDocumentScrollPosition}
             onAddText={addTextEdit}
+            onAddNativeText={addNativeTextEdit}
             onAddShape={addShapeEdit}
             onAddFreehand={addFreehandEdit}
             onStartComment={startComment}
@@ -5060,13 +5280,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <div><span>Inspecteur</span><h2>Propriétés</h2></div>
             <button type="button" aria-label="Masquer les propriétés" title="Masquer les propriétés" onClick={() => setIsPropertiesPanelVisible(false)}>❯</button>
           </header>
-          {workspaceMode === "read" && selectedTextEdit ? (
+          {workspaceMode === "read" && (selectedTextEdit || selectedNativeTextEdit) ? (
             <TextEditToolbar
-              edit={selectedTextEdit}
+              edit={(selectedTextEdit ?? selectedNativeTextEdit)!}
               onUpdate={(patch) =>
-                updatePdfEdit({ ...selectedTextEdit, ...patch })
+                updatePdfEdit({ ...(selectedTextEdit ?? selectedNativeTextEdit)!, ...patch } as PdfEdit)
               }
-              onDelete={() => deletePdfEdit(selectedTextEdit.id)}
+              onDelete={() => deletePdfEdit((selectedTextEdit ?? selectedNativeTextEdit)!.id)}
             />
           ) : workspaceMode === "read" && selectedShapeEdit ? (
             <ShapeEditToolbar

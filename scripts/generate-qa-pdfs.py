@@ -214,6 +214,24 @@ def create_docx_fidelity_fixture() -> Path:
     return save_fitz_fixture("conversion-docx-fidelity.pdf", document)
 
 
+def create_native_text_fixture() -> Path:
+    document = fitz.open()
+    page = document.new_page(width=612, height=792)
+    font_path = PROJECT_ROOT / "apps" / "web" / "public" / "fonts" / "NotoSans-Regular.ttf"
+    page.draw_rect(page.rect, color=None, fill=(0.93, 0.96, 0.9), overlay=False)
+    page.draw_rect(fitz.Rect(46, 86, 566, 172), color=(0.1, 0.35, 0.28), fill=(0.08, 0.24, 0.2), width=2)
+    page.insert_text(
+        (72, 137),
+        "Montant total : 1 250 €",
+        fontsize=22,
+        fontname="NotoSansQA",
+        fontfile=str(font_path),
+        color=(1, 1, 1),
+    )
+    page.insert_text((72, 220), "Référence : EDIT-TEXT-NATIVE-001", fontsize=12, fontname="helv")
+    return save_fitz_fixture("pdf-native-text.pdf", document)
+
+
 def generate_conversion_fixtures() -> list[Path]:
     generated: list[Path] = []
 
@@ -299,6 +317,7 @@ def generate(include_large: bool) -> list[Path]:
     generated = [
         write_pdf("pdf-small-1-page.pdf", [(320, 460)]),
         write_pdf("pdf-text-position.pdf", [(612, 792)]),
+        create_native_text_fixture(),
         write_pdf(
             "pdf-small-5-pages.pdf",
             [(300 + index * 25, 500) for index in range(5)],

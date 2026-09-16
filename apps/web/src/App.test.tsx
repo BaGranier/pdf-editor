@@ -640,7 +640,7 @@ describe("App", () => {
     const input = await screen.findByLabelText("Texte ajouté page 1");
     fireEvent.change(input, { target: { value: "Été 2026 : 42,50 !" } });
     fireEvent.change(screen.getByLabelText("Police du texte"), {
-      target: { value: "Times" },
+      target: { value: "pdf-standard:times:400:normal" },
     });
     fireEvent.change(screen.getByLabelText("Taille du texte"), {
       target: { value: "24" },

@@ -78,10 +78,25 @@ function editsAreEqual(left: PdfEdit, right: PdfEdit) {
     return (
       left.text === right.text &&
       left.style.fontFamily === right.style.fontFamily &&
+      left.style.fontRef === right.style.fontRef &&
       left.style.fontSize === right.style.fontSize &&
       left.style.color === right.style.color &&
       left.style.bold === right.style.bold &&
+      left.style.fontStyle === right.style.fontStyle &&
       left.autoSize === right.autoSize
+    );
+  }
+
+  if (left.type === "native_text" && right.type === "native_text") {
+    return (
+      left.text === right.text &&
+      left.source.sourceFingerprint === right.source.sourceFingerprint &&
+      left.style.fontFamily === right.style.fontFamily &&
+      left.style.fontRef === right.style.fontRef &&
+      left.style.fontSize === right.style.fontSize &&
+      left.style.color === right.style.color &&
+      left.style.bold === right.style.bold &&
+      left.style.fontStyle === right.style.fontStyle
     );
   }
 

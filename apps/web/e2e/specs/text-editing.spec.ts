@@ -23,7 +23,7 @@ test("EDIT-TEXT-001 @smoke ajoute, déplace et exporte du texte libre", async ({
 
   const textInput = page.getByLabel("Texte ajouté page 1");
   await textInput.fill("Été 2026 : 42,50 !");
-  await page.getByLabel("Police du texte").selectOption("Times");
+  await page.getByLabel("Police du texte").selectOption({ label: "Times" });
   await page.getByLabel("Taille du texte").fill("20");
   await page.getByRole("button", { name: "Couleur du texte" }).click();
   await page.getByLabel("Couleur personnalisée Couleur du texte").fill("#c026d3");

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import io
 import json
 import logging
+import math
 import re
 from pathlib import Path
 from typing import Annotated, Literal
@@ -60,11 +62,18 @@ class PdfEditRect(BaseModel):
         return self
 
 
+class PdfEditPoint(BaseModel):
+    x: float = Field(allow_inf_nan=False)
+    y: float = Field(allow_inf_nan=False)
+
+
 class AddTextStyle(BaseModel):
-    font_family: Literal["Helvetica", "Times", "Courier"] = Field(alias="fontFamily")
+    font_family: str = Field(alias="fontFamily", min_length=1, max_length=200)
+    font_ref: str | None = Field(default=None, alias="fontRef", max_length=200)
     font_size: float = Field(alias="fontSize", ge=6, le=144, allow_inf_nan=False)
     color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
     bold: bool = False
+    font_style: Literal["normal", "italic"] = Field(default="normal", alias="fontStyle")
 
 
 class AddTextEdit(BaseModel):
@@ -79,6 +88,57 @@ class AddTextEdit(BaseModel):
     text: str = Field(max_length=10_000)
     style: AddTextStyle
     order: int = Field(default=0, ge=0)
+
+
+class NativeTextSource(BaseModel):
+    source_id: str = Field(alias="sourceId", min_length=1, max_length=200)
+    source_text: str = Field(alias="sourceText", max_length=10_000)
+    source_bbox: PdfEditRect = Field(alias="sourceBBox")
+    source_origin: PdfEditPoint = Field(alias="sourceOrigin")
+    source_font_name: str | None = Field(
+        default=None, alias="sourceFontName", max_length=200
+    )
+    source_font_resource_id: str | None = Field(
+        default=None, alias="sourceFontResourceId", max_length=50
+    )
+    source_font_size: float = Field(alias="sourceFontSize", gt=0, le=1000)
+    source_color: str = Field(alias="sourceColor", pattern=r"^#[0-9A-Fa-f]{6}$")
+    source_rotation: Literal[0, 90, 180, 270] = Field(alias="sourceRotation")
+    source_fingerprint: str = Field(
+        alias="sourceFingerprint", pattern=r"^[0-9a-f]{64}$"
+    )
+    editable: bool = True
+    limitation: str | None = None
+    limitation_message: str | None = Field(default=None, alias="limitationMessage")
+
+
+class NativeTextEdit(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    type: Literal["native_text"]
+    source_document_id: str | None = Field(default=None, alias="sourceDocumentId")
+    page: int = Field(ge=1)
+    rect: PdfEditRect
+    source: NativeTextSource
+    text: str = Field(max_length=10_000)
+    style: AddTextStyle
+    order: int = Field(default=0, ge=0)
+
+
+class FontResourcePayload(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    format: Literal["ttf", "otf"]
+    file_name: str = Field(alias="fileName", min_length=1, max_length=255)
+    data_url: str = Field(alias="dataUrl", min_length=1, max_length=28_000_000)
+
+
+class NativeTextPreviewPlan(BaseModel):
+    page_index: int = Field(alias="pageIndex", ge=0)
+    rotation: Literal[0, 90, 180, 270] = 0
+    edits: list[NativeTextEdit] = Field(min_length=1, max_length=100)
+    font_resources: list[FontResourcePayload] = Field(
+        default_factory=list, alias="fontResources"
+    )
 
 
 class SignatureImagePayload(BaseModel):
@@ -196,10 +256,18 @@ class OrganizeExportPlan(BaseModel):
     output_name: str | None = Field(default=None, alias="outputName")
     pages: list[OrganizeExportPage]
     edits: list[AddTextEdit] = Field(default_factory=list)
+    native_text_edits: list[NativeTextEdit] = Field(
+        default_factory=list, alias="nativeTextEdits"
+    )
+    font_resources: list[FontResourcePayload] = Field(
+        default_factory=list, alias="fontResources"
+    )
     signatures: list[SignatureEdit] = Field(default_factory=list)
     shapes: list[ShapeEdit] = Field(default_factory=list)
     freehands: list[FreehandEdit] = Field(default_factory=list)
-    text_markups: list[TextMarkupEdit] = Field(default_factory=list, alias="textMarkups")
+    text_markups: list[TextMarkupEdit] = Field(
+        default_factory=list, alias="textMarkups"
+    )
     comments: list[PdfCommentEdit] = Field(default_factory=list)
     signature_images: list[SignatureImagePayload] = Field(
         default_factory=list,
@@ -217,6 +285,7 @@ class ExportWarning(BaseModel):
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_DIR = PROJECT_ROOT / "data" / "output"
+BUNDLED_FONT_DIR = PROJECT_ROOT / "apps" / "web" / "public" / "fonts"
 FORBIDDEN_OUTPUT_NAME_CHARACTERS = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f]')
 WINDOWS_RESERVED_OUTPUT_NAME = re.compile(
     r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$",
@@ -311,9 +380,7 @@ def build_output_name(upload_name: str | None, requested_name: str | None) -> st
             raise HTTPException(
                 status_code=422, detail="Le nom de sortie est invalide."
             )
-        requested_stem = re.sub(
-            r"(?:\.pdf)+$", "", requested_name, flags=re.IGNORECASE
-        )
+        requested_stem = re.sub(r"(?:\.pdf)+$", "", requested_name, flags=re.IGNORECASE)
         stem = FORBIDDEN_OUTPUT_NAME_CHARACTERS.sub("-", requested_stem)
     else:
         stem = FORBIDDEN_OUTPUT_NAME_CHARACTERS.sub(
@@ -336,13 +403,9 @@ def build_content_disposition(output_name: str) -> str:
         return f'attachment; filename="{output_name}"'
 
     ascii_name = (
-        re.sub(r"[^A-Za-z0-9._ ()-]", "-", output_name).strip(". ")
-        or "document.pdf"
+        re.sub(r"[^A-Za-z0-9._ ()-]", "-", output_name).strip(". ") or "document.pdf"
     )
-    return (
-        f'attachment; filename="{ascii_name}"; '
-        f"filename*=UTF-8''{encoded_name}"
-    )
+    return f'attachment; filename="{ascii_name}"; ' f"filename*=UTF-8''{encoded_name}"
 
 
 def parse_document_ids(serialized_ids: str | None, file_count: int) -> list[str]:
@@ -402,6 +465,47 @@ FONT_NAMES: dict[tuple[str, bool], str] = {
     ("Courier", True): "cobo",
 }
 
+FONT_STYLE_NAMES: dict[tuple[str, bool, str], str] = {
+    ("Helvetica", False, "normal"): "helv",
+    ("Helvetica", True, "normal"): "hebo",
+    ("Helvetica", False, "italic"): "heit",
+    ("Helvetica", True, "italic"): "hebi",
+    ("Times", False, "normal"): "tiro",
+    ("Times", True, "normal"): "tibo",
+    ("Times", False, "italic"): "tiit",
+    ("Times", True, "italic"): "tibi",
+    ("Courier", False, "normal"): "cour",
+    ("Courier", True, "normal"): "cobo",
+    ("Courier", False, "italic"): "coit",
+    ("Courier", True, "italic"): "cobi",
+}
+
+BUNDLED_FONT_FILES = {
+    f"bundled:{slug}:400:normal": file_name
+    for slug, file_name in (
+        ("inter", "Inter-Regular.ttf"),
+        ("roboto", "Roboto-Regular.ttf"),
+        ("open-sans", "OpenSans-Regular.ttf"),
+        ("lato", "Lato-Regular.ttf"),
+        ("source-sans-3", "SourceSans3-Regular.otf"),
+        ("noto-sans", "NotoSans-Regular.ttf"),
+        ("montserrat", "Montserrat-Regular.ttf"),
+        ("poppins", "Poppins-Regular.ttf"),
+        ("ibm-plex-sans", "IBMPlexSans-Regular.ttf"),
+        ("ubuntu", "Ubuntu-Regular.ttf"),
+        ("noto-serif", "NotoSerif-Regular.ttf"),
+        ("liberation-serif", "LiberationSerif-Regular.ttf"),
+        ("dejavu-serif", "DejaVuSerif.ttf"),
+        ("merriweather", "Merriweather-Regular.ttf"),
+        ("playfair-display", "PlayfairDisplay-Regular.ttf"),
+        ("ibm-plex-serif", "IBMPlexSerif-Regular.ttf"),
+        ("liberation-mono", "LiberationMono-Regular.ttf"),
+        ("dejavu-sans-mono", "DejaVuSansMono.ttf"),
+        ("fira-mono", "FiraMono-Regular.ttf"),
+        ("ibm-plex-mono", "IBMPlexMono-Regular.ttf"),
+    )
+}
+
 
 def _resolve_source_document_id(
     source_document_id: str | None,
@@ -420,6 +524,177 @@ def _resolve_source_document_id(
 
 def _parse_hex_color(value: str) -> tuple[float, float, float]:
     return tuple(int(value[index : index + 2], 16) / 255 for index in (1, 3, 5))
+
+
+def _rgb_hex(value: int) -> str:
+    return f"#{value & 0xFFFFFF:06x}"
+
+
+def _clean_font_name(value: str) -> str:
+    return re.sub(r"^[A-Z]{6}\+", "", value)
+
+
+def _font_lookup_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", _clean_font_name(value).lower())
+
+
+def _native_text_rotation(direction: tuple[float, float] | list[float]) -> int | None:
+    angle = round(math.degrees(math.atan2(-direction[1], direction[0]))) % 360
+    nearest = min(
+        (0, 90, 180, 270),
+        key=lambda candidate: abs(((angle - candidate + 180) % 360) - 180),
+    )
+    return nearest if abs(((angle - nearest + 180) % 360) - 180) <= 1 else None
+
+
+def _native_text_fingerprint(
+    page_index: int,
+    block_index: int,
+    line_index: int,
+    span_index: int,
+    text: str,
+    bbox: fitz.Rect,
+    font_name: str,
+    font_size: float,
+    rotation: int | None,
+) -> str:
+    payload = "|".join(
+        [
+            str(page_index),
+            str(block_index),
+            str(line_index),
+            str(span_index),
+            " ".join(text.split()),
+            *(f"{value:.3f}" for value in (bbox.x0, bbox.y0, bbox.x1, bbox.y1)),
+            font_name,
+            f"{font_size:.3f}",
+            str(rotation),
+        ]
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _page_font_resources(page: fitz.Page) -> dict[str, tuple[int, str, str]]:
+    resources: dict[str, tuple[int, str, str]] = {}
+    for font in page.get_fonts(full=True):
+        xref, extension, _font_type, base_name, resource_name = font[:5]
+        resources[_font_lookup_key(str(base_name))] = (
+            int(xref),
+            str(resource_name),
+            str(extension),
+        )
+    return resources
+
+
+def _iter_native_text_spans(page: fitz.Page, page_index: int):
+    inverse = ~page.transformation_matrix
+    resources = _page_font_resources(page)
+    blocks = page.get_text("dict", flags=fitz.TEXTFLAGS_DICT)["blocks"]
+    for block_index, block in enumerate(blocks):
+        for line_index, line in enumerate(block.get("lines", [])):
+            direction = line.get("dir", (1.0, 0.0))
+            rotation = _native_text_rotation(direction)
+            for span_index, span in enumerate(line.get("spans", [])):
+                text = str(span.get("text", ""))
+                if not text.strip():
+                    continue
+                page_bbox = fitz.Rect(span["bbox"])
+                source_bbox = page_bbox * inverse
+                source_origin = fitz.Point(span["origin"]) * inverse
+                font_name = _clean_font_name(str(span.get("font") or ""))
+                resource = resources.get(_font_lookup_key(font_name))
+                char_flags = int(span.get("char_flags", 0))
+                invisible = int(span.get("alpha", 255)) == 0 or not (
+                    char_flags & (2**3 | 2**4)
+                )
+                writing_mode = int(line.get("wmode", 0))
+                limitation = None
+                limitation_message = None
+                if invisible:
+                    limitation = "invisible_text"
+                    limitation_message = "Couche de texte invisible (OCR) : les pixels du scan ne seraient pas modifiés."
+                elif writing_mode != 0:
+                    limitation = "unsupported_writing_mode"
+                    limitation_message = "Cette écriture verticale n'est pas encore exportable fidèlement."
+                elif rotation is None:
+                    limitation = "complex_transform"
+                    limitation_message = "La transformation de ce texte est trop complexe pour une édition sûre."
+                fingerprint = _native_text_fingerprint(
+                    page_index,
+                    block_index,
+                    line_index,
+                    span_index,
+                    text,
+                    page_bbox,
+                    font_name,
+                    float(span["size"]),
+                    rotation,
+                )
+                yield {
+                    "page": page_index + 1,
+                    "rect": {
+                        "x0": source_bbox.x0,
+                        "y0": source_bbox.y0,
+                        "x1": source_bbox.x1,
+                        "y1": source_bbox.y1,
+                    },
+                    "sourceId": f"p{page_index}-b{block_index}-l{line_index}-s{span_index}",
+                    "sourceText": text,
+                    "sourceBBox": {
+                        "x0": source_bbox.x0,
+                        "y0": source_bbox.y0,
+                        "x1": source_bbox.x1,
+                        "y1": source_bbox.y1,
+                    },
+                    "sourceOrigin": {"x": source_origin.x, "y": source_origin.y},
+                    "sourceFontName": font_name or None,
+                    "sourceFontResourceId": str(resource[0])
+                    if resource and resource[0] > 0 and resource[2] != "n/a"
+                    else None,
+                    "sourceFontSize": float(span["size"]),
+                    "sourceColor": _rgb_hex(int(span.get("color", 0))),
+                    "sourceRotation": rotation or 0,
+                    "sourceFingerprint": fingerprint,
+                    "editable": limitation is None,
+                    "limitation": limitation,
+                    "limitationMessage": limitation_message,
+                    "fontWeight": 700
+                    if int(span.get("flags", 0)) & fitz.TEXT_FONT_BOLD
+                    else 400,
+                    "fontStyle": "italic"
+                    if int(span.get("flags", 0)) & fitz.TEXT_FONT_ITALIC
+                    else "normal",
+                }
+
+
+@app.post("/pdf/native-text")
+async def extract_native_text(
+    file: Annotated[UploadFile, File(description="PDF source")],
+    page_index: Annotated[int, Form(alias="pageIndex", ge=0)],
+) -> dict[str, list[dict[str, object]]]:
+    source = await file.read()
+    if not source:
+        raise HTTPException(status_code=400, detail="Le fichier PDF est vide.")
+    try:
+        with fitz.open(stream=source, filetype="pdf") as document:
+            if document.needs_pass:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Les PDF protégés ne sont pas pris en charge.",
+                )
+            if page_index >= document.page_count:
+                raise HTTPException(
+                    status_code=422, detail="La page demandée est invalide."
+                )
+            return {
+                "spans": list(_iter_native_text_spans(document[page_index], page_index))
+            }
+    except HTTPException:
+        raise
+    except (fitz.FileDataError, RuntimeError, ValueError) as error:
+        raise HTTPException(
+            status_code=422, detail="Le texte natif du PDF est illisible."
+        ) from error
 
 
 MAX_SIGNATURE_IMAGE_BYTES = 5 * 1024 * 1024
@@ -467,17 +742,159 @@ def _decode_signature_image(image: SignatureImagePayload) -> bytes:
     return decoded
 
 
+def _decode_font_resources(resources: list[FontResourcePayload]) -> dict[str, bytes]:
+    decoded: dict[str, bytes] = {}
+    for resource in resources:
+        if resource.id in decoded:
+            raise HTTPException(
+                status_code=422, detail=f"La police {resource.id!r} est dupliquée."
+            )
+        match = re.fullmatch(
+            r"data:[a-z0-9.+-]+/[a-z0-9.+-]+;base64,(.+)",
+            resource.data_url,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if not match:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Le format de la police {resource.id!r} est invalide.",
+            )
+        try:
+            binary = base64.b64decode(match.group(1), validate=True)
+        except (binascii.Error, ValueError) as error:
+            raise HTTPException(
+                status_code=422, detail=f"La police {resource.id!r} est illisible."
+            ) from error
+        signature = binary[:4]
+        valid = (
+            signature == b"OTTO"
+            if resource.format == "otf"
+            else signature in {b"\x00\x01\x00\x00", b"true", b"typ1"}
+        )
+        if (
+            not valid
+            or len(binary) > 20 * 1024 * 1024
+            or hashlib.sha256(binary).hexdigest() != resource.sha256
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=f"L'intégrité de la police {resource.id!r} est invalide.",
+            )
+        if resource.id != f"custom:{resource.sha256}":
+            raise HTTPException(
+                status_code=422,
+                detail=f"L'identifiant de la police {resource.id!r} est invalide.",
+            )
+        try:
+            fitz.Font(fontbuffer=binary)
+        except (RuntimeError, ValueError) as error:
+            raise HTTPException(
+                status_code=422,
+                detail=f"La police {resource.id!r} n'est pas exploitable.",
+            ) from error
+        decoded[resource.id] = binary
+    return decoded
+
+
+def _ensure_font_has_glyphs(font: fitz.Font, text: str, font_ref: str) -> None:
+    missing = sorted(
+        {
+            character
+            for character in text
+            if not character.isspace() and not font.has_glyph(ord(character))
+        }
+    )
+    if missing:
+        preview = "".join(missing[:8])
+        raise HTTPException(
+            status_code=422,
+            detail=f"La police {font_ref!r} ne contient pas les glyphes nécessaires ({preview}). Choisissez un fallback explicite.",
+        )
+
+
+def _resolve_insert_font(
+    page: fitz.Page,
+    style: AddTextStyle,
+    text: str,
+    font_resources: dict[str, bytes],
+    native_source: NativeTextSource | None = None,
+) -> str:
+    font_ref = style.font_ref
+    if not font_ref:
+        font_ref = {
+            "Helvetica": "pdf-standard:helvetica:400:normal",
+            "Times": "pdf-standard:times:400:normal",
+            "Courier": "pdf-standard:courier:400:normal",
+        }.get(style.font_family)
+    if font_ref and font_ref.startswith("pdf-standard:"):
+        family = {"helvetica": "Helvetica", "times": "Times", "courier": "Courier"}.get(
+            font_ref.split(":")[1], style.font_family
+        )
+        fontname = FONT_STYLE_NAMES.get((family, style.bold, style.font_style))
+        if not fontname:
+            raise HTTPException(
+                status_code=422,
+                detail=f"La variante de police {font_ref!r} n'est pas disponible.",
+            )
+        _ensure_font_has_glyphs(fitz.Font(fontname=fontname), text, font_ref)
+        return fontname
+    if font_ref in BUNDLED_FONT_FILES:
+        path = BUNDLED_FONT_DIR / BUNDLED_FONT_FILES[font_ref]
+        if not path.is_file():
+            raise HTTPException(
+                status_code=422,
+                detail=f"La police intégrée {font_ref!r} est absente de l'installation.",
+            )
+        font = fitz.Font(fontfile=str(path))
+        _ensure_font_has_glyphs(font, text, font_ref)
+        alias = f"BF{hashlib.sha256(font_ref.encode()).hexdigest()[:10]}"
+        page.insert_font(fontname=alias, fontfile=str(path))
+        return alias
+    if font_ref and font_ref.startswith("custom:"):
+        binary = font_resources.get(font_ref)
+        if binary is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"La police personnalisée {font_ref!r} n'a pas été jointe à l'export.",
+            )
+        _ensure_font_has_glyphs(fitz.Font(fontbuffer=binary), text, font_ref)
+        alias = f"CF{font_ref.removeprefix('custom:')[:10]}"
+        page.insert_font(fontname=alias, fontbuffer=binary)
+        return alias
+    if font_ref and font_ref.startswith("document:") and native_source:
+        try:
+            xref = int(native_source.source_font_resource_id or "0")
+        except ValueError:
+            xref = 0
+        extracted = page.parent.extract_font(xref, named=True) if xref > 0 else None
+        binary = extracted.get("content") if isinstance(extracted, dict) else None
+        if not binary:
+            raise HTTPException(
+                status_code=422,
+                detail="La police source du document ne peut pas être réutilisée. Choisissez une police intégrée.",
+            )
+        _ensure_font_has_glyphs(fitz.Font(fontbuffer=binary), text, font_ref)
+        alias = f"DF{xref}"
+        page.insert_font(fontname=alias, fontbuffer=binary)
+        return alias
+    raise HTTPException(
+        status_code=422,
+        detail=f"La police {font_ref or style.font_family!r} n'est pas exportable.",
+    )
+
+
 def _textbox_shape(
     page: fitz.Page,
     rect: fitz.Rect,
     edit: AddTextEdit,
     text: str,
+    fontname: str,
 ) -> tuple[fitz.Shape, float]:
     shape = page.new_shape()
     spare_height = shape.insert_textbox(
         rect,
         text,
-        fontname=FONT_NAMES[(edit.style.font_family, edit.style.bold)],
+        fontname=fontname,
         fontsize=edit.style.font_size,
         color=_parse_hex_color(edit.style.color),
         lineheight=TEXTBOX_LINE_HEIGHT,
@@ -512,6 +929,7 @@ def _largest_fitting_text_prefix(
     page: fitz.Page,
     rect: fitz.Rect,
     edit: AddTextEdit,
+    fontname: str,
 ) -> str:
     """Return the longest prefix PyMuPDF can place without shrinking the font."""
     low = 0
@@ -523,6 +941,7 @@ def _largest_fitting_text_prefix(
             rect,
             edit,
             edit.text[:candidate_length],
+            fontname,
         )
         if spare_height >= 0:
             low = candidate_length
@@ -535,20 +954,20 @@ def _insert_text_best_effort(
     page: fitz.Page,
     requested_rect: fitz.Rect,
     edit: AddTextEdit,
+    fontname: str,
 ) -> Literal["exact", "expanded", "partial"]:
     requested_shape, spare_height = _textbox_shape(
         page,
         requested_rect,
         edit,
         edit.text,
+        fontname,
     )
     if spare_height >= 0:
         requested_shape.commit(overlay=True)
         return "exact"
 
-    required_height = (
-        requested_rect.height - spare_height + TEXTBOX_HEIGHT_MARGIN
-    )
+    required_height = requested_rect.height - spare_height + TEXTBOX_HEIGHT_MARGIN
     expanded_rect = _expand_text_rect_vertically(
         requested_rect,
         page.rect,
@@ -559,6 +978,7 @@ def _insert_text_best_effort(
         expanded_rect,
         edit,
         edit.text,
+        fontname,
     )
     if expanded_spare_height >= 0:
         expanded_shape.commit(overlay=True)
@@ -576,18 +996,22 @@ def _insert_text_best_effort(
             available_page_rect,
             edit,
             edit.text,
+            fontname,
         )
         if page_spare_height >= 0:
             page_shape.commit(overlay=True)
             return "expanded"
 
-    fitting_text = _largest_fitting_text_prefix(page, available_page_rect, edit)
+    fitting_text = _largest_fitting_text_prefix(
+        page, available_page_rect, edit, fontname
+    )
     if fitting_text:
         partial_shape, partial_spare_height = _textbox_shape(
             page,
             available_page_rect,
             edit,
             fitting_text,
+            fontname,
         )
         if partial_spare_height >= 0:
             partial_shape.commit(overlay=True)
@@ -604,11 +1028,15 @@ def apply_visual_edits(
     freehand_edits_by_output_page: dict[int, list[FreehandEdit]] | None = None,
     text_markup_edits_by_output_page: dict[int, list[TextMarkupEdit]] | None = None,
     comment_edits_by_output_page: dict[int, list[PdfCommentEdit]] | None = None,
+    native_text_edits_by_output_page: dict[int, list[NativeTextEdit]] | None = None,
+    font_resources: dict[str, bytes] | None = None,
 ) -> bytes:
     shape_edits_by_output_page = shape_edits_by_output_page or {}
     freehand_edits_by_output_page = freehand_edits_by_output_page or {}
     text_markup_edits_by_output_page = text_markup_edits_by_output_page or {}
     comment_edits_by_output_page = comment_edits_by_output_page or {}
+    native_text_edits_by_output_page = native_text_edits_by_output_page or {}
+    font_resources = font_resources or {}
     if (
         not text_edits_by_output_page
         and not signature_edits_by_output_page
@@ -616,6 +1044,7 @@ def apply_visual_edits(
         and not freehand_edits_by_output_page
         and not text_markup_edits_by_output_page
         and not comment_edits_by_output_page
+        and not native_text_edits_by_output_page
     ):
         return source
 
@@ -628,10 +1057,105 @@ def apply_visual_edits(
                 | set(freehand_edits_by_output_page)
                 | set(text_markup_edits_by_output_page)
                 | set(comment_edits_by_output_page)
+                | set(native_text_edits_by_output_page)
             )
             for output_page_index in sorted(output_page_indexes):
                 page = document[output_page_index]
-                visual_edits: list[AddTextEdit | SignatureEdit | ShapeEdit | FreehandEdit] = [
+                native_targets: list[tuple[NativeTextEdit, dict[str, object]]] = []
+                for native_edit in native_text_edits_by_output_page.get(
+                    output_page_index, []
+                ):
+                    if not native_edit.source.editable:
+                        raise HTTPException(
+                            status_code=422,
+                            detail=f"Le texte natif {native_edit.id!r} est marqué comme non éditable.",
+                        )
+                    candidates = [
+                        candidate
+                        for candidate in _iter_native_text_spans(
+                            page, native_edit.page - 1
+                        )
+                        if candidate["sourceFingerprint"]
+                        == native_edit.source.source_fingerprint
+                    ]
+                    if (
+                        len(candidates) != 1
+                        or candidates[0]["sourceText"] != native_edit.source.source_text
+                    ):
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"La cible du texte natif {native_edit.id!r} est absente, ambiguë ou a changé.",
+                        )
+                    candidate = candidates[0]
+                    candidate_bbox = candidate["sourceBBox"]
+                    assert isinstance(candidate_bbox, dict)
+                    supplied = native_edit.source.source_bbox
+                    if (
+                        max(
+                            abs(float(candidate_bbox[key]) - getattr(supplied, key))
+                            for key in ("x0", "y0", "x1", "y1")
+                        )
+                        > 1.0
+                    ):
+                        raise HTTPException(
+                            status_code=409,
+                            detail=f"La géométrie du texte natif {native_edit.id!r} a changé.",
+                        )
+                    target_rect = (
+                        fitz.Rect(
+                            float(candidate_bbox["x0"]),
+                            float(candidate_bbox["y0"]),
+                            float(candidate_bbox["x1"]),
+                            float(candidate_bbox["y1"]),
+                        )
+                        * page.transformation_matrix
+                    )
+                    page.add_redact_annot(target_rect, fill=False, cross_out=False)
+                    native_targets.append((native_edit, candidate))
+                if native_targets:
+                    page.apply_redactions(
+                        images=fitz.PDF_REDACT_IMAGE_NONE,
+                        graphics=fitz.PDF_REDACT_LINE_ART_NONE,
+                        text=fitz.PDF_REDACT_TEXT_REMOVE,
+                    )
+                    for native_edit, candidate in native_targets:
+                        if not native_edit.text:
+                            continue
+                        runtime_source = native_edit.source.model_copy(
+                            update={
+                                "source_font_resource_id": candidate.get(
+                                    "sourceFontResourceId"
+                                )
+                            }
+                        )
+                        fontname = _resolve_insert_font(
+                            page,
+                            native_edit.style,
+                            native_edit.text,
+                            font_resources,
+                            runtime_source,
+                        )
+                        candidate_origin = candidate["sourceOrigin"]
+                        assert isinstance(candidate_origin, dict)
+                        origin = (
+                            fitz.Point(
+                                float(candidate_origin["x"]),
+                                float(candidate_origin["y"]),
+                            )
+                            * page.transformation_matrix
+                        )
+                        page.insert_text(
+                            origin,
+                            native_edit.text,
+                            fontname=fontname,
+                            fontsize=native_edit.style.font_size,
+                            color=_parse_hex_color(native_edit.style.color),
+                            rotate=native_edit.source.source_rotation,
+                            overlay=True,
+                        )
+                visual_edits: list[
+                    AddTextEdit | SignatureEdit | ShapeEdit | FreehandEdit
+                ] = [
                     *text_edits_by_output_page.get(output_page_index, []),
                     *signature_edits_by_output_page.get(output_page_index, []),
                     *shape_edits_by_output_page.get(output_page_index, []),
@@ -648,7 +1172,12 @@ def apply_visual_edits(
                     if isinstance(edit, AddTextEdit):
                         if not edit.text:
                             continue
-                        rendering = _insert_text_best_effort(page, page_rect, edit)
+                        fontname = _resolve_insert_font(
+                            page, edit.style, edit.text, font_resources
+                        )
+                        rendering = _insert_text_best_effort(
+                            page, page_rect, edit, fontname
+                        )
                         if rendering != "exact":
                             warning = ExportWarning(
                                 editId=edit.id,
@@ -708,7 +1237,10 @@ def apply_visual_edits(
                                 overlay=True,
                             )
                     else:
-                        points = [fitz.Point(point.x, point.y) * page.transformation_matrix for point in edit.points]
+                        points = [
+                            fitz.Point(point.x, point.y) * page.transformation_matrix
+                            for point in edit.points
+                        ]
                         page.draw_polyline(
                             points,
                             color=_parse_hex_color(edit.style.color),
@@ -716,10 +1248,16 @@ def apply_visual_edits(
                             stroke_opacity=edit.style.opacity,
                             overlay=True,
                         )
-                for markup in sorted(text_markup_edits_by_output_page.get(output_page_index, []), key=lambda item: item.order):
+                for markup in sorted(
+                    text_markup_edits_by_output_page.get(output_page_index, []),
+                    key=lambda item: item.order,
+                ):
                     color = _parse_hex_color(markup.color)
                     for rect in markup.rects:
-                        page_rect = fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y1) * page.transformation_matrix
+                        page_rect = (
+                            fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y1)
+                            * page.transformation_matrix
+                        )
                         if markup.kind == "highlight":
                             annotation = page.add_highlight_annot(page_rect)
                         elif markup.kind == "underline":
@@ -728,8 +1266,14 @@ def apply_visual_edits(
                             annotation = page.add_strikeout_annot(page_rect)
                         annotation.set_colors(stroke=color)
                         annotation.update()
-                for comment in sorted(comment_edits_by_output_page.get(output_page_index, []), key=lambda item: item.order):
-                    point = fitz.Point(comment.rect.x0, comment.rect.y0) * page.transformation_matrix
+                for comment in sorted(
+                    comment_edits_by_output_page.get(output_page_index, []),
+                    key=lambda item: item.order,
+                ):
+                    point = (
+                        fitz.Point(comment.rect.x0, comment.rect.y0)
+                        * page.transformation_matrix
+                    )
                     annotation = page.add_text_annot(point, comment.content)
                     annotation.set_info(
                         title=comment.author or "",
@@ -745,6 +1289,52 @@ def apply_visual_edits(
         raise HTTPException(
             status_code=422,
             detail="Les modifications visuelles n'ont pas pu être appliquées au PDF.",
+        ) from error
+
+
+@app.post("/pdf/native-text/preview", response_class=Response)
+async def preview_native_text(
+    file: Annotated[UploadFile, File(description="PDF source")],
+    plan: Annotated[str, Form(description="Aperçu de texte natif")],
+) -> Response:
+    source = await file.read()
+    if not source:
+        raise HTTPException(status_code=400, detail="Le fichier PDF est vide.")
+    try:
+        preview = NativeTextPreviewPlan.model_validate_json(plan)
+    except ValidationError as error:
+        raise HTTPException(
+            status_code=422, detail="La demande d'aperçu est invalide."
+        ) from error
+    if any(edit.page != preview.page_index + 1 for edit in preview.edits):
+        raise HTTPException(
+            status_code=422,
+            detail="Les textes de l'aperçu ne ciblent pas la page demandée.",
+        )
+    edited = apply_visual_edits(
+        source,
+        {},
+        {},
+        {},
+        native_text_edits_by_output_page={preview.page_index: preview.edits},
+        font_resources=_decode_font_resources(preview.font_resources),
+    )
+    try:
+        with fitz.open(stream=edited, filetype="pdf") as document:
+            if preview.page_index >= document.page_count:
+                raise HTTPException(
+                    status_code=422, detail="La page d'aperçu est invalide."
+                )
+            page = document[preview.page_index]
+            if preview.rotation:
+                page.set_rotation((page.rotation + preview.rotation) % 360)
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+            return Response(content=pixmap.tobytes("png"), media_type="image/png")
+    except HTTPException:
+        raise
+    except (fitz.FileDataError, RuntimeError, ValueError) as error:
+        raise HTTPException(
+            status_code=422, detail="L'aperçu du texte natif n'a pas pu être rendu."
         ) from error
 
 
@@ -781,6 +1371,22 @@ def export_organized_pdf(
             (source_document_id, edit.page - 1),
             [],
         ).append(edit)
+
+    native_text_edits_by_source_page: dict[tuple[str, int], list[NativeTextEdit]] = {}
+    for edit in plan.native_text_edits:
+        source_document_id = _resolve_source_document_id(
+            edit.source_document_id, readers
+        )
+        if edit.page > len(readers[source_document_id].pages):
+            raise HTTPException(
+                status_code=422,
+                detail=f"La page {edit.page} du texte natif {edit.id!r} est invalide.",
+            )
+        native_text_edits_by_source_page.setdefault(
+            (source_document_id, edit.page - 1), []
+        ).append(edit)
+
+    font_resources = _decode_font_resources(plan.font_resources)
 
     signature_images: dict[str, bytes] = {}
     for image in plan.signature_images:
@@ -836,24 +1442,45 @@ def export_organized_pdf(
 
     freehands_by_source_page: dict[tuple[str, int], list[FreehandEdit]] = {}
     for freehand in plan.freehands:
-        source_document_id = _resolve_source_document_id(freehand.source_document_id, readers)
+        source_document_id = _resolve_source_document_id(
+            freehand.source_document_id, readers
+        )
         if freehand.page > len(readers[source_document_id].pages):
-            raise HTTPException(status_code=422, detail=f"La page {freehand.page} du dessin {freehand.id!r} est invalide.")
-        freehands_by_source_page.setdefault((source_document_id, freehand.page - 1), []).append(freehand)
+            raise HTTPException(
+                status_code=422,
+                detail=f"La page {freehand.page} du dessin {freehand.id!r} est invalide.",
+            )
+        freehands_by_source_page.setdefault(
+            (source_document_id, freehand.page - 1), []
+        ).append(freehand)
 
     text_markups_by_source_page: dict[tuple[str, int], list[TextMarkupEdit]] = {}
     for markup in plan.text_markups:
-        source_document_id = _resolve_source_document_id(markup.source_document_id, readers)
+        source_document_id = _resolve_source_document_id(
+            markup.source_document_id, readers
+        )
         if markup.page > len(readers[source_document_id].pages):
-            raise HTTPException(status_code=422, detail=f"La page {markup.page} de l'annotation {markup.id!r} est invalide.")
-        text_markups_by_source_page.setdefault((source_document_id, markup.page - 1), []).append(markup)
+            raise HTTPException(
+                status_code=422,
+                detail=f"La page {markup.page} de l'annotation {markup.id!r} est invalide.",
+            )
+        text_markups_by_source_page.setdefault(
+            (source_document_id, markup.page - 1), []
+        ).append(markup)
 
     comments_by_source_page: dict[tuple[str, int], list[PdfCommentEdit]] = {}
     for comment in plan.comments:
-        source_document_id = _resolve_source_document_id(comment.source_document_id, readers)
+        source_document_id = _resolve_source_document_id(
+            comment.source_document_id, readers
+        )
         if comment.page > len(readers[source_document_id].pages):
-            raise HTTPException(status_code=422, detail=f"La page {comment.page} du commentaire {comment.id!r} est invalide.")
-        comments_by_source_page.setdefault((source_document_id, comment.page - 1), []).append(comment)
+            raise HTTPException(
+                status_code=422,
+                detail=f"La page {comment.page} du commentaire {comment.id!r} est invalide.",
+            )
+        comments_by_source_page.setdefault(
+            (source_document_id, comment.page - 1), []
+        ).append(comment)
 
     edits_by_output_page: dict[int, list[AddTextEdit]] = {}
     signatures_by_output_page: dict[int, list[SignatureEdit]] = {}
@@ -861,6 +1488,7 @@ def export_organized_pdf(
     freehands_by_output_page: dict[int, list[FreehandEdit]] = {}
     text_markups_by_output_page: dict[int, list[TextMarkupEdit]] = {}
     comments_by_output_page: dict[int, list[PdfCommentEdit]] = {}
+    native_text_edits_by_output_page: dict[int, list[NativeTextEdit]] = {}
 
     for output_page_index, page_plan in enumerate(plan.pages):
         source_document_id = _resolve_source_document_id(
@@ -896,15 +1524,26 @@ def export_organized_pdf(
         )
         if page_shapes:
             shapes_by_output_page[output_page_index] = page_shapes
-        page_freehands = freehands_by_source_page.get((source_document_id, page_plan.source_page_index))
+        page_freehands = freehands_by_source_page.get(
+            (source_document_id, page_plan.source_page_index)
+        )
         if page_freehands:
             freehands_by_output_page[output_page_index] = page_freehands
-        page_text_markups = text_markups_by_source_page.get((source_document_id, page_plan.source_page_index))
+        page_text_markups = text_markups_by_source_page.get(
+            (source_document_id, page_plan.source_page_index)
+        )
         if page_text_markups:
             text_markups_by_output_page[output_page_index] = page_text_markups
-        page_comments = comments_by_source_page.get((source_document_id, page_plan.source_page_index))
+        page_comments = comments_by_source_page.get(
+            (source_document_id, page_plan.source_page_index)
+        )
         if page_comments:
             comments_by_output_page[output_page_index] = page_comments
+        page_native_text_edits = native_text_edits_by_source_page.get(
+            (source_document_id, page_plan.source_page_index)
+        )
+        if page_native_text_edits:
+            native_text_edits_by_output_page[output_page_index] = page_native_text_edits
 
     output = io.BytesIO()
     writer.write(output)
@@ -918,6 +1557,8 @@ def export_organized_pdf(
         freehand_edits_by_output_page=freehands_by_output_page,
         text_markup_edits_by_output_page=text_markups_by_output_page,
         comment_edits_by_output_page=comments_by_output_page,
+        native_text_edits_by_output_page=native_text_edits_by_output_page,
+        font_resources=font_resources,
     )
 
 
@@ -961,20 +1602,36 @@ async def extract_pdf_annotations(
                 while annotation:
                     info = annotation.info or {}
                     rect = annotation.rect * inverse
-                    annotations.append(PdfAnnotationResponse(
-                        id=f"pdf-annot-{page_index}-{annotation.xref}",
-                        pageIndex=page_index,
-                        type=_annotation_type_name(annotation),
-                        rect=PdfEditRect(x0=rect.x0, y0=rect.y0, x1=rect.x1, y1=rect.y1),
-                        content=str(info.get("content") or ""),
-                        author=(str(info.get("title")) if info.get("title") else None),
-                        createdAt=(str(info.get("creationDate")) if info.get("creationDate") else None),
-                        modifiedAt=(str(info.get("modDate")) if info.get("modDate") else None),
-                    ))
+                    annotations.append(
+                        PdfAnnotationResponse(
+                            id=f"pdf-annot-{page_index}-{annotation.xref}",
+                            pageIndex=page_index,
+                            type=_annotation_type_name(annotation),
+                            rect=PdfEditRect(
+                                x0=rect.x0, y0=rect.y0, x1=rect.x1, y1=rect.y1
+                            ),
+                            content=str(info.get("content") or ""),
+                            author=(
+                                str(info.get("title")) if info.get("title") else None
+                            ),
+                            createdAt=(
+                                str(info.get("creationDate"))
+                                if info.get("creationDate")
+                                else None
+                            ),
+                            modifiedAt=(
+                                str(info.get("modDate"))
+                                if info.get("modDate")
+                                else None
+                            ),
+                        )
+                    )
                     annotation = annotation.next
             return {"annotations": annotations}
     except (fitz.FileDataError, RuntimeError, ValueError) as error:
-        raise HTTPException(status_code=422, detail="Les annotations du PDF sont illisibles.") from error
+        raise HTTPException(
+            status_code=422, detail="Les annotations du PDF sont illisibles."
+        ) from error
 
 
 @app.post("/pdf/export/organize", response_class=Response)

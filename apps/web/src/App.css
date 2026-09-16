@@ -2040,6 +2040,160 @@ button:disabled {
   pointer-events: none;
 }
 
+.native-text-layer {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  overflow: clip;
+  pointer-events: none;
+}
+
+.native-text-preview {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.native-text-hitbox {
+  position: absolute;
+  pointer-events: auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  transform-origin: 0 0;
+  cursor: text;
+}
+
+.native-text-hitbox:hover,
+.native-text-hitbox:focus-visible {
+  border-color: color-mix(in srgb, var(--accent), transparent 35%);
+  background: color-mix(in srgb, var(--accent), transparent 88%);
+  outline: none;
+}
+
+.native-text-hitbox.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.native-text-hitbox.is-limited {
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+.native-text-editor {
+  position: absolute;
+  pointer-events: auto;
+  transform-origin: 0 0;
+  outline: 2px solid var(--accent);
+  background: transparent;
+}
+
+.native-text-editor textarea {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  resize: none;
+  overflow: auto;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  line-height: 1.05;
+}
+
+.native-text-editor.has-overflow {
+  outline-color: var(--danger, #dc2626);
+  box-shadow: inset 0 0 0 1px rgb(220 38 38 / 25%);
+}
+
+.native-text-editor.has-overflow textarea {
+  background: rgb(220 38 38 / 7%);
+}
+
+.native-text-editor__overflow {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: calc(100% + 0.35rem);
+  width: max-content;
+  max-width: min(22rem, 75vw);
+  margin: 0;
+  padding: 0.4rem 0.55rem;
+  color: var(--danger-text, #991b1b);
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  background: var(--surface-bg);
+  box-shadow: var(--card-shadow);
+  font-family: system-ui, sans-serif;
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.native-text-editor__actions {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  display: flex;
+  gap: 0.3rem;
+  padding: 0.3rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--surface-bg);
+  box-shadow: var(--card-shadow);
+}
+
+.native-text-layer__error {
+  position: absolute;
+  z-index: 7;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  max-width: 24rem;
+  margin: 0;
+  padding: 0.5rem;
+  color: var(--danger-text, #991b1b);
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: var(--surface-bg);
+}
+
+.font-selector {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.font-selector__message {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.font-selector__warning {
+  margin: 0;
+  color: #b45309;
+  font-size: 0.78rem;
+}
+
+.font-selector__library ul {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.font-selector__library li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .pdf-edit-layer--creation-active {
   pointer-events: auto;
 }
