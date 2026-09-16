@@ -36,8 +36,8 @@ Full licence texts are stored beside this notice:
 - `LICENSE-DEJAVU.txt`
 
 The 20 binaries and notices contain 10,710,141 bytes (10.21 MiB). In the final
-production build, non-font files contain 3,131,662 bytes and the complete file
-payload contains 13,841,803 bytes: the font delta is therefore exactly
+production build, non-font files contain 3,132,028 bytes and the complete file
+payload contains 13,842,169 bytes: the font delta is therefore exactly
 10,710,141 bytes. Vite copies these static assets into the desktop web payload
 too, but none is fetched or parsed until its registry entry is selected. The
 native installer delta could not be measured in the validation environment

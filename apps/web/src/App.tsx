@@ -538,6 +538,7 @@ function PdfPageCanvas({
   const [viewport, setViewport] = useState<PageViewport | null>(null);
   const [nativeTextSpans, setNativeTextSpans] = useState<NativeTextSpan[]>([]);
   const [nativeTextError, setNativeTextError] = useState<string | null>(null);
+  const [nativeTextIndexed, setNativeTextIndexed] = useState(false);
   const [nativeTextPreviewDraft, setNativeTextPreviewDraft] = useState<NativeTextEdit | null>(null);
   const [nativeTextPreviewUrl, setNativeTextPreviewUrl] = useState<string | null>(null);
 
@@ -576,10 +577,22 @@ function PdfPageCanvas({
   useEffect(() => {
     if (activeTool !== "edit_text" || !shouldRender) return;
     let cancelled = false;
+    setNativeTextIndexed(false);
+    setNativeTextSpans([]);
     setNativeTextError(null);
     void loadNativeTextPage(backendUrl, sourceFile, sourcePageNumber)
-      .then((spans) => { if (!cancelled) setNativeTextSpans(spans); })
-      .catch((error: unknown) => { if (!cancelled) setNativeTextError(error instanceof Error ? error.message : "Analyse du texte impossible."); });
+      .then((spans) => {
+        if (!cancelled) {
+          setNativeTextSpans(spans);
+          setNativeTextIndexed(true);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setNativeTextError(error instanceof Error ? error.message : "Analyse du texte impossible.");
+          setNativeTextIndexed(true);
+        }
+      });
     return () => { cancelled = true; };
   }, [activeTool, backendUrl, shouldRender, sourceFile, sourcePageNumber]);
 
@@ -863,6 +876,15 @@ function PdfPageCanvas({
           />
         ) : null}
         {nativeTextError && activeTool === "edit_text" ? <p className="native-text-layer__error" role="status">{nativeTextError}</p> : null}
+        {activeTool === "edit_text" &&
+        nativeTextIndexed &&
+        !nativeTextError &&
+        nativeTextSpans.length === 0 &&
+        !edits.some((edit) => edit.type === "native_text") ? (
+          <p className="native-text-layer__error" role="status">
+            Aucun texte PDF natif modifiable sur cette page. Le texte présent uniquement dans une image ou converti en courbes ne peut pas être édité directement.
+          </p>
+        ) : null}
         {viewport ? (
           <PdfEditLayer
             pageNumber={sourcePageNumber}
