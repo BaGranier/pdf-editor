@@ -7,9 +7,10 @@ type TextEditToolbarProps = {
   edit: AddTextEdit | NativeTextEdit;
   onUpdate: (patch: Partial<AddTextEdit | NativeTextEdit>) => void;
   onDelete: () => void;
+  onLibraryChange?: () => void;
 };
 
-export function TextEditToolbar({ edit, onUpdate, onDelete }: TextEditToolbarProps) {
+export function TextEditToolbar({ edit, onUpdate, onDelete, onLibraryChange }: TextEditToolbarProps) {
   const fontRef = resolveFontRef(edit.style);
   const supportsVariants = fontRef.startsWith("pdf-standard:");
   return (
@@ -17,6 +18,7 @@ export function TextEditToolbar({ edit, onUpdate, onDelete }: TextEditToolbarPro
       <FontSelector
         style={edit.style}
         documentFontName={edit.type === "native_text" ? edit.source.sourceFontName : undefined}
+        onLibraryChange={onLibraryChange}
         onChange={(font) => onUpdate({ style: { ...edit.style, fontFamily: font.family, fontRef: font.id, bold: font.weight >= 700, fontStyle: font.style }, ...(edit.type === "native_text" ? { fontFallbackReason: undefined } : {}) })}
       />
       {edit.type === "native_text" && edit.fontFallbackReason ? <p className="font-selector__warning" role="status">{edit.fontFallbackReason}</p> : null}

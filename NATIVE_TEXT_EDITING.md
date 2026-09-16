@@ -37,10 +37,13 @@ avec une ressource réellement exportable. Le PDF final reste vectoriel et le
 texte est extractible.
 
 Pendant l'édition, `POST /pdf/native-text/preview` rend une page temporaire par
-le même pipeline. Cette image n'est qu'un aperçu isolé au-dessus du canvas; le
-document source et l'export restent vectoriels. Cela évite le doublon entre le
-texte peint dans le canvas PDF.js et le textarea, y compris sur une image ou un
-fond coloré.
+le même pipeline, avec les glyphes source ciblés supprimés et sans texte de
+remplacement. Le patch de fond est mis en cache par fichier, page, rotation et
+fingerprints : il est préparé avant l'ouverture de l'éditeur et n'est pas
+redemandé à chaque frappe. Le textarea rend donc seul le brouillon local. Cette
+image n'est qu'un aperçu isolé au-dessus du canvas; le document source et
+l'export restent vectoriels. Cela évite le doublon entre le texte peint dans le
+canvas PDF.js et le textarea, y compris sur une image ou un fond coloré.
 
 Les écritures verticales, transformations non orthogonales et couches OCR
 invisibles sont signalées comme non éditables. Les rotations orthogonales sont
@@ -89,6 +92,15 @@ Une fonte source embarquée est réutilisée si son programme est extractible et
 couvre tous les caractères. Sinon l'UI indique Noto Sans comme fallback
 explicite. Le backend refuse tout glyphe absent avec un message demandant une
 autre police; il ne produit pas silencieusement de tofu.
+
+Chaque `NativeTextEdit` est aussi revalidé, après une mutation documentaire ou
+un import de police, via `POST /pdf/native-text/font-validation`. Cet endpoint
+exécute la même redaction/réinsertion en mémoire que l'export puis abandonne le
+résultat. Le viewer distingue police absente, police non embarquable et glyphes
+manquants. Les cas bloquants gardent un contour rouge et un message accessible
+autour du texte, qui disparaît dès qu'une police exportable est disponible. Le
+bouton `i` près de l'import rappelle les formats `.ttf`/`.otf`, le stockage
+local et les droits d'incorporation.
 
 ## Limites connues
 

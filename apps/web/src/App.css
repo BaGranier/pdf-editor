@@ -2107,6 +2107,57 @@ button:disabled {
   line-height: 1.05;
 }
 
+.native-text-editor__preparing {
+  display: block;
+  min-width: 7rem;
+  padding: 0.2rem 0.35rem;
+  color: var(--text-muted);
+  background: var(--surface-bg);
+  font: 0.72rem/1.2 system-ui, sans-serif;
+}
+
+.native-text-font-diagnostic {
+  position: absolute;
+  z-index: 6;
+  box-sizing: border-box;
+  pointer-events: none;
+  border: 2px solid var(--danger, #dc2626);
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--surface-bg), transparent 15%);
+}
+
+.native-text-font-diagnostic__icon {
+  position: absolute;
+  top: -0.55rem;
+  left: -0.55rem;
+  display: grid;
+  width: 1.1rem;
+  height: 1.1rem;
+  place-items: center;
+  border-radius: 999px;
+  color: white;
+  background: var(--danger, #dc2626);
+  font: 700 0.78rem/1 system-ui, sans-serif;
+}
+
+.native-text-font-diagnostic__message {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  display: block;
+  width: max-content;
+  max-width: min(24rem, 75vw);
+  padding: 0.4rem 0.55rem;
+  color: var(--danger-text, #991b1b);
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  background: var(--surface-bg);
+  box-shadow: var(--card-shadow);
+  font: 0.75rem/1.3 system-ui, sans-serif;
+}
+
+
 .native-text-editor.has-overflow {
   outline-color: var(--danger, #dc2626);
   box-shadow: inset 0 0 0 1px rgb(220 38 38 / 25%);
@@ -2165,6 +2216,47 @@ button:disabled {
 .font-selector {
   display: grid;
   gap: 0.45rem;
+}
+
+.font-selector__import-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.font-selector__help {
+  display: grid;
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0;
+  place-items: center;
+  border-radius: 999px;
+  font-family: Georgia, serif;
+  font-weight: 700;
+}
+
+.font-selector__help-popover {
+  position: fixed;
+  z-index: 100;
+  right: max(0.75rem, env(safe-area-inset-right));
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  width: min(25rem, calc(100vw - 1.5rem));
+  padding: 0.8rem;
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--surface-bg);
+  box-shadow: var(--card-shadow);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.font-selector__help-popover p {
+  margin: 0.55rem 0;
+}
+
+.font-selector__help-popover code {
+  font-size: 0.92em;
 }
 
 .font-selector__message {

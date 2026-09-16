@@ -141,6 +141,16 @@ class NativeTextPreviewPlan(BaseModel):
     )
 
 
+class NativeTextFontValidationPlan(BaseModel):
+    """A non-persistent check of the exact native-text export insertion path."""
+
+    page_index: int = Field(alias="pageIndex", ge=0)
+    edit: NativeTextEdit
+    font_resources: list[FontResourcePayload] = Field(
+        default_factory=list, alias="fontResources"
+    )
+
+
 class SignatureImagePayload(BaseModel):
     id: str = Field(min_length=1, max_length=200)
     mime_type: Literal["image/png", "image/jpeg"] = Field(alias="mimeType")
@@ -1336,6 +1346,45 @@ async def preview_native_text(
         raise HTTPException(
             status_code=422, detail="L'aperçu du texte natif n'a pas pu être rendu."
         ) from error
+
+
+@app.post("/pdf/native-text/font-validation")
+async def validate_native_text_font(
+    file: Annotated[UploadFile, File(description="PDF source")],
+    plan: Annotated[str, Form(description="Validation de police de texte natif")],
+) -> dict[str, str]:
+    """Run the real redaction/reinsertion path in memory, without saving a PDF."""
+    source = await file.read()
+    if not source:
+        raise HTTPException(status_code=400, detail="Le fichier PDF est vide.")
+    try:
+        validation = NativeTextFontValidationPlan.model_validate_json(plan)
+    except ValidationError as error:
+        raise HTTPException(
+            status_code=422, detail="La demande de validation de police est invalide."
+        ) from error
+    _validate_native_text_font_for_export(source, validation)
+    return {"status": "ok"}
+
+
+def _validate_native_text_font_for_export(
+    source: bytes, validation: NativeTextFontValidationPlan
+) -> None:
+    if validation.edit.page != validation.page_index + 1:
+        raise HTTPException(
+            status_code=422,
+            detail="Le texte ne cible pas la page demandée.",
+        )
+    # apply_visual_edits performs the source fingerprint, glyph and embeddability
+    # checks used by export. Its result is deliberately discarded.
+    apply_visual_edits(
+        source,
+        {},
+        {},
+        {},
+        native_text_edits_by_output_page={validation.page_index: [validation.edit]},
+        font_resources=_decode_font_resources(validation.font_resources),
+    )
 
 
 def export_organized_pdf(

@@ -98,7 +98,7 @@ import {
   type TextMarkupKind,
   type NativeTextEdit,
 } from "./editing/types";
-import { loadNativeTextPage, renderNativeTextPreview, type NativeTextSpan } from "./pdf/nativeText";
+import { loadNativeTextPage, renderNativeTextBackground, validateNativeTextFont, type NativeTextFontValidation, type NativeTextSpan } from "./pdf/nativeText";
 import { normalizeSubsetFontName } from "./fonts/catalog";
 import { fontRegistry, getCustomFont } from "./fonts/fontRegistry";
 import { selectionClientRectsToPdfRects } from "./pdf/selectionGeometry";
@@ -498,6 +498,7 @@ type PdfPageCanvasProps = {
   onUpdateEdit: (edit: PdfEdit) => void;
   onDeleteEdit: (editId: string) => void;
   onSampleColor: (color: string) => void;
+  fontLibraryRevision: number;
 };
 
 function PdfPageCanvas({
@@ -528,6 +529,7 @@ function PdfPageCanvas({
   onUpdateEdit,
   onDeleteEdit,
   onSampleColor,
+  fontLibraryRevision,
 }: PdfPageCanvasProps) {
   const pageRef = useRef<HTMLElement | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -541,38 +543,85 @@ function PdfPageCanvas({
   const [nativeTextIndexed, setNativeTextIndexed] = useState(false);
   const [nativeTextPreviewDraft, setNativeTextPreviewDraft] = useState<NativeTextEdit | null>(null);
   const [nativeTextPreviewUrl, setNativeTextPreviewUrl] = useState<string | null>(null);
+  const [nativeTextBackgroundReady, setNativeTextBackgroundReady] = useState(false);
+  const [nativeTextFontValidation, setNativeTextFontValidation] = useState<Record<string, NativeTextFontValidation>>({});
+  const nativeTextMaskEdits = (() => {
+    const committed = edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text");
+    return nativeTextPreviewDraft
+      ? [...committed.filter((edit) => edit.source.sourceFingerprint !== nativeTextPreviewDraft.source.sourceFingerprint), nativeTextPreviewDraft]
+      : committed;
+  })();
+  const nativeTextMaskKey = nativeTextMaskEdits.map((edit) => edit.source.sourceFingerprint).sort().join(":");
 
   useEffect(() => () => {
     if (nativeTextPreviewUrl) URL.revokeObjectURL(nativeTextPreviewUrl);
   }, [nativeTextPreviewUrl]);
 
   useEffect(() => {
-    const committed = edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text");
-    const previewEdits = nativeTextPreviewDraft
-      ? [...committed.filter((edit) => edit.source.sourceFingerprint !== nativeTextPreviewDraft.source.sourceFingerprint), nativeTextPreviewDraft]
-      : committed;
-    if (previewEdits.length === 0) {
+    if (nativeTextMaskEdits.length === 0) {
       setNativeTextPreviewUrl(null);
+      setNativeTextBackgroundReady(false);
       return;
     }
     let cancelled = false;
-    void (async () => {
-      const refs = [...new Set(previewEdits.map((edit) => edit.style.fontRef).filter((fontRef): fontRef is string => Boolean(fontRef?.startsWith("custom:"))))];
-      const fontResources = await Promise.all(refs.map(async (fontRef) => {
-        const font = await getCustomFont(fontRef);
-        if (!font) throw new Error(`La police personnalisée ${fontRef} n'est plus disponible.`);
-        return { id: font.id, sha256: font.sha256, format: font.format, fileName: font.originalFileName, dataUrl: await blobToDataUrl(font.binary) };
-      }));
-      return renderNativeTextPreview(backendUrl, sourceFile, sourcePageNumber, previewEdits, rotation, fontResources);
-    })().then((blob) => {
+    setNativeTextBackgroundReady(false);
+    void renderNativeTextBackground(backendUrl, sourceFile, sourcePageNumber, nativeTextMaskEdits, rotation).then((blob) => {
       if (cancelled) return;
       const next = URL.createObjectURL(blob);
       setNativeTextPreviewUrl(next);
+      setNativeTextBackgroundReady(true);
     }).catch((error: unknown) => {
       if (!cancelled) setNativeTextError(error instanceof Error ? error.message : "Aperçu du texte impossible.");
     });
     return () => { cancelled = true; };
-  }, [backendUrl, edits, nativeTextPreviewDraft, rotation, sourceFile, sourcePageNumber]);
+  }, [backendUrl, nativeTextMaskKey, rotation, sourceFile, sourcePageNumber]);
+
+  const prepareNativeTextBackground = useCallback(async (span: NativeTextSpan) => {
+    try {
+      await renderNativeTextBackground(backendUrl, sourceFile, sourcePageNumber, [{
+        id: `native-preview-${span.sourceFingerprint}`,
+        type: "native_text",
+        page: span.page,
+        rect: span.rect,
+        source: span,
+        text: "",
+        style: {
+          fontFamily: span.sourceFontName ?? "Noto Sans",
+          fontSize: span.sourceFontSize,
+          color: span.sourceColor,
+          bold: span.fontWeight >= 700,
+          fontStyle: span.fontStyle,
+        },
+      }], rotation);
+      return true;
+    } catch (error) {
+      setNativeTextError(error instanceof Error ? error.message : "Aperçu du texte impossible.");
+      return false;
+    }
+  }, [backendUrl, rotation, sourceFile, sourcePageNumber]);
+
+  useEffect(() => {
+    const nativeEdits = edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text");
+    let cancelled = false;
+    if (nativeEdits.length === 0) {
+      setNativeTextFontValidation({});
+      return;
+    }
+    void Promise.all(nativeEdits.map(async (edit) => {
+      const fontRef = edit.style.fontRef ?? edit.style.fontFamily;
+      const customFont = fontRef.startsWith("custom:") ? await getCustomFont(fontRef) : null;
+      if (fontRef.startsWith("custom:") && !customFont) {
+        return [edit.id, { status: "missing", fontRef, message: `Police manquante : « ${edit.style.fontFamily} ». Importez le fichier .ttf ou .otf correspondant pour l’utiliser dans le PDF.` } satisfies NativeTextFontValidation] as const;
+      }
+      const resources = customFont ? [{ id: customFont.id, sha256: customFont.sha256, format: customFont.format, fileName: customFont.originalFileName, dataUrl: await blobToDataUrl(customFont.binary) }] : [];
+      return [edit.id, await validateNativeTextFont(backendUrl, sourceFile, sourcePageNumber, edit, resources)] as const;
+    })).then((entries) => {
+      if (!cancelled) setNativeTextFontValidation(Object.fromEntries(entries));
+    }).catch((error: unknown) => {
+      if (!cancelled) setNativeTextError(error instanceof Error ? error.message : "Validation de police impossible.");
+    });
+    return () => { cancelled = true; };
+  }, [backendUrl, edits, fontLibraryRevision, sourceFile, sourcePageNumber]);
 
   useEffect(() => {
     if (activeTool !== "edit_text" || !shouldRender) return;
@@ -834,7 +883,7 @@ function PdfPageCanvas({
           </div>
         ) : null}
         <canvas ref={canvasRef} className="pdf-canvas" />
-        {nativeTextPreviewUrl ? <img className="native-text-preview" src={nativeTextPreviewUrl} alt="" aria-hidden="true" /> : null}
+        {nativeTextPreviewUrl ? <img className="native-text-preview" data-native-preview-kind="clean-background" src={nativeTextPreviewUrl} alt="" aria-hidden="true" /> : null}
         <div
           ref={textLayerRef}
           className="textLayer pdf-text-layer"
@@ -873,6 +922,9 @@ function PdfPageCanvas({
             onSelectEdit={onSelectEdit}
             onUpdateEdit={(edit) => onUpdateEdit(edit)}
             onPreviewChange={setNativeTextPreviewDraft}
+            onPrepareBackground={prepareNativeTextBackground}
+            isBackgroundReady={nativeTextBackgroundReady}
+            fontValidationByEditId={nativeTextFontValidation}
           />
         ) : null}
         {nativeTextError && activeTool === "edit_text" ? <p className="native-text-layer__error" role="status">{nativeTextError}</p> : null}
@@ -939,6 +991,7 @@ type PdfViewerProps = {
   onDeleteEdit: (editId: string) => void;
   onActivePageChange: (documentId: string, pageNumber: number) => void;
   onSampleColor: (color: string) => void;
+  fontLibraryRevision: number;
   focusRequest: number;
   pageNavigationRequest: { pageNumber: number; requestId: number; commentId?: string } | null;
   viewerMode: ViewerMode;
@@ -974,6 +1027,7 @@ function PdfViewer({
   onDeleteEdit,
   onActivePageChange,
   onSampleColor,
+  fontLibraryRevision,
   focusRequest,
   pageNavigationRequest,
   viewerMode,
@@ -1473,6 +1527,7 @@ function PdfViewer({
               onUpdateEdit={onUpdateEdit}
               onDeleteEdit={onDeleteEdit}
               onSampleColor={onSampleColor}
+              fontLibraryRevision={fontLibraryRevision}
             />
           );
         })}
@@ -2533,6 +2588,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     {},
   );
   const [selectedEditId, setSelectedEditId] = useState<string | null>(null);
+  const [fontLibraryRevision, setFontLibraryRevision] = useState(0);
   const [eyedropperTarget, setEyedropperTarget] = useState<
     "stroke" | "fill" | null
   >(null);
@@ -5254,6 +5310,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onDeleteEdit={deletePdfEdit}
             onActivePageChange={recordActivePage}
             onSampleColor={applySampledShapeColor}
+            fontLibraryRevision={fontLibraryRevision}
             focusRequest={viewerFocusRequest}
             pageNavigationRequest={pageNavigationRequest}
             viewerMode={viewerMode}
@@ -5309,6 +5366,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 updatePdfEdit({ ...(selectedTextEdit ?? selectedNativeTextEdit)!, ...patch } as PdfEdit)
               }
               onDelete={() => deletePdfEdit((selectedTextEdit ?? selectedNativeTextEdit)!.id)}
+              onLibraryChange={() => setFontLibraryRevision((revision) => revision + 1)}
             />
           ) : workspaceMode === "read" && selectedShapeEdit ? (
             <ShapeEditToolbar

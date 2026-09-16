@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { PageViewport } from "pdfjs-dist";
 import { NativeTextLayer, textAreaHasOverflow } from "./NativeTextLayer";
 import type { NativeTextSpan } from "../pdf/nativeText";
+import type { NativeTextEdit } from "../editing/types";
 
 const viewport = {
   transform: [1, 0, 0, -1, 0, 200],
@@ -71,4 +72,34 @@ describe("NativeTextLayer", () => {
     expect(onCreateEdit).toHaveBeenCalledTimes(1);
     expect(onCreateEdit).toHaveBeenCalledWith(span, "Montant : 1 375 €");
   }, 15_000);
+
+  it("keeps a persistent, accessible diagnostic around an edit whose font is unavailable", () => {
+    const edit: NativeTextEdit = {
+      id: "native-edit",
+      type: "native_text",
+      page: 1,
+      rect: span.rect,
+      source: span,
+      text: "Montant : 1 375 €",
+      style: { fontFamily: "Aptos", fontRef: "custom:missing", fontSize: 11, color: "#111827", bold: false },
+    };
+    render(
+      <NativeTextLayer
+        spans={[span]}
+        edits={[edit]}
+        viewport={viewport}
+        selectedEditId={null}
+        onCreateEdit={vi.fn()}
+        onSelectEdit={vi.fn()}
+        onUpdateEdit={vi.fn()}
+        onPreviewChange={vi.fn()}
+        isBackgroundReady
+        fontValidationByEditId={{
+          [edit.id]: { status: "missing", fontRef: "custom:missing", message: "Police manquante : « Aptos ». Importez le fichier .ttf ou .otf correspondant." },
+        }}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Police manquante : « Aptos »");
+    expect(document.querySelector(".native-text-font-diagnostic")).toBeTruthy();
+  });
 });

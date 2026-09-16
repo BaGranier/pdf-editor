@@ -73,3 +73,32 @@ test("EDIT-TEXT-NATIVE-001 explique un scan sans texte natif", async ({ page }) 
   );
   await expect(page.getByRole("button", { name: /Modifier le texte «/ })).toHaveCount(0);
 });
+
+test("EDIT-TEXT-NATIVE-002 garde un aperçu local propre et explique l’import de police", async ({ page }) => {
+  await openApp(page);
+  await openPdf(page, fixtures.nativeText);
+  await page.getByRole("button", { name: "Modifier le texte existant" }).click();
+  let backgroundRequests = 0;
+  page.on("request", (request) => {
+    if (request.url().endsWith("/pdf/native-text/preview")) backgroundRequests += 1;
+  });
+  await page.getByRole("button", { name: /Modifier le texte « Montant total : 1 250 €/ }).dblclick();
+  const editor = page.getByRole("textbox", { name: /Modifier le texte PDF/ });
+  await expect(editor).toHaveValue("Montant total : 1 250 €");
+  await editor.fill("Montant total : 1 375 €");
+  await expect(page.locator(".native-text-preview[data-native-preview-kind='clean-background']")).toBeVisible();
+  await expect(editor).toHaveValue("Montant total : 1 375 €");
+  // The canvas-cleaning request is cached by source target; typing stays local.
+  expect(backgroundRequests).toBe(1);
+
+  await editor.press("Control+Enter");
+
+  await page.getByRole("button", { name: "Comment ajouter une police personnalisée" }).click();
+  const help = page.getByRole("dialog", { name: "Ajouter une police personnalisée" });
+  await expect(help).toContainText(".ttf");
+  await expect(help).toContainText(".otf");
+  await expect(help).toContainText("bibliothèque locale");
+  await expect(help).toContainText("droits nécessaires");
+  await page.keyboard.press("Escape");
+  await expect(help).toHaveCount(0);
+});

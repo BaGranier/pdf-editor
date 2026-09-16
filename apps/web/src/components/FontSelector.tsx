@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { BUNDLED_FONTS, PDF_STANDARD_FONTS, resolveFontRef, type FontFaceDescriptor } from "../fonts/catalog";
 import { fontRegistry, type CustomFontRecord } from "../fonts/fontRegistry";
 import type { AddTextStyle } from "../editing/types";
@@ -14,8 +15,25 @@ export function FontSelector({ style, documentFontName, onChange, onLibraryChang
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [customFonts, setCustomFonts] = useState<CustomFontRecord[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const helpButtonRef = useRef<HTMLButtonElement | null>(null);
+  const helpPopoverRef = useRef<HTMLDivElement | null>(null);
   const refresh = () => void fontRegistry.listCustom().then(setCustomFonts);
   useEffect(refresh, []);
+  useEffect(() => {
+    if (!helpOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setHelpOpen(false); };
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && !helpButtonRef.current?.contains(target) && !helpPopoverRef.current?.contains(target)) setHelpOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("pointerdown", closeOnOutsidePointerDown);
+    return () => {
+      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("pointerdown", closeOnOutsidePointerDown);
+    };
+  }, [helpOpen]);
   const selectedRef = resolveFontRef(style);
   const documentFont: FontFaceDescriptor | null = documentFontName ? {
     id: selectedRef.startsWith("document:") ? selectedRef : `document:${documentFontName}`,
@@ -45,7 +63,10 @@ export function FontSelector({ style, documentFontName, onChange, onLibraryChang
           {customFonts.length ? <optgroup label="Polices personnalisées">{customFonts.map((font) => <option key={font.id} value={font.id}>{font.displayName}</option>)}</optgroup> : null}
         </select>
       </label>
-      <button type="button" onClick={() => inputRef.current?.click()}>+ Ajouter une police…</button>
+      <div className="font-selector__import-actions">
+        <button type="button" onClick={() => inputRef.current?.click()}>+ Ajouter une police…</button>
+        <button ref={helpButtonRef} type="button" className="font-selector__help" aria-label="Comment ajouter une police personnalisée" aria-haspopup="dialog" aria-expanded={helpOpen} onClick={() => setHelpOpen((open) => !open)}>i</button>
+      </div>
       <input
         ref={inputRef}
         className="visually-hidden"
@@ -84,6 +105,16 @@ export function FontSelector({ style, documentFontName, onChange, onLibraryChang
         </details>
       ) : null}
       {message ? <p className="font-selector__message" role="status">{message}</p> : null}
+      {helpOpen ? createPortal(
+        <section ref={helpPopoverRef} className="font-selector__help-popover" role="dialog" aria-label="Ajouter une police personnalisée" tabIndex={-1}>
+          <strong>Ajouter une police personnalisée</strong>
+          <p>Cliquez sur <b>Ajouter une police…</b>, puis sélectionnez un fichier <code>.ttf</code> ou <code>.otf</code>.</p>
+          <p>La police est ajoutée à la bibliothèque locale de l’application et devient disponible pour l’aperçu et l’export PDF. Les polices installées sur votre ordinateur ne sont pas ajoutées automatiquement : importez leur fichier.</p>
+          <p>Vérifiez que vous disposez des droits nécessaires pour utiliser et incorporer cette police dans un PDF.</p>
+          <details><summary>Où trouver mes fichiers de police ?</summary><p>Windows : C:\\Windows\\Fonts<br />macOS : ~/Library/Fonts ou /Library/Fonts<br />Linux : ~/.local/share/fonts ou /usr/share/fonts</p></details>
+        </section>,
+        document.body,
+      ) : null}
     </div>
   );
 }

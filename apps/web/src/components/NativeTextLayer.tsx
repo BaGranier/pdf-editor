@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import type { PageViewport } from "pdfjs-dist";
 import { pdfRectToViewportStyle } from "../editing/coordinates";
 import type { NativeTextEdit } from "../editing/types";
-import type { NativeTextSpan } from "../pdf/nativeText";
+import type { NativeTextFontValidation, NativeTextSpan } from "../pdf/nativeText";
 
 type Props = {
   spans: NativeTextSpan[];
@@ -13,19 +13,36 @@ type Props = {
   onSelectEdit: (id: string) => void;
   onUpdateEdit: (edit: NativeTextEdit) => void;
   onPreviewChange: (edit: NativeTextEdit | null) => void;
+  /** Prepare the clean canvas patch before a replacement editor becomes visible. */
+  onPrepareBackground?: (span: NativeTextSpan) => Promise<boolean>;
+  isBackgroundReady?: boolean;
+  fontValidationByEditId?: Record<string, NativeTextFontValidation>;
 };
 
-export function NativeTextLayer({ spans, edits, viewport, selectedEditId, onCreateEdit, onSelectEdit, onUpdateEdit, onPreviewChange }: Props) {
+export function NativeTextLayer({ spans, edits, viewport, selectedEditId, onCreateEdit, onSelectEdit, onUpdateEdit, onPreviewChange, onPrepareBackground, isBackgroundReady = true, fontValidationByEditId = {} }: Props) {
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [editingSource, setEditingSource] = useState<string | null>(null);
+  const [preparingSource, setPreparingSource] = useState<string | null>(null);
   const editByFingerprint = new Map(edits.map((edit) => [edit.source.sourceFingerprint, edit]));
+  const startEditing = async (span: NativeTextSpan) => {
+    if (!span.editable || preparingSource) return;
+    if (!onPrepareBackground) {
+      setEditingSource(span.sourceFingerprint);
+      return;
+    }
+    setPreparingSource(span.sourceFingerprint);
+    const prepared = await onPrepareBackground(span);
+    setPreparingSource(null);
+    if (prepared) setEditingSource(span.sourceFingerprint);
+  };
   return (
     <div className="native-text-layer" aria-label="Textes PDF modifiables">
       {spans.map((span) => {
         const edit = editByFingerprint.get(span.sourceFingerprint);
         const style = pdfRectToViewportStyle(viewport, span.rect);
-        if (edit) return <NativeTextEditor key={span.sourceFingerprint} edit={edit} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelectEdit(edit.id)} onUpdate={onUpdateEdit} onPreviewChange={onPreviewChange} />;
-        if (editingSource === span.sourceFingerprint) return <NativeTextDraftEditor key={span.sourceFingerprint} span={span} viewport={viewport} onPreviewChange={onPreviewChange} onCancel={() => setEditingSource(null)} onCommit={(text) => { setEditingSource(null); onCreateEdit(span, text); }} />;
+        const validation = edit ? fontValidationByEditId[edit.id] : undefined;
+        if (edit) return <FragmentWithDiagnostic key={span.sourceFingerprint} style={style} validation={validation}><NativeTextEditor edit={edit} viewport={viewport} selected={edit.id === selectedEditId} backgroundReady={isBackgroundReady} onSelect={() => onSelectEdit(edit.id)} onUpdate={onUpdateEdit} onPreviewChange={onPreviewChange} /></FragmentWithDiagnostic>;
+        if (editingSource === span.sourceFingerprint) return <NativeTextDraftEditor key={span.sourceFingerprint} span={span} viewport={viewport} backgroundReady={isBackgroundReady} onPreviewChange={onPreviewChange} onCancel={() => setEditingSource(null)} onCommit={(text) => { setEditingSource(null); onCreateEdit(span, text); }} />;
         return (
           <button
             key={span.sourceFingerprint}
@@ -35,22 +52,22 @@ export function NativeTextLayer({ spans, edits, viewport, selectedEditId, onCrea
             aria-label={span.editable ? `Modifier le texte « ${span.sourceText} »` : `Texte non modifiable : ${span.limitationMessage ?? span.sourceText}`}
             title={span.editable ? span.sourceText : span.limitationMessage}
             onClick={(event) => { event.stopPropagation(); setSelectedSource(span.sourceFingerprint); }}
-            onDoubleClick={(event) => { event.stopPropagation(); if (span.editable) setEditingSource(span.sourceFingerprint); }}
-            onKeyDown={(event) => { if (event.key === "Enter" && span.editable) { event.preventDefault(); setEditingSource(span.sourceFingerprint); } }}
-          />
+            onDoubleClick={(event) => { event.stopPropagation(); void startEditing(span); }}
+            onKeyDown={(event) => { if (event.key === "Enter" && span.editable) { event.preventDefault(); void startEditing(span); } }}
+          >{preparingSource === span.sourceFingerprint ? <span className="visually-hidden">Préparation de l’aperçu du texte</span> : null}</button>
         );
       })}
     </div>
   );
 }
 
-function NativeTextDraftEditor({ span, viewport, onCancel, onCommit, onPreviewChange }: { span: NativeTextSpan; viewport: PageViewport; onCancel: () => void; onCommit: (text: string) => void; onPreviewChange: (edit: NativeTextEdit | null) => void }) {
+function NativeTextDraftEditor({ span, viewport, backgroundReady, onCancel, onCommit, onPreviewChange }: { span: NativeTextSpan; viewport: PageViewport; backgroundReady: boolean; onCancel: () => void; onCommit: (text: string) => void; onPreviewChange: (edit: NativeTextEdit | null) => void }) {
   const [draft, setDraft] = useState(span.sourceText);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const hasOverflow = useTextOverflow(inputRef, draft, viewport);
   const style = pdfRectToViewportStyle(viewport, span.rect);
   const scale = Math.hypot(viewport.transform[0], viewport.transform[1]);
-  useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
+  useEffect(() => { if (backgroundReady) { inputRef.current?.focus(); inputRef.current?.select(); } }, [backgroundReady]);
   useEffect(() => {
     const fontName = span.sourceFontName ?? "Noto Sans";
     const standardFamily = /^(Helvetica|Arial)/i.test(fontName) ? "Helvetica" : /^Times/i.test(fontName) ? "Times" : /^Courier/i.test(fontName) ? "Courier" : null;
@@ -73,7 +90,7 @@ function NativeTextDraftEditor({ span, viewport, onCancel, onCommit, onPreviewCh
     return () => onPreviewChange(null);
   }, [draft, onPreviewChange, span]);
   return <div className={`native-text-editor is-selected${hasOverflow ? " has-overflow" : ""}`} style={style} onClick={(event) => event.stopPropagation()}>
-    <textarea
+    {backgroundReady ? <textarea
       ref={inputRef}
       aria-label={`Modifier le texte PDF « ${span.sourceText} »`}
       value={draft}
@@ -85,7 +102,7 @@ function NativeTextDraftEditor({ span, viewport, onCancel, onCommit, onPreviewCh
         if (event.key === "Escape") { event.preventDefault(); onCancel(); }
         if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); if (draft !== span.sourceText) onCommit(draft); else onCancel(); }
       }}
-    />
+    /> : <span className="native-text-editor__preparing" role="status">Préparation de l’aperçu…</span>}
     {hasOverflow ? <p className="native-text-editor__overflow" role="status">Le texte dépasse la zone d’origine. Il ne sera pas tronqué, mais peut recouvrir le contenu voisin.</p> : null}
     <div className="native-text-editor__actions">
       <button type="button" onClick={onCancel}>Annuler</button>
@@ -94,14 +111,14 @@ function NativeTextDraftEditor({ span, viewport, onCancel, onCommit, onPreviewCh
   </div>;
 }
 
-function NativeTextEditor({ edit, viewport, selected, onSelect, onUpdate, onPreviewChange }: { edit: NativeTextEdit; viewport: PageViewport; selected: boolean; onSelect: () => void; onUpdate: (edit: NativeTextEdit) => void; onPreviewChange: (edit: NativeTextEdit | null) => void }) {
+function NativeTextEditor({ edit, viewport, selected, backgroundReady, onSelect, onUpdate, onPreviewChange }: { edit: NativeTextEdit; viewport: PageViewport; selected: boolean; backgroundReady: boolean; onSelect: () => void; onUpdate: (edit: NativeTextEdit) => void; onPreviewChange: (edit: NativeTextEdit | null) => void }) {
   const [draft, setDraft] = useState(edit.text);
   const initialRef = useRef(edit.text);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const hasOverflow = useTextOverflow(inputRef, draft, viewport);
   const style = pdfRectToViewportStyle(viewport, edit.rect);
   useEffect(() => { setDraft(edit.text); initialRef.current = edit.text; }, [edit.id, edit.text]);
-  useEffect(() => { if (selected) inputRef.current?.focus(); }, [selected]);
+  useEffect(() => { if (selected && backgroundReady) inputRef.current?.focus(); }, [backgroundReady, selected]);
   useEffect(() => {
     if (!selected || draft === edit.text) return;
     onPreviewChange({ ...edit, text: draft });
@@ -111,7 +128,7 @@ function NativeTextEditor({ edit, viewport, selected, onSelect, onUpdate, onPrev
   const commit = () => { if (draft !== edit.text) onUpdate({ ...edit, text: draft }); };
   return (
     <div className={`native-text-editor${selected ? " is-selected" : ""}${hasOverflow ? " has-overflow" : ""}`} style={style} onClick={(event) => { event.stopPropagation(); onSelect(); }}>
-      <textarea
+      {backgroundReady ? <textarea
         ref={inputRef}
         aria-label={`Modifier le texte PDF « ${edit.source.sourceText} »`}
         value={draft}
@@ -123,10 +140,22 @@ function NativeTextEditor({ edit, viewport, selected, onSelect, onUpdate, onPrev
           if (event.key === "Escape") { setDraft(edit.text); inputRef.current?.blur(); }
           if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); commit(); inputRef.current?.blur(); }
         }}
-      />
+      /> : <span className="native-text-editor__preparing" role="status">Préparation de l’aperçu…</span>}
       {hasOverflow ? <p className="native-text-editor__overflow" role="status">Le texte dépasse la zone d’origine. Il ne sera pas tronqué, mais peut recouvrir le contenu voisin.</p> : null}
     </div>
   );
+}
+
+function FragmentWithDiagnostic({ children, style, validation }: { children: ReactNode; style: CSSProperties; validation?: NativeTextFontValidation }) {
+  const blocking = validation?.status === "missing" || validation?.status === "missing-glyphs" || validation?.status === "not-embeddable";
+  return <>
+    {children}
+    {blocking ? <div className="native-text-font-diagnostic" style={style} role="status" aria-label={validation.message} title={validation.message}>
+      <span className="native-text-font-diagnostic__icon" aria-hidden="true">!</span>
+      <span className="native-text-font-diagnostic__message">{validation.message}</span>
+    </div> : null}
+    {validation?.status === "fallback" ? <span className="visually-hidden" role="status">{validation.message}</span> : null}
+  </>;
 }
 
 export function textAreaHasOverflow(textarea: HTMLTextAreaElement): boolean {

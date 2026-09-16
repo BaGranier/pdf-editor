@@ -12,12 +12,14 @@ from app.main import (
     AddTextStyle,
     BUNDLED_FONT_FILES,
     NativeTextEdit,
+    NativeTextFontValidationPlan,
     NativeTextSource,
     PdfEditPoint,
     PdfEditRect,
     FontResourcePayload,
     _decode_font_resources,
     _iter_native_text_spans,
+    _validate_native_text_font_for_export,
     apply_visual_edits,
 )
 
@@ -243,6 +245,22 @@ def test_missing_glyph_is_rejected_instead_of_exporting_tofu() -> None:
         )
     assert caught.value.status_code == 422
     assert "glyphes nécessaires" in str(caught.value.detail)
+
+
+def test_native_text_font_validation_uses_export_rules_without_persisting_pdf() -> None:
+    source = _source_pdf()
+    valid = NativeTextFontValidationPlan(
+        pageIndex=0,
+        edit=_native_edit(source, "Montant : 1 375 EUR"),
+    )
+    _validate_native_text_font_for_export(source, valid)
+
+    invalid = NativeTextFontValidationPlan(
+        pageIndex=0,
+        edit=_native_edit(source, "Montant : 漢字"),
+    )
+    with pytest.raises(HTTPException, match="glyphes nécessaires"):
+        _validate_native_text_font_for_export(source, invalid)
 
 
 def test_embedded_source_font_is_identified_and_reused() -> None:
