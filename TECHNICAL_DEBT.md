@@ -86,3 +86,11 @@ Les validations unitaires du moteur PDF sont couvertes, mais le multipart HTTP
 complet n'a pas encore de couverture d'intégration dédiée. Ajouter ce parcours
 avec un corpus de PDF synthétique si la dépendance de test correspondante est
 acceptée.
+
+## NATIVE-TEXT-002 — Shaping et transformations avancées
+
+L'édition native couvre les spans homogènes horizontaux et les rotations
+orthogonales. Le shaping complexe, les matrices arbitraires, les fontes
+variables/collections TTC, le subsetting avancé et le regroupement sémantique
+de spans en paragraphes restent des évolutions dédiées. Ils ne doivent pas être
+contournés par rasterisation, faux style CSS ou remplacement visuel opaque.

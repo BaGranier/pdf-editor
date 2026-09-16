@@ -46,7 +46,7 @@ conservant la page active. Les miniatures et commentaires ouvrent la page ciblé
 
 La reconstruction DOCX éditable, la qualité OCR sur des scans réels et le
 packaging desktop multi-plateforme restent soumis aux limites décrites dans
-[CONVERSION.md](CONVERSION.md), [DESKTOP.md](DESKTOP.md) et
+[CONVERSION.md](CONVERSION.md), [NATIVE_TEXT_EDITING.md](NATIVE_TEXT_EDITING.md), [DESKTOP.md](DESKTOP.md) et
 [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
 
 ## Frontend
