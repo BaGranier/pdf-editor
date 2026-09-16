@@ -63,3 +63,13 @@ test("EDIT-TEXT-NATIVE-001 exporte une police TTF personnalisée locale", async 
   await download.saveAs(outputPath);
   expect(validatePdf(outputPath, 1).text).toContain("Montant total : 1 375 EUR");
 });
+
+test("EDIT-TEXT-NATIVE-001 explique un scan sans texte natif", async ({ page }) => {
+  await openApp(page);
+  await openPdf(page, fixtures.conversionScan);
+  await page.getByRole("button", { name: "Modifier le texte existant" }).click();
+  await expect(page.getByRole("status")).toContainText(
+    "Aucun texte PDF natif modifiable sur cette page",
+  );
+  await expect(page.getByRole("button", { name: /Modifier le texte «/ })).toHaveCount(0);
+});
