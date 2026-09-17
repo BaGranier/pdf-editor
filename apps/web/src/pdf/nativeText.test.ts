@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { clearNativeTextCache, renderNativeTextBackground } from "./nativeText";
+import { clearNativeTextCache, loadNativeTextPage, renderNativeTextBackground } from "./nativeText";
 import type { NativeTextEdit } from "../editing/types";
 
 const edit: NativeTextEdit = {
@@ -28,5 +28,32 @@ describe("native text background preview", () => {
     const plan = JSON.parse(String(body.get("plan"))) as { edits: NativeTextEdit[] };
     expect(plan.edits[0].text).toBe("");
     clearNativeTextCache(file);
+  });
+});
+
+describe("native text extraction", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("does not retain extracted spans beyond the active runtime request", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => ({ ok: true, json: async () => ({ spans: [] }) } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+    const file = new File(["pdf"], "source.pdf", { type: "application/pdf" });
+    await loadNativeTextPage("http://engine", file, 2);
+    await loadNativeTextPage("http://engine", file, 2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstBody = fetchMock.mock.calls[0][1]?.body as FormData;
+    expect(firstBody.get("pageIndex")).toBe("1");
+  });
+
+  it("forwards cancellation to a page-scoped extraction request", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      return { ok: true, json: async () => ({ spans: [] }) } as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    await loadNativeTextPage("http://engine", new File(["pdf"], "source.pdf"), 1, controller.signal);
+    controller.abort();
+    expect(controller.signal.aborted).toBe(true);
   });
 });

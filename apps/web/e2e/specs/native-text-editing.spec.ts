@@ -102,3 +102,26 @@ test("EDIT-TEXT-NATIVE-002 garde un aperçu local propre et explique l’import 
   await page.keyboard.press("Escape");
   await expect(help).toHaveCount(0);
 });
+
+test("EDIT-TEXT-NATIVE-003 extrait uniquement la page active et libère les overlays", async ({ page }) => {
+  const nativeTextRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/pdf/native-text")) nativeTextRequests.push(request.url());
+  });
+  await openApp(page);
+  await openPdf(page, fixtures.fivePages);
+  await page.waitForTimeout(250);
+  expect(nativeTextRequests).toEqual([]);
+
+  await page.getByLabel("Mode d'affichage").selectOption("single-page");
+  await page.getByRole("button", { name: "Modifier le texte existant" }).click();
+  await expect.poll(() => nativeTextRequests).toHaveLength(1);
+  await expect(page.locator(".native-text-layer")).toHaveCount(1);
+
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => nativeTextRequests).toHaveLength(2);
+  await expect(page.locator(".native-text-layer")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Sélection" }).click();
+  await expect(page.locator(".native-text-layer")).toHaveCount(0);
+});

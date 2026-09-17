@@ -8,12 +8,15 @@ du PDF. Les deux partagent `AddTextStyle` et le même registre de polices, mais
 le texte natif conserve aussi un objet `source` immuable : texte, bbox et
 baseline en coordonnées PDF, police, taille, couleur, rotation et fingerprint.
 
-La page visible est indexée seulement à l'activation de **Modifier le texte**.
-`POST /pdf/native-text` utilise PyMuPDF 1.26.3 et le résultat est mis en cache
-par fichier et numéro de page dans `pdf/nativeText.ts`. Ouvrir un document ne
-parse donc pas toutes ses pages. Les coordonnées écran ne sont jamais
-persistées : `PageViewport` transforme les rectangles PDF pour les hitboxes et
-l'éditeur DOM.
+La page active est indexée seulement à l'activation de **Modifier le texte**.
+`POST /pdf/native-text` utilise PyMuPDF 1.26.3 avec un `pageIndex` et n’ouvre
+que cette page. Le frontend ne conserve pas de cache de spans par fichier ou
+par pages visitées : le runtime React de la page active est la seule structure
+d’extraction en mémoire. Une navigation, un changement de document ou la sortie
+du mode annule la requête, vide les spans et libère les caches de preview
+temporaires. Ouvrir un document ne parse donc aucune page pour l’édition
+native. Les coordonnées écran ne sont jamais persistées : `PageViewport`
+transforme les rectangles PDF pour les hitboxes et l'éditeur DOM.
 
 Un clic sélectionne sans mutation. Double-clic ou Entrée ouvre le brouillon.
 Escape l'abandonne; Ctrl/Cmd+Entrée ou **Valider** crée une seule mutation du

@@ -98,7 +98,7 @@ import {
   type TextMarkupKind,
   type NativeTextEdit,
 } from "./editing/types";
-import { loadNativeTextPage, renderNativeTextBackground, validateNativeTextFont, type NativeTextFontValidation, type NativeTextSpan } from "./pdf/nativeText";
+import { clearNativeTextCache, loadNativeTextPage, renderNativeTextBackground, validateNativeTextFont, type NativeTextFontValidation, type NativeTextSpan } from "./pdf/nativeText";
 import { normalizeSubsetFontName } from "./fonts/catalog";
 import { fontRegistry, getCustomFont } from "./fonts/fontRegistry";
 import { selectionClientRectsToPdfRects } from "./pdf/selectionGeometry";
@@ -482,6 +482,7 @@ type PdfPageCanvasProps = {
   signatureImages: Record<string, SignatureImage>;
   selectedEditId: string | null;
   activeTool: EditingTool;
+  nativeTextRuntimeActive: boolean;
   freehandStyle: FreehandStyle;
   pendingSignatureImage: SignatureImage | null;
   eyedropperTarget: "stroke" | "fill" | null;
@@ -513,6 +514,7 @@ function PdfPageCanvas({
   signatureImages,
   selectedEditId,
   activeTool,
+  nativeTextRuntimeActive,
   freehandStyle,
   pendingSignatureImage,
   eyedropperTarget,
@@ -558,6 +560,11 @@ function PdfPageCanvas({
   }, [nativeTextPreviewUrl]);
 
   useEffect(() => {
+    if (!nativeTextRuntimeActive) {
+      setNativeTextPreviewUrl(null);
+      setNativeTextBackgroundReady(false);
+      return;
+    }
     if (nativeTextMaskEdits.length === 0) {
       setNativeTextPreviewUrl(null);
       setNativeTextBackgroundReady(false);
@@ -574,7 +581,7 @@ function PdfPageCanvas({
       if (!cancelled) setNativeTextError(error instanceof Error ? error.message : "Aperçu du texte impossible.");
     });
     return () => { cancelled = true; };
-  }, [backendUrl, nativeTextMaskKey, rotation, sourceFile, sourcePageNumber]);
+  }, [backendUrl, nativeTextMaskKey, nativeTextRuntimeActive, rotation, sourceFile, sourcePageNumber]);
 
   const prepareNativeTextBackground = useCallback(async (span: NativeTextSpan) => {
     try {
@@ -601,6 +608,10 @@ function PdfPageCanvas({
   }, [backendUrl, rotation, sourceFile, sourcePageNumber]);
 
   useEffect(() => {
+    if (!nativeTextRuntimeActive) {
+      setNativeTextFontValidation({});
+      return;
+    }
     const nativeEdits = edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text");
     let cancelled = false;
     if (nativeEdits.length === 0) {
@@ -621,15 +632,22 @@ function PdfPageCanvas({
       if (!cancelled) setNativeTextError(error instanceof Error ? error.message : "Validation de police impossible.");
     });
     return () => { cancelled = true; };
-  }, [backendUrl, edits, fontLibraryRevision, sourceFile, sourcePageNumber]);
+  }, [backendUrl, edits, fontLibraryRevision, nativeTextRuntimeActive, sourceFile, sourcePageNumber]);
 
   useEffect(() => {
-    if (activeTool !== "edit_text" || !shouldRender) return;
+    if (!nativeTextRuntimeActive || !shouldRender) {
+      setNativeTextSpans([]);
+      setNativeTextIndexed(false);
+      setNativeTextPreviewDraft(null);
+      clearNativeTextCache(sourceFile);
+      return;
+    }
+    const controller = new AbortController();
     let cancelled = false;
     setNativeTextIndexed(false);
     setNativeTextSpans([]);
     setNativeTextError(null);
-    void loadNativeTextPage(backendUrl, sourceFile, sourcePageNumber)
+    void loadNativeTextPage(backendUrl, sourceFile, sourcePageNumber, controller.signal)
       .then((spans) => {
         if (!cancelled) {
           setNativeTextSpans(spans);
@@ -637,13 +655,21 @@ function PdfPageCanvas({
         }
       })
       .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
         if (!cancelled) {
           setNativeTextError(error instanceof Error ? error.message : "Analyse du texte impossible.");
           setNativeTextIndexed(true);
         }
       });
-    return () => { cancelled = true; };
-  }, [activeTool, backendUrl, shouldRender, sourceFile, sourcePageNumber]);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearNativeTextCache(sourceFile);
+      setNativeTextSpans([]);
+      setNativeTextIndexed(false);
+      setNativeTextPreviewDraft(null);
+    };
+  }, [backendUrl, nativeTextRuntimeActive, shouldRender, sourceFile, sourcePageNumber]);
 
   const sampleRenderedColor = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
@@ -912,7 +938,7 @@ function PdfPageCanvas({
             }, 0);
           }}
         />
-        {viewport && (activeTool === "edit_text" || edits.some((edit) => edit.type === "native_text")) ? (
+        {viewport && nativeTextRuntimeActive ? (
           <NativeTextLayer
             spans={nativeTextSpans.length ? nativeTextSpans : edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text").map((edit) => ({ ...edit.source, page: edit.page, rect: edit.rect, fontWeight: edit.style.bold ? 700 : 400, fontStyle: edit.style.fontStyle ?? "normal" }))}
             edits={edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text")}
@@ -927,8 +953,9 @@ function PdfPageCanvas({
             fontValidationByEditId={nativeTextFontValidation}
           />
         ) : null}
-        {nativeTextError && activeTool === "edit_text" ? <p className="native-text-layer__error" role="status">{nativeTextError}</p> : null}
-        {activeTool === "edit_text" &&
+        {nativeTextError && nativeTextRuntimeActive ? <p className="native-text-layer__error" role="status">{nativeTextError}</p> : null}
+        {nativeTextRuntimeActive && !nativeTextIndexed && !nativeTextError ? <p className="native-text-layer__error" role="status">Analyse du texte de cette page…</p> : null}
+        {nativeTextRuntimeActive &&
         nativeTextIndexed &&
         !nativeTextError &&
         nativeTextSpans.length === 0 &&
@@ -1489,6 +1516,11 @@ function PdfViewer({
       <div className="pdf-document" aria-label={`Document PDF ${document.fileName}`}>
         {(viewerMode === "continuous" ? pages : pages.filter((page) => page.displayPageNumber === activePageNumber)).map((page) => {
           const isActiveDocumentSource = page.sourceDocumentId === document.id;
+          const nativeTextRuntimeActive =
+            isActiveDocumentSource &&
+            activeTool === "edit_text" &&
+            viewerMode !== "presentation" &&
+            page.displayPageNumber === activePageNumber;
           return (
             <PdfPageCanvas
               key={page.id}
@@ -1509,6 +1541,7 @@ function PdfViewer({
               signatureImages={signatureImages}
               selectedEditId={viewerMode === "presentation" ? null : selectedEditId}
               activeTool={viewerMode === "presentation" ? "select" : isActiveDocumentSource ? activeTool : "select"}
+              nativeTextRuntimeActive={nativeTextRuntimeActive}
               freehandStyle={freehandStyle}
               pendingSignatureImage={
                 viewerMode !== "presentation" && isActiveDocumentSource ? pendingSignatureImage : null

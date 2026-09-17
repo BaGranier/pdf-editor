@@ -8,7 +8,6 @@ export type NativeTextSpan = NativeTextSource & {
 };
 
 type NativeTextResponse = { spans: NativeTextSpan[] };
-const cache = new WeakMap<File, Map<number, Promise<NativeTextSpan[]>>>();
 const backgroundCache = new WeakMap<File, Map<string, Promise<Blob>>>();
 
 export type NativeTextFontValidation =
@@ -20,7 +19,6 @@ type FontResource = { id: string; sha256: string; format: "ttf" | "otf"; fileNam
 
 export function clearNativeTextCache(file?: File) {
   if (file) {
-    cache.delete(file);
     backgroundCache.delete(file);
   }
 }
@@ -29,29 +27,19 @@ export function loadNativeTextPage(
   backendUrl: string,
   file: File,
   pageNumber: number,
+  signal?: AbortSignal,
 ): Promise<NativeTextSpan[]> {
-  let pageCache = cache.get(file);
-  if (!pageCache) {
-    pageCache = new Map();
-    cache.set(file, pageCache);
-  }
-  const existing = pageCache.get(pageNumber);
-  if (existing) return existing;
-  const request = (async () => {
-    const form = new FormData();
-    form.append("file", file, file.name);
-    form.append("pageIndex", String(pageNumber - 1));
-    const response = await fetch(`${backendUrl}/pdf/native-text`, { method: "POST", body: form });
+  const form = new FormData();
+  form.append("file", file, file.name);
+  form.append("pageIndex", String(pageNumber - 1));
+  return fetch(`${backendUrl}/pdf/native-text`, { method: "POST", body: form, signal }).then(async (response) => {
     if (!response.ok) {
       let detail = "Le texte natif de la page n'a pas pu être analysé.";
       try { detail = ((await response.json()) as { detail?: string }).detail ?? detail; } catch { /* non-JSON response */ }
       throw new Error(detail);
     }
-    return ((await response.json()) as NativeTextResponse).spans;
-  })();
-  pageCache.set(pageNumber, request);
-  request.catch(() => pageCache?.delete(pageNumber));
-  return request;
+    return (await response.json()) as NativeTextResponse;
+  }).then((response) => response.spans);
 }
 
 export async function renderNativeTextPreview(
