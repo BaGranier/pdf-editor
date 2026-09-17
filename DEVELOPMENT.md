@@ -91,6 +91,13 @@ après un changement de zoom, de fit, de redimensionnement ou de fullscreen ; la
 text layer et les overlays continuent à utiliser le viewport CSS. Cette logique
 est commune à Chromium et Firefox.
 
+En Page unique et Présentation, le viewer utilise un front/back buffer borné :
+la page visible reste le front buffer pendant que la page demandée est peinte
+hors affichage. Le swap n’a lieu qu’après résolution de `page.render(...)`, puis
+l’ancien canvas est démonté. Il n’y a donc jamais plus de deux canvases pleine
+résolution pendant une transition, ni de cache bitmap de pages visitées. La
+scène Présentation est noire tant qu’aucun canvas rendu n’est disponible.
+
 ## Données locales et secrets
 
 - placer les documents utilisateur dans `data/input`, qui est ignoré hormis son

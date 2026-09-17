@@ -1056,7 +1056,7 @@ button:disabled {
 }
 
 .viewer--presentation {
-  background: #101318;
+  background: #000;
   overflow: hidden;
 }
 
@@ -1064,6 +1064,7 @@ button:disabled {
   width: 100%;
   height: 100%;
   overflow: auto;
+  background: #000;
 }
 
 .viewer--presentation .page-number {
@@ -1087,7 +1088,7 @@ button:disabled {
 
 .app-shell.app-shell--presentation {
   grid-template-rows: minmax(0, 1fr);
-  background: #101318;
+  background: #000;
 }
 
 /* The fullscreen root must not inherit the workspace grid or browser margins. */
@@ -1126,6 +1127,7 @@ button:disabled {
   min-width: 0;
   height: 100%;
   min-height: 0;
+  background: #000;
 }
 
 .viewer:focus-visible {
@@ -1903,6 +1905,17 @@ button:disabled {
   display: grid;
   justify-items: center;
   gap: 0.5rem;
+}
+
+/* A hidden back page is painted before it atomically replaces the front page. */
+.pdf-document--page-transition {
+  position: relative;
+}
+
+.pdf-page--incoming {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .page-number {

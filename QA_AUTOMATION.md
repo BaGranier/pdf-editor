@@ -69,6 +69,16 @@ npm run qa:e2e:chromium -- --grep VIEWER-MODES
 npm run qa:e2e:firefox -- --grep VIEWER-MODES
 ```
 
+`viewer-page-transition.spec.ts` couvre le front/back buffer Page unique et
+Présentation : maximum deux pages montées pendant un swap, libération de
+l’ancienne page après rendu et scène Présentation noire. Le rejouer après une
+modification du lifecycle PDF.js :
+
+```bash
+npm run qa:e2e:chromium -- --grep VIEWER-PAGE-TRANSITION-001
+npm run qa:e2e:firefox -- --grep VIEWER-PAGE-TRANSITION-001
+```
+
 La commande vérifie d'abord les ports `5173` et `8000`. Si un service attendu y
 est déjà disponible, Playwright le réutilise en local. Sinon, Playwright démarre
 Vite et FastAPI, attend leur disponibilité, puis les arrête en fin de campagne.

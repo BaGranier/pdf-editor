@@ -500,6 +500,10 @@ type PdfPageCanvasProps = {
   onDeleteEdit: (editId: string) => void;
   onSampleColor: (color: string) => void;
   fontLibraryRevision: number;
+  isIncomingPage?: boolean;
+  renderImmediately?: boolean;
+  suspendRender?: boolean;
+  onRenderReady?: (pageNumber: number) => void;
 };
 
 function PdfPageCanvas({
@@ -532,6 +536,10 @@ function PdfPageCanvas({
   onDeleteEdit,
   onSampleColor,
   fontLibraryRevision,
+  isIncomingPage = false,
+  renderImmediately = false,
+  suspendRender = false,
+  onRenderReady,
 }: PdfPageCanvasProps) {
   const pageRef = useRef<HTMLElement | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -721,6 +729,11 @@ function PdfPageCanvas({
       return;
     }
 
+    if (renderImmediately) {
+      setShouldRender(true);
+      return;
+    }
+
     if (!("IntersectionObserver" in window)) {
       setShouldRender(true);
       return;
@@ -745,7 +758,7 @@ function PdfPageCanvas({
     return () => {
       observer.disconnect();
     };
-  }, [scrollRootRef]);
+  }, [renderImmediately, scrollRootRef]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -755,7 +768,7 @@ function PdfPageCanvas({
     const surface = surfaceRef.current;
     const textLayerContainer = textLayerRef.current;
 
-    if (!shouldRender || !canvas || !surface || !textLayerContainer) {
+    if (suspendRender || !shouldRender || !canvas || !surface || !textLayerContainer) {
       return;
     }
 
@@ -830,6 +843,7 @@ function PdfPageCanvas({
 
         if (!isCancelled) {
           setRenderState("ready");
+          onRenderReady?.(displayPageNumber);
         }
       } catch (error) {
         if (!isCancelled && (error as Error).name !== "RenderingCancelledException") {
@@ -847,7 +861,7 @@ function PdfPageCanvas({
       textLayerContainer.replaceChildren();
       textLayerContainer.hidden = true;
     };
-  }, [pdfDocument, rotation, shouldRender, sourcePageNumber, zoom]);
+  }, [displayPageNumber, onRenderReady, pdfDocument, rotation, shouldRender, sourcePageNumber, suspendRender, zoom]);
 
   useEffect(() => {
     return () => {
@@ -861,11 +875,13 @@ function PdfPageCanvas({
         pageRef.current = node;
         registerPageRef(displayPageNumber, node);
       }}
-      className="pdf-page"
+      className={isIncomingPage ? "pdf-page pdf-page--incoming" : "pdf-page"}
+      data-page-buffer={isIncomingPage ? "back" : "front"}
       data-page-number={displayPageNumber}
       data-source-page-number={sourcePageNumber}
       data-rotation={rotation}
       aria-label={`Page ${displayPageNumber}`}
+      aria-hidden={isIncomingPage || undefined}
     >
       <div className="page-number">Page {displayPageNumber}</div>
       <div
@@ -1085,6 +1101,32 @@ function PdfViewer({
       }),
     [documents, pagePlan.pages],
   );
+  const [visiblePage, setVisiblePage] = useState<{ documentId: string; pageNumber: number } | null>(null);
+  const visiblePageNumber = visiblePage?.documentId === document.id ? visiblePage.pageNumber : null;
+
+  useEffect(() => {
+    setVisiblePage(null);
+  }, [document.id]);
+
+  const commitVisiblePage = useCallback((pageNumber: number) => {
+    if (viewerMode === "continuous" || pageNumber !== activePageNumber) return;
+    setVisiblePage((current) =>
+      current?.documentId === document.id && current.pageNumber === pageNumber
+        ? current
+        : { documentId: document.id, pageNumber },
+    );
+  }, [activePageNumber, document.id, viewerMode]);
+
+  const pagesToRender = useMemo(() => {
+    if (viewerMode === "continuous") return pages.map((page) => ({ page, isIncoming: false }));
+    const requested = pages.find((page) => page.displayPageNumber === activePageNumber);
+    if (!requested) return [];
+    const visible = visiblePageNumber === null
+      ? null
+      : pages.find((page) => page.displayPageNumber === visiblePageNumber) ?? null;
+    if (!visible || visible.id === requested.id) return [{ page: requested, isIncoming: visible === null }];
+    return [{ page: visible, isIncoming: false }, { page: requested, isIncoming: true }];
+  }, [activePageNumber, pages, viewerMode, visiblePageNumber]);
 
   const registerPageRef = useCallback((pageNumber: number, node: HTMLElement | null) => {
     if (node === null) {
@@ -1513,8 +1555,8 @@ function PdfViewer({
       onMouseDown={handleMouseDown}
     >
       {document.error ? <p className="status">{document.error}</p> : null}
-      <div className="pdf-document" aria-label={`Document PDF ${document.fileName}`}>
-        {(viewerMode === "continuous" ? pages : pages.filter((page) => page.displayPageNumber === activePageNumber)).map((page) => {
+      <div className={viewerMode === "continuous" ? "pdf-document" : "pdf-document pdf-document--page-transition"} aria-label={`Document PDF ${document.fileName}`}>
+        {pagesToRender.map(({ page, isIncoming }) => {
           const isActiveDocumentSource = page.sourceDocumentId === document.id;
           const nativeTextRuntimeActive =
             isActiveDocumentSource &&
@@ -1561,6 +1603,10 @@ function PdfViewer({
               onDeleteEdit={onDeleteEdit}
               onSampleColor={onSampleColor}
               fontLibraryRevision={fontLibraryRevision}
+              isIncomingPage={isIncoming}
+              renderImmediately={viewerMode !== "continuous"}
+              suspendRender={viewerMode !== "continuous" && !isIncoming && page.displayPageNumber !== activePageNumber}
+              onRenderReady={viewerMode === "continuous" ? undefined : commitVisiblePage}
             />
           );
         })}
