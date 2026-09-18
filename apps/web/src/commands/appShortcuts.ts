@@ -5,6 +5,7 @@ export type AppCommandId =
   | "file.close"
   | "file.save"
   | "file.saveAs"
+  | "print.document"
   | "history.undo"
   | "history.redo"
   | "edit.copy"
@@ -28,6 +29,7 @@ export const APP_COMMAND_SHORTCUTS: Record<AppCommandId, { mac: string; other: s
   "file.close": { mac: "⌘W", other: "Ctrl+W" },
   "file.save": { mac: "⌘S", other: "Ctrl+S" },
   "file.saveAs": { mac: "⌘⇧S", other: "Ctrl+Shift+S" },
+  "print.document": { mac: "⌘P", other: "Ctrl+P" },
   "history.undo": { mac: "⌘Z", other: "Ctrl+Z" },
   "history.redo": { mac: "⌘⇧Z", other: "Ctrl+Y / Ctrl+Shift+Z" },
   "edit.copy": { mac: "⌘C", other: "Ctrl+C" },
@@ -80,6 +82,7 @@ export function resolveAppShortcut(
   if (key === "o") return "file.open";
   if (key === "w") return desktop ? "file.close" : null;
   if (key === "s") return event.shiftKey ? "file.saveAs" : "file.save";
+  if (key === "p") return desktop ? "print.document" : null;
   if (key === "z") return event.shiftKey ? "history.redo" : "history.undo";
   if (key === "y") return "history.redo";
   if (key === "c") return "edit.copy";

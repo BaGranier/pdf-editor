@@ -122,6 +122,7 @@ import {
 } from "./editing/state";
 import { downloadPdfToBrowser } from "./saving/destination";
 import { getSuggestedPdfSaveName } from "./saving/fileName";
+import { openPrintWindow, printPdfBlob } from "./saving/print";
 import { computeFitScale } from "./viewer/fit";
 import { getCanvasRenderDimensions } from "./viewer/rendering";
 import { searchPdfDocument, type PdfSearchHit } from "./pdf/search";
@@ -4390,8 +4391,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
   const generatePdfForDocument = useCallback(async (
     documentId: string,
-    operation: "export" | "save_as",
+    operation: "export" | "save_as" | "print",
     requestedOutputName?: string,
+    printWindow?: Window | null,
   ): Promise<boolean> => {
     const sourceDocument = documents.find(
       (document) => document.id === documentId,
@@ -4595,6 +4597,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         response.headers.get("content-disposition"),
         resolvedOutputName,
       );
+      if (operation === "print") {
+        if (!printWindow) {
+          throw new Error("La fenêtre d’impression a été bloquée par le navigateur.");
+        }
+        printPdfBlob(printWindow, pdfBlob);
+        setExportFeedback({ kind: "success", message: "Document courant préparé pour l’impression." });
+        return true;
+      }
       const outputWarning = response.headers.get("x-pdf-output-warning");
       const outputStatus = response.headers.get("x-pdf-output-status");
       const exportWarnings = parsePdfExportWarnings(
@@ -4661,6 +4671,18 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     }
     void generatePdfForDocument(activeDocument.id, "export");
   }, [activeDocument, generatePdfForDocument]);
+
+  const printActiveDocument = useCallback(() => {
+    if (!activeDocument || isExporting) return;
+    // Open synchronously from the user gesture so browsers do not treat the
+    // later export response as an unsolicited popup.
+    const printWindow = openPrintWindow();
+    if (!printWindow) {
+      setExportFeedback({ kind: "error", message: "La fenêtre d’impression a été bloquée. Autorisez les fenêtres contextuelles puis réessayez." });
+      return;
+    }
+    void generatePdfForDocument(activeDocument.id, "print", undefined, printWindow);
+  }, [activeDocument, generatePdfForDocument, isExporting]);
 
   const openSaveAsDialog = useCallback(
     (documentId: string) => {
@@ -4764,6 +4786,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         // no destination path is persisted in a browser document.
         "file.save": activeDocument && isActiveDocumentDirty && !isExporting ? openActiveSaveAsDialog : null,
         "file.saveAs": activeDocument && isActiveDocumentDirty && !isExporting ? openActiveSaveAsDialog : null,
+        "print.document": activeDocument && !isExporting ? printActiveDocument : null,
         "history.undo": workspaceMode === "read" && editingState?.canUndo ? undoPdfEdit : null,
         "history.redo": workspaceMode === "read" && editingState?.canRedo ? redoPdfEdit : null,
         "edit.copy": workspaceMode === "read" && selectedPdfEdit ? copySelectedPdfEdit : null,
@@ -4827,6 +4850,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     openActiveSaveAsDialog,
     openPdfSearch,
     pastePdfEdit,
+    printActiveDocument,
     pendingSignatureImageId,
     pendingCloseDocumentId,
     pdfEditsByDocument,
@@ -5175,6 +5199,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                     disabled={!isActiveDocumentDirty || isExporting}
                   >
                     Enregistrer sous… <span aria-hidden="true">{getAppCommandShortcutLabel("file.saveAs")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={printActiveDocument}
+                    disabled={isExporting}
+                  >
+                    Imprimer <span aria-hidden="true">{isDesktopRuntime() ? getAppCommandShortcutLabel("print.document") : ""}</span>
                   </button>
                 </div>
               ) : null}

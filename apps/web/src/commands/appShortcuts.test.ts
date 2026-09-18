@@ -31,6 +31,8 @@ describe("app shortcuts", () => {
   it("leaves browser-reserved document closing to the web browser", () => {
     expect(resolveAppShortcut(shortcutEvent("w", { ctrlKey: true }), { desktop: false, platform: "other" })).toBeNull();
     expect(resolveAppShortcut(shortcutEvent("w", { ctrlKey: true }), { desktop: true, platform: "other" })).toBe("file.close");
+    expect(resolveAppShortcut(shortcutEvent("p", { ctrlKey: true }), { desktop: false, platform: "other" })).toBeNull();
+    expect(resolveAppShortcut(shortcutEvent("p", { ctrlKey: true }), { desktop: true, platform: "other" })).toBe("print.document");
     expect(getAppCommandShortcutLabel("file.saveAs", "mac")).toBe("⌘⇧S");
     expect(resolveAppShortcut(shortcutEvent("Tab", { ctrlKey: true }), { desktop: true, platform: "mac" })).toBe("tabs.next");
     expect(resolveAppShortcut(shortcutEvent("Tab", { metaKey: true }), { desktop: true, platform: "mac" })).toBeNull();

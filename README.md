@@ -47,6 +47,15 @@ Les champs de saisie, `textarea`, `select` et éditeurs `contenteditable`
 conservent leurs raccourcis natifs : copier/coller, tout sélectionner et undo
 local ne déclenchent pas une commande documentaire.
 
+### Impression
+
+**Fichier → Imprimer** génère un PDF temporaire depuis l'état courant avant
+d'ouvrir l'impression ; les annotations et modifications non sauvegardées sont
+donc incluses sans modifier le dirty state. En web, le navigateur peut bloquer
+la fenêtre d'impression : autoriser les popups pour l'application puis relancer
+l'action. Dans Tauri, `Ctrl/Cmd+P` utilise le même flux applicatif ; la
+validation d'un dialogue système par plateforme reste une étape de release.
+
 ### Modes de lecture
 
 Le viewer propose trois modes complémentaires :
