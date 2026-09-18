@@ -18,7 +18,7 @@ describe("DesktopBackendGate", () => {
     expect(screen.queryByText(/Démarrage du moteur/)).not.toBeInTheDocument();
   });
 
-  it("shows the ready state and forwards the dynamic desktop URL", async () => {
+  it("forwards the dynamic desktop URL without a persistent ready banner", async () => {
     const consoleInfo = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const resolveStatus = vi
       .fn()
@@ -44,8 +44,8 @@ describe("DesktopBackendGate", () => {
     );
 
     expect(screen.getByText("Démarrage du moteur PDF local…")).toBeInTheDocument();
-    expect(await screen.findByText("Moteur PDF local prêt")).toBeInTheDocument();
-    expect(screen.getByText("API: http://127.0.0.1:43127")).toBeInTheDocument();
+    expect(await screen.findByText("API: http://127.0.0.1:43127")).toBeInTheDocument();
+    expect(screen.queryByText("Moteur PDF local prêt")).not.toBeInTheDocument();
     expect(resolveStatus).toHaveBeenCalledTimes(2);
     expect(consoleInfo).toHaveBeenCalledWith("[desktop:start:react-mounted]");
   });

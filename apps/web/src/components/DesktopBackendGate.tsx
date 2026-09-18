@@ -118,12 +118,8 @@ export function DesktopBackendGate({
     );
   }
 
-  return (
-    <div className="desktop-app-shell">
-      <p className="desktop-backend-ready" role="status">
-        Moteur PDF local prêt
-      </p>
-      {children(state.status.baseUrl)}
-    </div>
-  );
+  // A healthy local backend is not a persistent workspace status. Keeping the
+  // application as the direct root also lets its height chain match the Tauri
+  // window exactly; startup and failure states above remain explicit.
+  return children(state.status.baseUrl);
 }

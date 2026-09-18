@@ -98,6 +98,16 @@ describe("App", () => {
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
   });
 
+  it("keeps the compact comment tool accessible from the tool rail", () => {
+    render(<App />);
+
+    const toolRail = screen.getByRole("navigation", { name: "Outils d'édition" });
+    const commentTool = within(toolRail).getByRole("button", { name: "Commentaire" });
+    expect(commentTool).toHaveAttribute("title", "Commentaire");
+    expect(commentTool).toHaveTextContent("Comment.");
+    expect(commentTool.querySelector("svg.toolbar-icon")).not.toBeNull();
+  });
+
   it("keeps display mode and zoom controls as distinct actions", () => {
     render(<App />);
 
@@ -1717,7 +1727,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Vue grille" }));
     expect(screen.getByRole("button", { name: "Vue grille" })).toHaveAttribute("aria-pressed", "true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Ajouter un commentaire" }));
+    fireEvent.click(screen.getByRole("button", { name: "Commentaire" }));
     fireEvent.pointerDown(screen.getByLabelText("Couche d'édition de la page 1"), { button: 0, clientX: 120, clientY: 160 });
     const dialog = await screen.findByRole("dialog", { name: "Nouveau commentaire" });
     fireEvent.change(within(dialog).getByLabelText("Texte du commentaire"), { target: { value: "Note de navigation" } });

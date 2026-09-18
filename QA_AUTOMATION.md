@@ -79,6 +79,15 @@ npm run qa:e2e:chromium -- --grep VIEWER-PAGE-TRANSITION-001
 npm run qa:e2e:firefox -- --grep VIEWER-PAGE-TRANSITION-001
 ```
 
+`ui-workspace-responsive.spec.ts` vérifie à 1920×1080, 1440×900, 1280×720 et
+1024×768 que le footer reste dans la fenêtre sans scroll global et que les
+overlays texte/forme restent visibles après resize et navigation :
+
+```bash
+npm run qa:e2e:chromium -- --grep UI-WORKSPACE-RESPONSIVE-001
+npm run qa:e2e:firefox -- --grep UI-WORKSPACE-RESPONSIVE-001
+```
+
 La commande vérifie d'abord les ports `5173` et `8000`. Si un service attendu y
 est déjà disponible, Playwright le réutilise en local. Sinon, Playwright démarre
 Vite et FastAPI, attend leur disponibilité, puis les arrête en fin de campagne.

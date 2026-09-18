@@ -5173,8 +5173,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           <button type="button" onClick={() => { setActiveEditingTool("freehand"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }} disabled={!activeDocument || workspaceMode !== "read"} aria-label="Dessiner" aria-pressed={activeEditingTool === "freehand"} title="Dessiner">
             <ToolbarIcon name="freehand" /><span>Dessin</span>
           </button>
-          <button type="button" onClick={() => { setActiveEditingTool("comment"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }} disabled={!activeDocument || workspaceMode !== "read"} aria-label="Ajouter un commentaire" aria-pressed={activeEditingTool === "comment"} title="Ajouter un commentaire">
-            <ToolbarIcon name="comment" /><span>Commentaire</span>
+          <button type="button" onClick={() => { setActiveEditingTool("comment"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }} disabled={!activeDocument || workspaceMode !== "read"} aria-label="Commentaire" aria-pressed={activeEditingTool === "comment"} title="Commentaire">
+            <ToolbarIcon name="comment" /><span>Comment.</span>
           </button>
           <button
             type="button"

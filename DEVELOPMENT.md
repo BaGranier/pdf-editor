@@ -98,6 +98,17 @@ l’ancien canvas est démonté. Il n’y a donc jamais plus de deux canvases pl
 résolution pendant une transition, ni de cache bitmap de pages visitées. La
 scène Présentation est noire tant qu’aucun canvas rendu n’est disponible.
 
+## Layout du workspace
+
+Le shell du workspace occupe la hauteur de son parent (`html`, `body`, `#root`)
+et répartit header, espace de travail et barre d’état avec une grille
+`auto minmax(0, 1fr) auto`. Le scroll global est désactivé : le viewer, la
+barre d’outils et l’inspecteur sont les propriétaires de leurs scrolls locaux.
+Cette chaîne de hauteurs est la même dans la WebView Tauri ; lorsque le backend
+local est prêt, le gate desktop rend directement l’application sans bandeau
+permanent afin de ne pas réduire l’espace du viewer. Les états de démarrage et
+d’erreur restent des écrans explicites.
+
 ## Données locales et secrets
 
 - placer les documents utilisateur dans `data/input`, qui est ignoré hormis son
