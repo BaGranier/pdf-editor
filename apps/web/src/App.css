@@ -1947,6 +1947,25 @@ button:disabled {
   box-shadow: var(--page-shadow);
 }
 
+.pdf-search-highlights {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pdf-search-highlight {
+  position: absolute;
+  box-sizing: border-box;
+  background: rgb(250 204 21 / 45%);
+  outline: 1px solid rgb(161 98 7 / 55%);
+}
+
+.pdf-search-highlight.is-active {
+  background: rgb(251 146 60 / 60%);
+  outline: 2px solid #c2410c;
+}
+
 .pdf-text-layer {
   --min-font-size: 1;
   --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
@@ -3069,6 +3088,59 @@ button:disabled {
 .workspace-stage > .organize-workspace,
 .workspace-stage > .empty-state {
   grid-area: 1 / 1;
+}
+
+.pdf-search-bar {
+  position: absolute;
+  z-index: 12;
+  top: 0.75rem;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: min(31rem, calc(100% - 2rem));
+  padding: 0.4rem;
+  color: var(--text-primary);
+  background: var(--surface-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow);
+}
+
+.pdf-search-bar input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  min-height: 2rem;
+}
+
+.pdf-search-bar output {
+  min-width: 4.5rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pdf-search-bar button {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+}
+
+.pdf-search-bar__error {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  max-width: 24rem;
+  padding: 0.45rem 0.65rem;
+  color: #9f1239;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-radius: 0.35rem;
+  font-size: 0.82rem;
 }
 
 .organize-page > .organize-thumbnail {

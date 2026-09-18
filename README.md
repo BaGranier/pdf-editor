@@ -39,6 +39,7 @@ modificateur principal est `Ctrl` sous Windows/Linux et `Cmd` sous macOS.
 | Fermer le document actif | `Ctrl+W` | `Cmd+W` | Desktop seulement ; respecte la confirmation d'état modifié |
 | Annuler / Rétablir | `Ctrl+Z` / `Ctrl+Y` ou `Ctrl+Shift+Z` | `Cmd+Z` / `Cmd+Shift+Z` | Web et Desktop |
 | Zoom | `Ctrl++`, `Ctrl+-`, `Ctrl+0` | `Cmd++`, `Cmd+-`, `Cmd+0` | Web et Desktop ; `+` accepte aussi `=` et le pavé numérique |
+| Rechercher dans le document | `Ctrl+F` | `Cmd+F` | Web et Desktop ; la recherche est incrémentale et reste locale |
 | Document suivant / précédent | `Ctrl+Tab` / `Ctrl+Shift+Tab` | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Desktop seulement ; `Cmd+Tab` reste réservé au système macOS |
 | Fermer l'overlay actif | `Escape` | `Escape` | Contextuel |
 

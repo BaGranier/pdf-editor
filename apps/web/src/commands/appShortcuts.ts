@@ -14,6 +14,7 @@ export type AppCommandId =
   | "view.resetZoom"
   | "tabs.next"
   | "tabs.previous"
+  | "search.open"
   | "overlay.escape";
 
 export type ShortcutEvent = Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey">;
@@ -36,6 +37,7 @@ export const APP_COMMAND_SHORTCUTS: Record<AppCommandId, { mac: string; other: s
   "view.resetZoom": { mac: "⌘0", other: "Ctrl+0" },
   "tabs.next": { mac: "⌃Tab", other: "Ctrl+Tab" },
   "tabs.previous": { mac: "⌃⇧Tab", other: "Ctrl+Shift+Tab" },
+  "search.open": { mac: "⌘F", other: "Ctrl+F" },
   "overlay.escape": { mac: "Esc", other: "Esc" },
 };
 
@@ -82,6 +84,7 @@ export function resolveAppShortcut(
   if (key === "y") return "history.redo";
   if (key === "c") return "edit.copy";
   if (key === "v") return "edit.paste";
+  if (key === "f") return "search.open";
   if (key === "+" || key === "=" || event.code === "NumpadAdd") return "view.zoomIn";
   if (key === "-" || event.code === "NumpadSubtract") return "view.zoomOut";
   if (key === "0" || event.code === "Numpad0") return "view.resetZoom";
