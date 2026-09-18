@@ -65,7 +65,14 @@ import {
   renderPdfTextLayer,
   type PdfTextLayerRenderTask,
 } from "./pdf/textLayer";
-import { getWebBackendBaseUrl } from "./api/backend";
+import { getWebBackendBaseUrl, isDesktopRuntime } from "./api/backend";
+import {
+  getAppCommandShortcutLabel,
+  getShortcutPlatform,
+  isEditableKeyboardTarget,
+  resolveAppShortcut,
+  type AppCommandId,
+} from "./commands/appShortcuts";
 import { PdfEditLayer } from "./components/PdfEditLayer";
 import { TextEditToolbar } from "./components/TextEditToolbar";
 import { NativeTextLayer } from "./components/NativeTextLayer";
@@ -378,22 +385,6 @@ async function restoreOpenDocument(storedDocument: StoredPdfDocument): Promise<O
     await loadingTask.destroy().catch(() => undefined);
     throw error;
   }
-}
-
-function isEditableKeyboardTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
-  if (target.isContentEditable) {
-    return true;
-  }
-
-  if (!(target instanceof HTMLInputElement)) {
-    return target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
-  }
-
-  return target.type === "file" || target.type === "text" || target.type === "search" || target.type === "email" || target.type === "url" || target.type === "tel" || target.type === "password" || target.type === "number";
 }
 
 function clonePdfEdit(edit: PdfEdit): PdfEdit {
@@ -3648,57 +3639,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     return () => window.removeEventListener("keydown", handleSelectedEditDeletion);
   }, [deletePdfEdit, selectedEditId]);
 
-  useEffect(() => {
-    function handleEditingShortcuts(event: globalThis.KeyboardEvent) {
-      if (
-        !activeDocument ||
-        workspaceMode !== "read" ||
-        isEditableKeyboardTarget(event.target) ||
-        (!event.ctrlKey && !event.metaKey) ||
-        event.altKey
-      ) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-      if (key === "z" && event.shiftKey) {
-        event.preventDefault();
-        redoPdfEdit();
-        return;
-      }
-      if (key === "z") {
-        event.preventDefault();
-        undoPdfEdit();
-        return;
-      }
-      if (key === "y") {
-        event.preventDefault();
-        redoPdfEdit();
-        return;
-      }
-      if (key === "c" && selectedPdfEdit) {
-        event.preventDefault();
-        copySelectedPdfEdit();
-        return;
-      }
-      if (key === "v" && clipboardEditRef.current) {
-        event.preventDefault();
-        void pastePdfEdit();
-      }
-    }
-
-    window.addEventListener("keydown", handleEditingShortcuts);
-    return () => window.removeEventListener("keydown", handleEditingShortcuts);
-  }, [
-    activeDocument,
-    copySelectedPdfEdit,
-    pastePdfEdit,
-    redoPdfEdit,
-    selectedPdfEdit,
-    undoPdfEdit,
-    workspaceMode,
-  ]);
-
   const prepareSignatureImage = useCallback((draft: SignatureImageDraft) => {
     const image: SignatureImage = {
       ...draft,
@@ -4610,58 +4550,93 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
   useEffect(() => {
     const handleApplicationShortcut = (event: globalThis.KeyboardEvent) => {
-      if (
-        event.key.toLowerCase() === "s" &&
-        (event.ctrlKey || event.metaKey) &&
-        !event.altKey
-      ) {
-        event.preventDefault();
-        openActiveSaveAsDialog();
-        return;
-      }
+      if (event.defaultPrevented) return;
+      const commandId = resolveAppShortcut(event, {
+        desktop: isDesktopRuntime(),
+        platform: getShortcutPlatform(),
+      });
+      if (!commandId || (commandId !== "overlay.escape" && isEditableKeyboardTarget(event.target))) return;
 
-      if (event.key !== "Escape") {
-        return;
-      }
-
-      if (saveAsDocumentId) {
-        event.preventDefault();
-        cancelSaveAsDialog();
-        return;
-      }
-
-      const shouldHandleEscape =
-        isFileMenuOpen ||
-        isSignatureDialogOpen ||
-        eyedropperTarget !== null ||
-        activeEditingTool !== "select" ||
-        pendingSignatureImageId !== null ||
-        selectedEditId !== null;
-      if (!shouldHandleEscape) {
-        return;
-      }
-
+      const editingState = activeDocument
+        ? getDocumentEditingState(pdfEditsByDocument, activeDocument.id)
+        : null;
+      const commands: Record<AppCommandId, (() => void) | null> = {
+        "file.open": saveAsDocumentId || pendingCloseDocumentId ? null : () => openFileInputRef.current?.click(),
+        "file.close": activeDocument ? closeActiveDocumentByKeyboard : null,
+        // The current local-first save workflow always opens the Save As dialog:
+        // no destination path is persisted in a browser document.
+        "file.save": activeDocument && isActiveDocumentDirty && !isExporting ? openActiveSaveAsDialog : null,
+        "file.saveAs": activeDocument && isActiveDocumentDirty && !isExporting ? openActiveSaveAsDialog : null,
+        "history.undo": workspaceMode === "read" && editingState?.canUndo ? undoPdfEdit : null,
+        "history.redo": workspaceMode === "read" && editingState?.canRedo ? redoPdfEdit : null,
+        "edit.copy": workspaceMode === "read" && selectedPdfEdit ? copySelectedPdfEdit : null,
+        "edit.paste": workspaceMode === "read" && clipboardEditRef.current ? () => void pastePdfEdit() : null,
+        "view.zoomIn": activeDocument && workspaceMode === "read" && activeDocument.zoom < MAX_ZOOM
+          ? () => updateDocumentZoom(activeDocument.id, ZOOM_STEP)
+          : null,
+        "view.zoomOut": activeDocument && workspaceMode === "read" && activeDocument.zoom > MIN_ZOOM
+          ? () => updateDocumentZoom(activeDocument.id, -ZOOM_STEP)
+          : null,
+        "view.resetZoom": activeDocument && workspaceMode === "read"
+          ? () => {
+              setFitToPageByDocument((currentModes) => ({ ...currentModes, [activeDocument.id]: false }));
+              setDocumentZoom(activeDocument.id, 1);
+            }
+          : null,
+        "tabs.next": documents.length > 1
+          ? () => selectDocumentByKeyboard((activeDocumentIndex + 1) % documents.length)
+          : null,
+        "tabs.previous": documents.length > 1
+          ? () => selectDocumentByKeyboard((activeDocumentIndex - 1 + documents.length) % documents.length)
+          : null,
+        "overlay.escape": saveAsDocumentId
+          ? cancelSaveAsDialog
+          : isFileMenuOpen || isSignatureDialogOpen || eyedropperTarget !== null || activeEditingTool !== "select" || pendingSignatureImageId !== null || selectedEditId !== null
+            ? () => {
+                setIsFileMenuOpen(false);
+                setIsSignatureDialogOpen(false);
+                setActiveEditingTool("select");
+                setEyedropperTarget(null);
+                setPendingSignatureImageId(null);
+                setSelectedEditId(null);
+              }
+            : null,
+      };
+      const execute = commands[commandId];
+      if (!execute) return;
       event.preventDefault();
-      setIsFileMenuOpen(false);
-      setIsSignatureDialogOpen(false);
-      setActiveEditingTool("select");
-      setEyedropperTarget(null);
-      setPendingSignatureImageId(null);
-      setSelectedEditId(null);
+      execute();
     };
 
     window.addEventListener("keydown", handleApplicationShortcut);
     return () => window.removeEventListener("keydown", handleApplicationShortcut);
   }, [
     activeEditingTool,
+    activeDocument,
+    activeDocumentIndex,
     cancelSaveAsDialog,
+    closeActiveDocumentByKeyboard,
+    copySelectedPdfEdit,
+    documents.length,
     isFileMenuOpen,
     isSignatureDialogOpen,
+    isActiveDocumentDirty,
+    isExporting,
     eyedropperTarget,
     openActiveSaveAsDialog,
+    pastePdfEdit,
     pendingSignatureImageId,
+    pendingCloseDocumentId,
+    pdfEditsByDocument,
+    redoPdfEdit,
+    selectedPdfEdit,
     saveAsDocumentId,
+    selectDocumentByKeyboard,
     selectedEditId,
+    setDocumentZoom,
+    undoPdfEdit,
+    updateDocumentZoom,
+    workspaceMode,
   ]);
 
   const runOcrOnActiveDocument = useCallback(
@@ -4971,8 +4946,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
         <div className="toolbar-actions" aria-label="Actions PDF">
           <div className="toolbar-action-group toolbar-actions__primary" aria-label="Actions principales">
-            <button type="button" className="toolbar-icon-button" aria-label="Ouvrir un PDF" title="Ouvrir un PDF" onClick={() => openFileInputRef.current?.click()}><ToolbarIcon name="open" /></button>
-            <button type="button" className="toolbar-icon-button" aria-label="Enregistrer sous…" title="Enregistrer sous… (Ctrl+Shift+S)" onClick={openActiveSaveAsDialog} disabled={!activeDocument || !isActiveDocumentDirty || isExporting}><ToolbarIcon name="save-as" /></button>
+            <button type="button" className="toolbar-icon-button" aria-label="Ouvrir un PDF" title={`Ouvrir un PDF (${getAppCommandShortcutLabel("file.open")})`} onClick={() => openFileInputRef.current?.click()}><ToolbarIcon name="open" /></button>
+            <button type="button" className="toolbar-icon-button" aria-label="Enregistrer sous…" title={`Enregistrer sous… (${getAppCommandShortcutLabel("file.saveAs")})`} onClick={openActiveSaveAsDialog} disabled={!activeDocument || !isActiveDocumentDirty || isExporting}><ToolbarIcon name="save-as" /></button>
             <button type="button" className="toolbar-icon-button toolbar-icon-button--danger" aria-label="Réinitialiser les données locales" title="Réinitialiser les données locales" onClick={clearLocalData}><ResetIcon /></button>
           </div>
           <span className="toolbar-actions__spacer" aria-hidden="true" />
@@ -4996,7 +4971,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                     onClick={openActiveSaveAsDialog}
                     disabled={!isActiveDocumentDirty || isExporting}
                   >
-                    Enregistrer sous…
+                    Enregistrer sous… <span aria-hidden="true">{getAppCommandShortcutLabel("file.saveAs")}</span>
                   </button>
                 </div>
               ) : null}
@@ -5010,7 +4985,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               disabled={!activeDocumentEditingState?.canUndo}
               aria-label="Annuler"
               aria-keyshortcuts="Control+Z Meta+Z"
-              title="Annuler (Ctrl+Z)"
+              title={`Annuler (${getAppCommandShortcutLabel("history.undo")})`}
             >
               <ToolbarIcon name="undo" />
             </button>
@@ -5021,7 +4996,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               disabled={!activeDocumentEditingState?.canRedo}
               aria-label="Rétablir"
               aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z"
-              title="Rétablir (Ctrl+Y)"
+              title={`Rétablir (${getAppCommandShortcutLabel("history.redo")})`}
             >
               <ToolbarIcon name="redo" />
             </button>

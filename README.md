@@ -27,6 +27,25 @@ Le développement et le packaging natifs sont documentés dans
 - conversion en DOCX éditable ou visuel, TXT, HTML, PNG et JPEG ;
 - exécution web ou desktop avec cycle de vie du backend géré par Tauri.
 
+### Raccourcis clavier
+
+Les commandes applicatives réutilisent les mêmes actions que les boutons. Le
+modificateur principal est `Ctrl` sous Windows/Linux et `Cmd` sous macOS.
+
+| Action | Windows / Linux | macOS | Web / Desktop |
+| --- | --- | --- | --- |
+| Ouvrir un PDF | `Ctrl+O` | `Cmd+O` | Web et Desktop |
+| Enregistrer / Enregistrer sous | `Ctrl+S` / `Ctrl+Shift+S` | `Cmd+S` / `Cmd+Shift+S` | Web et Desktop ; le web ouvre le workflow de téléchargement |
+| Fermer le document actif | `Ctrl+W` | `Cmd+W` | Desktop seulement ; respecte la confirmation d'état modifié |
+| Annuler / Rétablir | `Ctrl+Z` / `Ctrl+Y` ou `Ctrl+Shift+Z` | `Cmd+Z` / `Cmd+Shift+Z` | Web et Desktop |
+| Zoom | `Ctrl++`, `Ctrl+-`, `Ctrl+0` | `Cmd++`, `Cmd+-`, `Cmd+0` | Web et Desktop ; `+` accepte aussi `=` et le pavé numérique |
+| Document suivant / précédent | `Ctrl+Tab` / `Ctrl+Shift+Tab` | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Desktop seulement ; `Cmd+Tab` reste réservé au système macOS |
+| Fermer l'overlay actif | `Escape` | `Escape` | Contextuel |
+
+Les champs de saisie, `textarea`, `select` et éditeurs `contenteditable`
+conservent leurs raccourcis natifs : copier/coller, tout sélectionner et undo
+local ne déclenchent pas une commande documentaire.
+
 ### Modes de lecture
 
 Le viewer propose trois modes complémentaires :
