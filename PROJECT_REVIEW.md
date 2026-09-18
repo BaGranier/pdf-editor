@@ -8,7 +8,7 @@
 
 PDF Studio Local couvre son périmètre local-first principal : ouverture et
 persistance locale de PDF, édition d'annotations et d'objets, organisation de
-pages, export, OCR local et conversion sortante. Le viewer possède les trois
+pages, export, recherche texte incrémentale, impression de l'état courant, OCR local et conversion sortante. Le viewer possède les trois
 modes prévus et les travaux récents ont borné l'extraction de texte natif à la
 page active ainsi que le rendu mono-page à deux buffers au plus.
 
@@ -48,7 +48,8 @@ déclaré actuel.
 | Pages | Split/extraction avancée | Hors périmètre | limites explicites `README.md` | Aucune UI dédiée | Ticket produit séparé si requis |
 | OCR | OCR local fra/eng/mixte et réouverture | Partiel | `OcrDialog.tsx`, `/ocr`, tests OCR | Dépendances système, qualité et durée variables ; annulation limitée | P1 packaging/feedback |
 | Conversion | DOCX, TXT, HTML, PNG, JPEG sortants | Partiel | `/convert`, `CONVERSION.md`, tests backend | DOCX complexe sans fidélité garantie | P2 corpus de fidélité |
-| PDF pro | Recherche, impression, formulaires, outlines, pièces jointes, redaction, mots de passe, signature numérique | Absent / hors périmètre | aucune commande/composant/route/test correspondant après recherche ; limites projet dans `AGENTS.md` | Ces fonctions ne sont pas promises par le produit actuel | Décision produit avant implémentation |
+| PDF pro | Recherche texte et impression de l'état courant | Complet pour Web / WebView | `pdf/search.ts`, `PdfSearchBar.tsx`, `saving/print.ts`, E2E ciblés | Le dialogue système Tauri reste à valider sur chaque OS | QA release Desktop |
+| PDF pro | Formulaires, outlines, pièces jointes, redaction, mots de passe, signature numérique | Absent / hors périmètre | aucune commande/composant/route/test correspondant après recherche ; limites projet dans `AGENTS.md` | Ces fonctions ne sont pas promises par le produit actuel | Décision produit avant implémentation |
 | UX | Thèmes, confirmation destructive, erreurs métier | Partiel | `App.tsx`, dialogues, QA | Certains rapports manuels sont historiques | Rafraîchir la QA par release |
 | UX | Raccourcis applicatifs | Complet pour le minimum supporté | `commands/appShortcuts.ts`, `App.tsx`, tests associés | `Ctrl/Cmd+W` et tabs réservés au desktop | Documenter les différences |
 | Desktop | Sidecar local, health/restart, port dynamique | Complet en développement | `apps/desktop/src-tauri`, `DESKTOP.md` | Validation de release OS non terminée | P1 |
