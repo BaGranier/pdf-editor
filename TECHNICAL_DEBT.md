@@ -7,9 +7,9 @@ exclus des tickets de stabilisation fonctionnelle.
 
 ### Constat
 
-- `apps/web/src/App.tsx` approche 4 000 lignes et concentre état, rendu,
+- `apps/web/src/App.tsx` dépasse désormais 5 600 lignes et concentre état, rendu,
   orchestration métier et interactions navigateur.
-- `apps/web/src/App.css` dépasse 2 000 lignes et mélange structure globale,
+- `apps/web/src/App.css` dépasse 3 500 lignes et mélange structure globale,
   composants, modes d'édition, dialogues et adaptations responsive.
 - cette concentration augmente le coût des revues, le risque de régression et
   la difficulté des tests ciblés.
@@ -64,10 +64,10 @@ Le prochain `cargo check` ou build recompilera les dépendances nécessaires.
 ## VIEWER-QA-001 — Validation navigateur finale des modes viewer
 
 Les modes Continu, Page unique et Présentation sont fonctionnellement terminés.
-Il reste à exécuter leur scénario Playwright dans Chromium et Firefox lorsque
-les binaires correspondants sont installés, puis à effectuer une QA manuelle sur
-un écran HiDPI. Les contrôles doivent couvrir portrait, paysage, fullscreen,
-sortie `Escape`, navigation clavier et netteté du texte fin.
+Les scénarios Playwright Chromium et Firefox sont désormais exécutables dans le
+workspace. Il reste la QA manuelle sur un écran HiDPI et dans la WebView Tauri,
+notamment portrait, paysage, fullscreen, sortie `Escape`, navigation clavier et
+netteté du texte fin.
 
 Le code ne contient pas de branche Firefox : le canvas PDF.js utilise le même
 backing store proportionnel au DPR dans les deux navigateurs.
@@ -75,10 +75,12 @@ backing store proportionnel au DPR dans les deux navigateurs.
 ## PDF-PERF-001 — Limites mémoire et exports extrêmes
 
 Les seuils de 50 Mo, 250 pages et huit documents ouverts restent des
-avertissements non bloquants. PDF.js charge les documents en mémoire et
-IndexedDB les persiste intégralement ; les exports de plusieurs milliers de
-pages et les quotas navigateur doivent encore être mesurés sur les machines
-cibles. Le warning Vite sur la taille du bundle PDF.js reste non bloquant.
+avertissements non bloquants. L'extraction de texte natif est désormais bornée à
+la page active et le rendu mono-page à deux buffers, mais PDF.js charge encore
+les documents en mémoire et IndexedDB les persiste intégralement ; les exports
+de plusieurs milliers de pages et les quotas navigateur doivent encore être
+mesurés sur les machines cibles. Le warning Vite sur la taille du bundle PDF.js
+reste non bloquant.
 
 ## BACKEND-TEST-001 — Multipart FastAPI d'intégration
 
@@ -94,3 +96,14 @@ orthogonales. Le shaping complexe, les matrices arbitraires, les fontes
 variables/collections TTC, le subsetting avancé et le regroupement sémantique
 de spans en paragraphes restent des évolutions dédiées. Ils ne doivent pas être
 contournés par rasterisation, faux style CSS ou remplacement visuel opaque.
+
+## DESKTOP-RELEASE-001 — Packaging et validation de release
+
+Le sidecar FastAPI local est supervisé en développement, mais les installateurs
+autonomes ne sont pas encore validés sous Windows, macOS et Linux. En
+particulier, les binaires et données OCR (OCRmyPDF, Tesseract, Ghostscript,
+QPDF), l'association `.pdf`, l'ouverture par double-clic, la signature Windows,
+la notarisation macOS et la mise à jour applicative restent à traiter.
+
+Cette dette est durable car elle conditionne une diffusion desktop générale ;
+elle est détaillée dans `DESKTOP.md` et priorisée dans `PROJECT_REVIEW.md`.
