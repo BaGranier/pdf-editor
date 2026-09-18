@@ -7,6 +7,15 @@ import tempfile
 import fitz
 import pytest
 from pypdf import PdfReader
+from pypdf import PdfWriter
+from pypdf.generic import (
+    ArrayObject,
+    DecodedStreamObject,
+    DictionaryObject,
+    NameObject,
+    NumberObject,
+    TextStringObject,
+)
 from starlette.datastructures import Headers
 from fastapi import UploadFile
 
@@ -44,6 +53,48 @@ def make_upload(source: bytes) -> UploadFile:
     return UploadFile(file=temporary, filename="form.pdf", headers=Headers({"content-type": "application/pdf"}))
 
 
+def make_radio_pdf() -> bytes:
+    """Synthetic AcroForm radio group with per-widget appearance names."""
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=100, height=100)
+    parent = DictionaryObject({
+        NameObject("/FT"): NameObject("/Btn"),
+        NameObject("/Ff"): NumberObject(1 << 15),
+        NameObject("/T"): TextStringObject("plan.level"),
+        NameObject("/V"): NameObject("/standard"),
+    })
+    parent_ref = writer._add_object(parent)
+    annotations = ArrayObject()
+    children = ArrayObject()
+    for option, rect in (("standard", (10, 10, 20, 20)), ("pro", (30, 10, 40, 20))):
+        appearance_stream = DecodedStreamObject()
+        appearance_stream.set_data(b"")
+        widget = DictionaryObject({
+            NameObject("/Type"): NameObject("/Annot"),
+            NameObject("/Subtype"): NameObject("/Widget"),
+            NameObject("/Parent"): parent_ref,
+            NameObject("/Rect"): ArrayObject([NumberObject(value) for value in rect]),
+            NameObject("/AP"): DictionaryObject({
+                NameObject("/N"): DictionaryObject({
+                    NameObject("/Off"): appearance_stream,
+                    NameObject(f"/{option}"): appearance_stream,
+                }),
+            }),
+            NameObject("/AS"): NameObject("/standard" if option == "standard" else "/Off"),
+        })
+        widget_ref = writer._add_object(widget)
+        annotations.append(widget_ref)
+        children.append(widget_ref)
+    parent[NameObject("/Kids")] = children
+    page[NameObject("/Annots")] = annotations
+    writer._root_object[NameObject("/AcroForm")] = DictionaryObject({
+        NameObject("/Fields"): ArrayObject([parent_ref]),
+    })
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
 def test_extracts_page_scoped_acroform_widgets() -> None:
     response = asyncio.run(main.extract_pdf_form_fields(make_upload(make_acroform_pdf()), 0))
     assert [field.name for field in response["fields"]] == ["person.name", "person.required", "options.newsletter"]
@@ -69,6 +120,65 @@ def test_exports_values_without_flattening_the_acroform() -> None:
     assert str(fields["options.newsletter"]["/V"]) == "/Off"
     with fitz.open(stream=exported, filetype="pdf") as document:
         assert len(list(document[0].widgets() or [])) == 3
+
+
+def test_exports_checkbox_value_and_appearance_state() -> None:
+    source = make_acroform_pdf()
+    plan = main.OrganizeExportPlan.model_validate({
+        "pages": [{"sourcePageIndex": 0}],
+        "formValues": [{"page": 1, "fieldName": "options.newsletter", "value": "Yes"}],
+    })
+
+    exported = main.export_organized_pdf({"document-1": source}, plan)
+    reader = PdfReader(io.BytesIO(exported))
+    fields = reader.get_fields()
+    assert fields is not None
+    assert str(fields["options.newsletter"]["/V"]) == "/Yes"
+    widget = next(
+        annotation.get_object()
+        for annotation in reader.pages[0]["/Annots"]
+        if annotation.get_object().get("/T") == "options.newsletter"
+    )
+    assert str(widget["/AS"]) == "/Yes"
+    with fitz.open(stream=exported, filetype="pdf") as document:
+        newsletter = next(widget for widget in document[0].widgets() or [] if widget.field_name == "options.newsletter")
+        assert newsletter.field_value == "Yes"
+
+
+def test_synchronizes_each_radio_widget_appearance_with_the_selected_export_value() -> None:
+    parent = {"/T": "plan.level", "/FT": "/Btn"}
+    standard = {
+        "/Subtype": "/Widget",
+        "/Parent": parent,
+        "/AP": {"/N": {NameObject("/Off"): {}, NameObject("/standard"): {}}},
+        "/AS": NameObject("/standard"),
+    }
+    pro = {
+        "/Subtype": "/Widget",
+        "/Parent": parent,
+        "/AP": {"/N": {NameObject("/Off"): {}, NameObject("/pro"): {}}},
+        "/AS": NameObject("/Off"),
+    }
+    page = {"/Annots": [standard, pro]}
+
+    assert main._apply_button_value(page, "plan.level", "pro") is True
+    assert str(parent["/V"]) == "/pro"
+    assert str(standard["/AS"]) == "/Off"
+    assert str(pro["/AS"]) == "/pro"
+
+
+def test_exports_radio_value_and_widget_appearances_after_reopening() -> None:
+    plan = main.OrganizeExportPlan.model_validate({
+        "pages": [{"sourcePageIndex": 0}],
+        "formValues": [{"page": 1, "fieldName": "plan.level", "value": "pro"}],
+    })
+    exported = main.export_organized_pdf({"document-1": make_radio_pdf()}, plan)
+    reader = PdfReader(io.BytesIO(exported))
+    fields = reader.get_fields()
+    assert fields is not None
+    assert str(fields["plan.level"]["/V"]) == "/pro"
+    appearances = [str(annotation.get_object()["/AS"]) for annotation in reader.pages[0]["/Annots"]]
+    assert appearances == ["/Off", "/pro"]
 
 
 def test_rejects_form_updates_when_pages_are_reorganized() -> None:

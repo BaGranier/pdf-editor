@@ -25,6 +25,7 @@ from pydantic import (
 )
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
+from pypdf.generic import NameObject
 
 from app.conversion import router as conversion_router
 from app.conversion.errors import ConversionError
@@ -1427,15 +1428,126 @@ def _can_preserve_acroform(plan: OrganizeExportPlan, readers: dict[str, PdfReade
     )
 
 
+def _pdf_object(value: object) -> object:
+    """Dereference pypdf objects without retaining them beyond one export."""
+    return value.get_object() if hasattr(value, "get_object") else value
+
+
+def _inherited_widget_value(widget: object, key: str) -> object | None:
+    current = _pdf_object(widget)
+    while isinstance(current, dict):
+        value = current.get(key)
+        if value is not None:
+            return _pdf_object(value)
+        parent = current.get("/Parent")
+        if parent is None:
+            return None
+        current = _pdf_object(parent)
+    return None
+
+
+def _widget_field_owner(widget: object) -> object:
+    """Returns the highest named field dictionary for a widget."""
+    current = _pdf_object(widget)
+    owner = current
+    while isinstance(current, dict):
+        if current.get("/T") is not None:
+            owner = current
+        parent = current.get("/Parent")
+        if parent is None:
+            break
+        current = _pdf_object(parent)
+    return owner
+
+
+def _widget_field_name(widget: object) -> str | None:
+    name = _inherited_widget_value(widget, "/T")
+    return str(name) if name is not None else None
+
+
+def _widget_on_values(widget: object) -> set[str]:
+    appearance = _inherited_widget_value(widget, "/AP")
+    if not isinstance(appearance, dict):
+        return set()
+    normal = _pdf_object(appearance.get("/N"))
+    if not isinstance(normal, dict):
+        return set()
+    return {str(name).removeprefix("/") for name in normal if str(name) != "/Off"}
+
+
+def _set_pdf_name(target: object, key: str, value: str) -> None:
+    if not isinstance(target, dict):
+        raise ValueError("Champ AcroForm invalide.")
+    target[NameObject(key)] = NameObject(f"/{value.removeprefix('/')}")
+
+
+def _button_widgets_for_page(page: object, field_name: str) -> list[object]:
+    page_object = _pdf_object(page)
+    if not isinstance(page_object, dict):
+        return []
+    annotations = _pdf_object(page_object.get("/Annots"))
+    if not isinstance(annotations, list):
+        return []
+    widgets: list[object] = []
+    for annotation_ref in annotations:
+        widget = _pdf_object(annotation_ref)
+        if not isinstance(widget, dict) or widget.get("/Subtype") != "/Widget":
+            continue
+        if _widget_field_name(widget) != field_name:
+            continue
+        if _inherited_widget_value(widget, "/FT") != "/Btn":
+            continue
+        widgets.append(widget)
+    return widgets
+
+
+def _apply_button_value(page: object, field_name: str, value: str | list[str]) -> bool:
+    """Synchronise /V and every widget /AS using the PDF's actual on values.
+
+    ``PdfWriter.update_page_form_field_values`` is sufficient for text fields,
+    but does not reliably update button appearance states for all AcroForms.
+    Existing /AP dictionaries already contain the visual appearance, so mapping
+    the requested export value to those names keeps the document interactive
+    without relying on NeedAppearances.
+    """
+    if isinstance(value, list):
+        raise HTTPException(status_code=422, detail=f"La valeur du bouton {field_name!r} est invalide.")
+    widgets = _button_widgets_for_page(page, field_name)
+    if not widgets:
+        return False
+
+    requested = value.removeprefix("/")
+    available = {state for widget in widgets for state in _widget_on_values(widget)}
+    if requested != "Off" and requested not in available:
+        raise HTTPException(
+            status_code=422,
+            detail=f"La valeur d’export {value!r} du bouton {field_name!r} n’existe pas dans ce PDF.",
+        )
+
+    owner = _widget_field_owner(widgets[0])
+    _set_pdf_name(owner, "/V", requested)
+    for widget in widgets:
+        visible_state = requested if requested in _widget_on_values(widget) else "Off"
+        _set_pdf_name(widget, "/AS", visible_state)
+    return True
+
+
 def _apply_form_values_to_writer(
     writer: PdfWriter, form_values_by_page: dict[int, dict[str, str | list[str]]]
 ) -> None:
     for page_index, values in form_values_by_page.items():
         if page_index < 0 or page_index >= len(writer.pages):
             raise HTTPException(status_code=422, detail="La page ciblée par un champ AcroForm est invalide.")
+        page = writer.pages[page_index]
+        text_and_choice_values: dict[str, str | list[str]] = {}
+        for field_name, value in values.items():
+            if not _apply_button_value(page, field_name, value):
+                text_and_choice_values[field_name] = value
+        if not text_and_choice_values:
+            continue
         try:
             writer.update_page_form_field_values(
-                writer.pages[page_index], values, auto_regenerate=True
+                page, text_and_choice_values, auto_regenerate=True
             )
         except (KeyError, ValueError, TypeError) as error:
             raise HTTPException(status_code=422, detail="Une valeur de formulaire AcroForm est invalide.") from error

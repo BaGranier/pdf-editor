@@ -49,13 +49,15 @@ local ne déclenchent pas une commande documentaire.
 
 ### Impression
 
-**Fichier → Imprimer** génère un PDF temporaire depuis l'état courant avant
-d'ouvrir l'impression ; les annotations et modifications non sauvegardées sont
-donc incluses sans modifier le dirty state. Le document est chargé dans un
-iframe temporaire, retiré avec son URL objet après impression ou annulation :
-aucun onglet PDF persistant n'est créé. Dans Tauri, `Ctrl/Cmd+P` utilise le
-même flux WebView ; la validation d'un dialogue système natif par plateforme
-reste une étape de release.
+**Fichier → Imprimer** affiche immédiatement un état de préparation, puis un
+aperçu interne du PDF temporaire produit depuis l'état courant. Les annotations
+et modifications non sauvegardées sont donc incluses sans modifier le dirty
+state. Le clic **Imprimer** utilise un iframe temporaire, retiré avec son URL
+objet après impression ou annulation : aucun onglet PDF persistant n'est créé.
+Si un navigateur bloque le dialogue, l’utilisateur peut réessayer ou choisir
+explicitement **Ouvrir le PDF à imprimer**. Chromium et Firefox sont couverts
+jusqu’à cette frontière Web ; la validation d'un dialogue système natif Tauri
+par plateforme reste une étape de release.
 
 ### Formulaires PDF
 
@@ -63,8 +65,10 @@ Les widgets **AcroForm** standards de la page active (texte simple ou
 multiligne, cases à cocher, radios, listes et combos) sont rendus au-dessus du
 PDF. Une valeur modifiée participe au dirty state et à undo/redo, puis est
 réécrite sans aplatir le formulaire lors d'une sauvegarde qui conserve l'ordre
-et la rotation des pages. Les formulaires XFA et la sauvegarde d'un AcroForm
-après réorganisation des pages ne sont pas pris en charge.
+et la rotation des pages. Les cases à cocher et radios conservent leur valeur
+d’export et leur état d’apparence PDF (`/V` et `/AS`). Les formulaires XFA et
+la sauvegarde d'un AcroForm après réorganisation des pages ne sont pas pris en
+charge.
 
 ### Modes de lecture
 

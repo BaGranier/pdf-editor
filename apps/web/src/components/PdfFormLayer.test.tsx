@@ -10,6 +10,8 @@ const viewport = {
 const fields = [
   { id: "name", pageIndex: 0, name: "person.name", fieldType: "text" as const, value: "Jean", rect: { x0: 10, y0: 10, x1: 200, y1: 30 }, readOnly: false, required: true, multiline: false, editable: false, options: [], buttonValue: null },
   { id: "newsletter", pageIndex: 0, name: "options.newsletter", fieldType: "checkbox" as const, value: "Off", rect: { x0: 10, y0: 40, x1: 30, y1: 60 }, readOnly: false, required: false, multiline: false, editable: false, options: [], buttonValue: "Yes" },
+  { id: "plan-standard", pageIndex: 0, name: "plan.level", fieldType: "radio" as const, value: "standard", rect: { x0: 40, y0: 40, x1: 60, y1: 60 }, readOnly: false, required: false, multiline: false, editable: false, options: [], buttonValue: "standard" },
+  { id: "plan-pro", pageIndex: 0, name: "plan.level", fieldType: "radio" as const, value: "standard", rect: { x0: 70, y0: 40, x1: 90, y1: 60 }, readOnly: false, required: false, multiline: false, editable: false, options: [], buttonValue: "pro" },
   { id: "readonly", pageIndex: 0, name: "document.reference", fieldType: "text" as const, value: "FORM-1", rect: { x0: 10, y0: 70, x1: 200, y1: 90 }, readOnly: true, required: false, multiline: false, editable: false, options: [], buttonValue: null },
 ];
 
@@ -24,6 +26,8 @@ describe("PDF AcroForm layer", () => {
     expect(onChange).toHaveBeenCalledWith(fields[0], "Alice");
     expect(onFinish).toHaveBeenCalledWith(fields[0]);
     expect(screen.getByRole("checkbox", { name: "options.newsletter" })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: "plan.level: pro" }));
+    expect(onChange).toHaveBeenCalledWith(fields[3], "pro");
     expect(screen.getByRole("textbox", { name: "document.reference" })).toHaveAttribute("readonly");
   });
 });

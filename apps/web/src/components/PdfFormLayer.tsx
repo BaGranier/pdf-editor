@@ -40,7 +40,8 @@ export function PdfFormLayer({
           return <input key={field.id} {...common} type="checkbox" checked={checked} disabled={field.readOnly} aria-label={label} onChange={(event) => onChange(field, event.target.checked ? (field.buttonValue ?? "Yes") : "Off")} onBlur={() => onFinish(field)} />;
         }
         if (field.fieldType === "radio") {
-          return <input key={field.id} {...common} type="radio" name={`pdf-form-${field.pageIndex}-${field.name}`} checked={String(value) === field.buttonValue} disabled={field.readOnly} aria-label={label} onChange={() => onChange(field, field.buttonValue ?? "Off")} onBlur={() => onFinish(field)} />;
+          const optionLabel = field.buttonValue ? `${label}: ${field.buttonValue}` : label;
+          return <input key={field.id} {...common} type="radio" name={`pdf-form-${field.pageIndex}-${field.name}`} checked={String(value) === field.buttonValue} disabled={field.readOnly} aria-label={optionLabel} onChange={() => onChange(field, field.buttonValue ?? "Off")} onBlur={() => onFinish(field)} />;
         }
         if (field.fieldType === "combo" || field.fieldType === "list") {
           const multiple = field.fieldType === "list" && Array.isArray(value);

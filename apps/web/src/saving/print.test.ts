@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { printPdfBlob } from "./print";
+import { openPdfBlobForPrint, printPdfBlob } from "./print";
 
 describe("print workflow", () => {
   it("uses an ephemeral iframe and revokes the temporary URL after printing", () => {
@@ -24,5 +24,18 @@ describe("print workflow", () => {
     createObjectUrl.mockRestore();
     revokeObjectUrl.mockRestore();
     vi.useRealTimers();
+  });
+
+  it("only opens a tab when the user explicitly requests the fallback", () => {
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:print-fallback");
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const open = vi.spyOn(window, "open").mockReturnValue({} as Window);
+
+    expect(openPdfBlobForPrint(new Blob(["pdf"]))).toBe(true);
+    expect(open).toHaveBeenCalledWith("blob:print-fallback", "_blank", "noopener");
+
+    open.mockRestore();
+    createObjectUrl.mockRestore();
+    revokeObjectUrl.mockRestore();
   });
 });

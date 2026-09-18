@@ -775,6 +775,48 @@ button:focus-visible {
   color: var(--danger);
 }
 
+.print-preview-dialog {
+  display: grid;
+  width: min(56rem, 100%);
+  max-height: min(48rem, calc(100vh - 2rem));
+  grid-template-rows: auto minmax(12rem, 1fr) auto;
+}
+
+.print-preview-dialog header h2,
+.print-preview-dialog header p {
+  margin: 0;
+}
+
+.print-preview-dialog header p,
+.print-preview-dialog__hint {
+  margin-top: .55rem;
+  color: var(--text-secondary);
+}
+
+.print-preview-dialog__document {
+  width: 100%;
+  min-height: 12rem;
+  height: min(34rem, 58vh);
+  margin-top: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-muted);
+}
+
+.print-preview-dialog__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .6rem;
+  min-height: 14rem;
+  color: var(--text-secondary);
+}
+
+.print-preview-dialog__error {
+  margin: .65rem 0 0;
+  color: var(--danger);
+}
+
 .text-edit-toolbar,
 .shape-edit-toolbar {
   position: fixed;

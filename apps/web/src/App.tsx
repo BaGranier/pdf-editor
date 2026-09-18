@@ -85,6 +85,7 @@ import { AppLogo } from "./components/AppLogo";
 import { AppStateScreen } from "./components/AppStateScreen";
 import { ColorPicker } from "./components/ColorPicker";
 import { SaveAsDialog } from "./components/SaveAsDialog";
+import { PrintPreviewDialog, type PrintPreviewStage } from "./components/PrintPreviewDialog";
 import {
   SignatureDialog,
   type SignatureImageDraft,
@@ -124,7 +125,7 @@ import {
 } from "./editing/state";
 import { downloadPdfToBrowser } from "./saving/destination";
 import { getSuggestedPdfSaveName } from "./saving/fileName";
-import { printPdfBlob } from "./saving/print";
+import { openPdfBlobForPrint, printPdfBlob } from "./saving/print";
 import { computeFitScale } from "./viewer/fit";
 import { getCanvasRenderDimensions } from "./viewer/rendering";
 import { searchPdfDocument, type PdfSearchHit } from "./pdf/search";
@@ -2800,6 +2801,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [saveToOutputDir, setSaveToOutputDir] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportFeedback, setExportFeedback] = useState<ExportFeedback | null>(null);
+  const [printPreview, setPrintPreview] = useState<{
+    documentName: string;
+    pdfBlob: Blob | null;
+    stage: PrintPreviewStage;
+  } | null>(null);
+  const printCleanupRef = useRef<(() => void) | null>(null);
   const [isOcrDialogOpen, setIsOcrDialogOpen] = useState(false);
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [isConversionDialogOpen, setIsConversionDialogOpen] = useState(false);
@@ -4671,8 +4678,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         resolvedOutputName,
       );
       if (operation === "print") {
-        printPdfBlob(pdfBlob);
-        setExportFeedback({ kind: "success", message: "Document courant préparé pour l’impression." });
+        setPrintPreview({
+          documentName: downloadedName,
+          pdfBlob,
+          stage: "ready",
+        });
         return true;
       }
       const outputWarning = response.headers.get("x-pdf-output-warning");
@@ -4742,10 +4752,40 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     void generatePdfForDocument(activeDocument.id, "export");
   }, [activeDocument, generatePdfForDocument]);
 
-  const printActiveDocument = useCallback(() => {
+  const printActiveDocument = useCallback(async () => {
     if (!activeDocument || isExporting) return;
-    void generatePdfForDocument(activeDocument.id, "print");
+    setIsFileMenuOpen(false);
+    setPrintPreview({ documentName: activeDocument.fileName, pdfBlob: null, stage: "preparing" });
+    const prepared = await generatePdfForDocument(activeDocument.id, "print");
+    if (!prepared) {
+      setPrintPreview(null);
+    }
   }, [activeDocument, generatePdfForDocument, isExporting]);
+
+  const closePrintPreview = useCallback(() => {
+    printCleanupRef.current?.();
+    printCleanupRef.current = null;
+    setPrintPreview(null);
+  }, []);
+
+  const requestPrintFromPreview = useCallback(() => {
+    if (!printPreview?.pdfBlob) return;
+    printCleanupRef.current?.();
+    setPrintPreview((current) => current ? { ...current, stage: "dialog-requested" } : current);
+    printCleanupRef.current = printPdfBlob(printPreview.pdfBlob, {
+      onComplete: () => {
+        printCleanupRef.current = null;
+        setPrintPreview(null);
+      },
+      onError: () => {
+        setExportFeedback({ kind: "warning", message: "Le dialogue d’impression n’a pas pu être ouvert. Utilisez le PDF imprimable comme solution de secours." });
+      },
+    });
+  }, [printPreview]);
+
+  useEffect(() => () => {
+    printCleanupRef.current?.();
+  }, []);
 
   const openSaveAsDialog = useCallback(
     (documentId: string) => {
@@ -5349,6 +5389,17 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           }
           onCancel={cancelSaveAsDialog}
           onSave={saveDocumentAs}
+        />
+      ) : null}
+
+      {printPreview ? (
+        <PrintPreviewDialog
+          documentName={printPreview.documentName}
+          pdfBlob={printPreview.pdfBlob}
+          stage={printPreview.stage}
+          onCancel={closePrintPreview}
+          onPrint={requestPrintFromPreview}
+          onOpenPdf={() => printPreview.pdfBlob ? openPdfBlobForPrint(printPreview.pdfBlob) : false}
         />
       ) : null}
 

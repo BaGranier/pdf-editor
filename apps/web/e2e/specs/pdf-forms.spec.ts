@@ -1,7 +1,7 @@
 import { expect, test } from "../helpers/qa-test";
 import { fixtures, openApp, openPdf } from "../helpers/app";
 
-test("PRODUCT-EXPANSION-FIXES-002 détecte et modifie les widgets AcroForm de la page active", async ({ page }) => {
+test("FORMS-PRINT-REGRESSION-003 garde les valeurs de boutons AcroForm dans l’état exportable", async ({ page }) => {
   await openApp(page);
   await openPdf(page, fixtures.acroform);
   const name = page.getByRole("textbox", { name: "person.name (requis)" });
@@ -11,5 +11,8 @@ test("PRODUCT-EXPANSION-FIXES-002 détecte et modifie les widgets AcroForm de la
   await expect(page.getByRole("textbox", { name: "document.reference" })).toHaveAttribute("readonly");
   await name.fill("Alice QA");
   await name.blur();
+  const newsletter = page.getByRole("checkbox", { name: "options.newsletter" });
+  await newsletter.uncheck();
+  await expect(newsletter).not.toBeChecked();
   await expect(page.getByRole("button", { name: "pdf-acroform.pdf, document actif" })).toHaveAccessibleDescription("Modifications non sauvegardées.");
 });
