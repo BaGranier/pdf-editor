@@ -16,9 +16,8 @@ Les principaux sujets avant une version desktop stable sont le packaging
 multi-plateforme des dépendances OCR/conversion, la validation native sur les
 trois OS et écrans HiDPI, la maîtrise des documents/exportations extrêmes, et
 la modularisation prudente du grand composant frontend. Les fonctions PDF
-professionnelles (impression, recherche, formulaires, redaction, signatures
-numériques, etc.) ne sont pas implémentées et ne font pas partie du périmètre
-déclaré actuel.
+professionnelles (redaction, signatures numériques, etc.) ne sont pas
+implémentées et ne font pas partie du périmètre déclaré actuel.
 
 ## Architecture observée
 
@@ -49,7 +48,8 @@ déclaré actuel.
 | OCR | OCR local fra/eng/mixte et réouverture | Partiel | `OcrDialog.tsx`, `/ocr`, tests OCR | Dépendances système, qualité et durée variables ; annulation limitée | P1 packaging/feedback |
 | Conversion | DOCX, TXT, HTML, PNG, JPEG sortants | Partiel | `/convert`, `CONVERSION.md`, tests backend | DOCX complexe sans fidélité garantie | P2 corpus de fidélité |
 | PDF pro | Recherche texte et impression de l'état courant | Complet pour Web / WebView | `pdf/search.ts`, `PdfSearchBar.tsx`, `saving/print.ts`, E2E ciblés | Le dialogue système Tauri reste à valider sur chaque OS | QA release Desktop |
-| PDF pro | Formulaires, outlines, pièces jointes, redaction, mots de passe, signature numérique | Absent / hors périmètre | aucune commande/composant/route/test correspondant après recherche ; limites projet dans `AGENTS.md` | Ces fonctions ne sont pas promises par le produit actuel | Décision produit avant implémentation |
+| PDF pro | Formulaires AcroForm | Partiel | `PdfFormLayer.tsx`, `/pdf/forms`, export `formValues`, tests backend/E2E | XFA et réorganisation de pages avec valeurs formulaire sont refusés explicitement | P2 étendre la conservation structurelle |
+| PDF pro | Outlines, pièces jointes, redaction, mots de passe, signature numérique | Absent / hors périmètre | aucune commande/composant/route/test correspondant après recherche ; limites projet dans `AGENTS.md` | Ces fonctions ne sont pas promises par le produit actuel | Décision produit avant implémentation |
 | UX | Thèmes, confirmation destructive, erreurs métier | Partiel | `App.tsx`, dialogues, QA | Certains rapports manuels sont historiques | Rafraîchir la QA par release |
 | UX | Raccourcis applicatifs | Complet pour le minimum supporté | `commands/appShortcuts.ts`, `App.tsx`, tests associés | `Ctrl/Cmd+W` et tabs réservés au desktop | Documenter les différences |
 | Desktop | Sidecar local, health/restart, port dynamique | Complet en développement | `apps/desktop/src-tauri`, `DESKTOP.md` | Validation de release OS non terminée | P1 |

@@ -80,6 +80,7 @@ import { ShapeEditToolbar } from "./components/ShapeEditToolbar";
 import { FreehandEditToolbar } from "./components/FreehandEditToolbar";
 import { PdfSearchBar } from "./components/PdfSearchBar";
 import { PdfSearchHighlights } from "./components/PdfSearchHighlights";
+import { PdfFormLayer } from "./components/PdfFormLayer";
 import { AppLogo } from "./components/AppLogo";
 import { AppStateScreen } from "./components/AppStateScreen";
 import { ColorPicker } from "./components/ColorPicker";
@@ -106,6 +107,7 @@ import {
   type TextMarkupEdit,
   type TextMarkupKind,
   type NativeTextEdit,
+  type PdfFormEdit,
 } from "./editing/types";
 import { clearNativeTextCache, loadNativeTextPage, renderNativeTextBackground, validateNativeTextFont, type NativeTextFontValidation, type NativeTextSpan } from "./pdf/nativeText";
 import { normalizeSubsetFontName } from "./fonts/catalog";
@@ -122,10 +124,11 @@ import {
 } from "./editing/state";
 import { downloadPdfToBrowser } from "./saving/destination";
 import { getSuggestedPdfSaveName } from "./saving/fileName";
-import { openPrintWindow, printPdfBlob } from "./saving/print";
+import { printPdfBlob } from "./saving/print";
 import { computeFitScale } from "./viewer/fit";
 import { getCanvasRenderDimensions } from "./viewer/rendering";
 import { searchPdfDocument, type PdfSearchHit } from "./pdf/search";
+import { loadPdfFormPage, type PdfFormField } from "./pdf/forms";
 import "./App.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -363,7 +366,7 @@ function getInitialTheme(preferences: ViewerPreferences | null): ThemeMode {
   return preferences?.theme ?? getSystemTheme();
 }
 
-function buildViewerSnapshot(document: OpenPdfDocument, nativeTextEdits: NativeTextEdit[] = []): ViewerDocumentSnapshot {
+function buildViewerSnapshot(document: OpenPdfDocument, nativeTextEdits: NativeTextEdit[] = [], formEdits: PdfFormEdit[] = []): ViewerDocumentSnapshot {
   return {
     id: document.id,
     fileName: document.fileName,
@@ -375,6 +378,7 @@ function buildViewerSnapshot(document: OpenPdfDocument, nativeTextEdits: NativeT
     scrollLeft: document.scrollLeft,
     scrollTop: document.scrollTop,
     ...(nativeTextEdits.length ? { nativeTextEdits } : {}),
+    ...(formEdits.length ? { formEdits } : {}),
   };
 }
 
@@ -500,6 +504,7 @@ type PdfPageCanvasProps = {
   selectedEditId: string | null;
   activeTool: EditingTool;
   nativeTextRuntimeActive: boolean;
+  formRuntimeActive: boolean;
   freehandStyle: FreehandStyle;
   pendingSignatureImage: SignatureImage | null;
   eyedropperTarget: "stroke" | "fill" | null;
@@ -513,7 +518,8 @@ type PdfPageCanvasProps = {
   onPlaceSignature: (pageNumber: number, rect: PdfRect) => void;
   onSelectEdit: (editId: string) => void;
   onDeselectEdit: () => void;
-  onUpdateEdit: (edit: PdfEdit) => void;
+  onUpdateEdit: (edit: PdfEdit, coalesceKey?: string) => void;
+  onFinishEditCoalescing: (editId: string, property: string) => void;
   onDeleteEdit: (editId: string) => void;
   onSampleColor: (color: string) => void;
   fontLibraryRevision: number;
@@ -538,6 +544,7 @@ function PdfPageCanvas({
   selectedEditId,
   activeTool,
   nativeTextRuntimeActive,
+  formRuntimeActive,
   freehandStyle,
   pendingSignatureImage,
   eyedropperTarget,
@@ -552,6 +559,7 @@ function PdfPageCanvas({
   onSelectEdit,
   onDeselectEdit,
   onUpdateEdit,
+  onFinishEditCoalescing,
   onDeleteEdit,
   onSampleColor,
   fontLibraryRevision,
@@ -566,10 +574,13 @@ function PdfPageCanvas({
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
+  const [textLayerRevision, setTextLayerRevision] = useState(0);
   const [shouldRender, setShouldRender] = useState(false);
   const [renderState, setRenderState] = useState<RenderState>("idle");
   const [viewport, setViewport] = useState<PageViewport | null>(null);
   const [nativeTextSpans, setNativeTextSpans] = useState<NativeTextSpan[]>([]);
+  const [formFields, setFormFields] = useState<PdfFormField[]>([]);
+  const [formError, setFormError] = useState<string | null>(null);
   const [nativeTextError, setNativeTextError] = useState<string | null>(null);
   const [nativeTextIndexed, setNativeTextIndexed] = useState(false);
   const [nativeTextPreviewDraft, setNativeTextPreviewDraft] = useState<NativeTextEdit | null>(null);
@@ -699,6 +710,29 @@ function PdfPageCanvas({
       setNativeTextPreviewDraft(null);
     };
   }, [backendUrl, nativeTextRuntimeActive, shouldRender, sourceFile, sourcePageNumber]);
+
+  useEffect(() => {
+    if (!formRuntimeActive || !shouldRender) {
+      setFormFields([]);
+      setFormError(null);
+      return;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+    void pdfDocument.getPage(sourcePageNumber)
+      .then(async (page) => {
+        const annotations = await page.getAnnotations({ intent: "display" });
+        if (!annotations.some((annotation) => annotation.subtype === "Widget")) return [];
+        return loadPdfFormPage(backendUrl, sourceFile, sourcePageNumber, controller.signal);
+      })
+      .then((fields) => { if (!cancelled) setFormFields(fields ?? []); })
+      .catch((error: unknown) => {
+        // A PDF.js mock or a reader without annotation support is simply not a
+        // form document. Real backend errors remain visible once widgets exist.
+        if (!controller.signal.aborted && !cancelled && error instanceof Error && !/getAnnotations/.test(error.message)) setFormError(error.message);
+      });
+    return () => { cancelled = true; controller.abort(); setFormFields([]); };
+  }, [backendUrl, formRuntimeActive, pdfDocument, shouldRender, sourceFile, sourcePageNumber]);
 
   const sampleRenderedColor = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
@@ -842,7 +876,9 @@ function PdfPageCanvas({
             viewport,
             container: textLayerContainer,
           });
-          void textLayerTask.promise.catch((error: unknown) => {
+          void textLayerTask.promise.then((rendered) => {
+            if (!isCancelled && rendered) setTextLayerRevision((revision) => revision + 1);
+          }).catch((error: unknown) => {
             if (!isCancelled) {
               console.warn("Impossible de rendre la couche texte PDF.", error);
             }
@@ -946,11 +982,13 @@ function PdfPageCanvas({
           </div>
         ) : null}
         <canvas ref={canvasRef} className="pdf-canvas" />
-        {viewport && searchHits.length > 0 ? (
+        {searchHits.length > 0 ? (
           <PdfSearchHighlights
             hits={searchHits}
             activeHitId={activeSearchHitId}
-            viewport={viewport}
+            textLayer={textLayerRef.current}
+            surface={surfaceRef.current}
+            textLayerRevision={textLayerRevision}
           />
         ) : null}
         {nativeTextPreviewUrl ? <img className="native-text-preview" data-native-preview-kind="clean-background" src={nativeTextPreviewUrl} alt="" aria-hidden="true" /> : null}
@@ -997,6 +1035,20 @@ function PdfPageCanvas({
             fontValidationByEditId={nativeTextFontValidation}
           />
         ) : null}
+        {viewport && formRuntimeActive && formFields.length > 0 ? (
+          <PdfFormLayer
+            fields={formFields}
+            edits={edits.filter((edit): edit is PdfFormEdit => edit.type === "form_field")}
+            viewport={viewport}
+            onChange={(field, value) => {
+              const existing = edits.find((edit): edit is PdfFormEdit => edit.type === "form_field" && edit.fieldName === field.name);
+              const next: PdfFormEdit = existing ?? { id: `form-${field.pageIndex}-${field.name}`, type: "form_field", page: sourcePageNumber, rect: field.rect, fieldName: field.name, value };
+              onUpdateEdit({ ...next, value }, `form-${field.pageIndex}-${field.name}:value`);
+            }}
+            onFinish={(field) => onFinishEditCoalescing(`form-${field.pageIndex}-${field.name}`, "value")}
+          />
+        ) : null}
+        {formError && formRuntimeActive ? <p className="native-text-layer__error" role="status">{formError}</p> : null}
         {nativeTextError && nativeTextRuntimeActive ? <p className="native-text-layer__error" role="status">{nativeTextError}</p> : null}
         {nativeTextRuntimeActive && !nativeTextIndexed && !nativeTextError ? <p className="native-text-layer__error" role="status">Analyse du texte de cette page…</p> : null}
         {nativeTextRuntimeActive &&
@@ -1058,7 +1110,8 @@ type PdfViewerProps = {
   onPlaceSignature: (pageNumber: number, rect: PdfRect) => void;
   onSelectEdit: (editId: string) => void;
   onDeselectEdit: () => void;
-  onUpdateEdit: (edit: PdfEdit) => void;
+  onUpdateEdit: (edit: PdfEdit, coalesceKey?: string) => void;
+  onFinishEditCoalescing: (editId: string, property: string) => void;
   onDeleteEdit: (editId: string) => void;
   onActivePageChange: (documentId: string, pageNumber: number) => void;
   onSampleColor: (color: string) => void;
@@ -1097,6 +1150,7 @@ function PdfViewer({
   onSelectEdit,
   onDeselectEdit,
   onUpdateEdit,
+  onFinishEditCoalescing,
   onDeleteEdit,
   onActivePageChange,
   onSampleColor,
@@ -1595,6 +1649,8 @@ function PdfViewer({
             activeTool === "edit_text" &&
             viewerMode !== "presentation" &&
             page.displayPageNumber === activePageNumber;
+          const formRuntimeActive =
+            isActiveDocumentSource && viewerMode !== "presentation" && page.displayPageNumber === activePageNumber;
           return (
             <PdfPageCanvas
               key={page.id}
@@ -1616,6 +1672,7 @@ function PdfViewer({
               selectedEditId={viewerMode === "presentation" ? null : selectedEditId}
               activeTool={viewerMode === "presentation" ? "select" : isActiveDocumentSource ? activeTool : "select"}
               nativeTextRuntimeActive={nativeTextRuntimeActive}
+              formRuntimeActive={formRuntimeActive}
               freehandStyle={freehandStyle}
               pendingSignatureImage={
                 viewerMode !== "presentation" && isActiveDocumentSource ? pendingSignatureImage : null
@@ -1632,6 +1689,7 @@ function PdfViewer({
               onSelectEdit={onSelectEdit}
               onDeselectEdit={onDeselectEdit}
               onUpdateEdit={onUpdateEdit}
+              onFinishEditCoalescing={onFinishEditCoalescing}
               onDeleteEdit={onDeleteEdit}
               onSampleColor={onSampleColor}
               fontLibraryRevision={fontLibraryRevision}
@@ -3172,6 +3230,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           if (storedDocument.nativeTextEdits?.length) {
             dispatchPdfEdits({ type: "hydrate", documentId: storedDocument.id, edits: storedDocument.nativeTextEdits });
           }
+          if (storedDocument.formEdits?.length) {
+            dispatchPdfEdits({ type: "hydrate", documentId: storedDocument.id, edits: storedDocument.formEdits });
+          }
         });
         setOrganizationPlans(restoredPlans);
         setSelectedPageIdsByDocument(restoredSelectedPageIds);
@@ -3254,6 +3315,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       void Promise.all(documents.map((document) => saveStoredDocument(buildViewerSnapshot(
         document,
         getDocumentEditingState(pdfEditsByDocument, document.id).edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text"),
+        getDocumentEditingState(pdfEditsByDocument, document.id).edits.filter((edit): edit is PdfFormEdit => edit.type === "form_field"),
       )))).then((results) => {
         if (results.some((saved) => !saved)) {
           setStorageWarning(
@@ -3675,10 +3737,16 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       if (!activeDocument) {
         return;
       }
+      const current = getDocumentEditingState(pdfEditsByDocument, activeDocument.id);
+      if (edit.type === "form_field" && !current.edits.some((candidate) => candidate.id === edit.id)) {
+        dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
+        setExportFeedback(null);
+        return;
+      }
       dispatchPdfEdits({ type: "replace", documentId: activeDocument.id, edit, coalesceKey });
       setExportFeedback(null);
     },
-    [activeDocument],
+    [activeDocument, pdfEditsByDocument],
   );
 
   const finishPdfEditCoalescing = useCallback(
@@ -4393,7 +4461,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     documentId: string,
     operation: "export" | "save_as" | "print",
     requestedOutputName?: string,
-    printWindow?: Window | null,
   ): Promise<boolean> => {
     const sourceDocument = documents.find(
       (document) => document.id === documentId,
@@ -4513,6 +4580,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     const exportedComments = exportedPdfEdits.filter(
       (edit): edit is PdfCommentEdit & { sourceDocumentId: string; order: number } => edit.type === "comment" && edit.source === "local",
     );
+    const exportedFormValues = exportedPdfEdits.filter(
+      (edit): edit is PdfFormEdit & { sourceDocumentId: string; order: number } => edit.type === "form_field",
+    );
     const exportedSignatureImageIds = new Set(
       exportedSignatureEdits.map((edit) => edit.imageId),
     );
@@ -4570,6 +4640,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         ...(exportedFreehandEdits.length > 0 ? { freehands: exportedFreehandEdits } : {}),
         ...(exportedTextMarkupEdits.length > 0 ? { textMarkups: exportedTextMarkupEdits } : {}),
         ...(exportedComments.length > 0 ? { comments: exportedComments } : {}),
+        ...(exportedFormValues.length > 0
+          ? { formValues: exportedFormValues.map((edit) => ({ sourceDocumentId: edit.sourceDocumentId, page: edit.page, fieldName: edit.fieldName, value: edit.value })) }
+          : {}),
       }),
     );
 
@@ -4598,10 +4671,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         resolvedOutputName,
       );
       if (operation === "print") {
-        if (!printWindow) {
-          throw new Error("La fenêtre d’impression a été bloquée par le navigateur.");
-        }
-        printPdfBlob(printWindow, pdfBlob);
+        printPdfBlob(pdfBlob);
         setExportFeedback({ kind: "success", message: "Document courant préparé pour l’impression." });
         return true;
       }
@@ -4674,14 +4744,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
   const printActiveDocument = useCallback(() => {
     if (!activeDocument || isExporting) return;
-    // Open synchronously from the user gesture so browsers do not treat the
-    // later export response as an unsolicited popup.
-    const printWindow = openPrintWindow();
-    if (!printWindow) {
-      setExportFeedback({ kind: "error", message: "La fenêtre d’impression a été bloquée. Autorisez les fenêtres contextuelles puis réessayez." });
-      return;
-    }
-    void generatePdfForDocument(activeDocument.id, "print", undefined, printWindow);
+    void generatePdfForDocument(activeDocument.id, "print");
   }, [activeDocument, generatePdfForDocument, isExporting]);
 
   const openSaveAsDialog = useCallback(
@@ -5612,6 +5675,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onSelectEdit={setSelectedEditId}
             onDeselectEdit={() => setSelectedEditId(null)}
             onUpdateEdit={updatePdfEdit}
+            onFinishEditCoalescing={finishPdfEditCoalescing}
             onDeleteEdit={deletePdfEdit}
             onActivePageChange={recordActivePage}
             onSampleColor={applySampledShapeColor}

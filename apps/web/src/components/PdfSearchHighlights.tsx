@@ -1,34 +1,39 @@
-import type { CSSProperties } from "react";
-import type { PageViewport } from "pdfjs-dist";
+import { useLayoutEffect, useState } from "react";
 import type { PdfSearchHit } from "../pdf/search";
+import { resolveSearchHitRects, type SearchOverlayRect } from "../pdf/searchGeometry";
 
-function rectStyle(viewport: PageViewport, rect: PdfSearchHit["rects"][number]): CSSProperties {
-  const [firstX, firstY] = viewport.convertToViewportPoint(rect.x0, rect.y0);
-  const [secondX, secondY] = viewport.convertToViewportPoint(rect.x1, rect.y1);
-  return {
-    left: `${Math.min(firstX, secondX)}px`,
-    top: `${Math.min(firstY, secondY)}px`,
-    width: `${Math.max(1, Math.abs(secondX - firstX))}px`,
-    height: `${Math.max(1, Math.abs(secondY - firstY))}px`,
-  };
-}
+type ResolvedHit = { id: string; rects: SearchOverlayRect[] };
 
 export function PdfSearchHighlights({
   hits,
   activeHitId,
-  viewport,
+  textLayer,
+  surface,
+  textLayerRevision,
 }: {
   hits: PdfSearchHit[];
   activeHitId: string | null;
-  viewport: PageViewport;
+  textLayer: HTMLElement | null;
+  surface: HTMLElement | null;
+  textLayerRevision: number;
 }) {
+  const [resolvedHits, setResolvedHits] = useState<ResolvedHit[]>([]);
+
+  useLayoutEffect(() => {
+    if (!textLayer || !surface || textLayer.hidden) {
+      setResolvedHits([]);
+      return;
+    }
+    setResolvedHits(hits.map((hit) => ({ id: hit.id, rects: resolveSearchHitRects(hit, textLayer, surface) })));
+  }, [hits, surface, textLayer, textLayerRevision]);
+
   return (
     <div className="pdf-search-highlights" aria-hidden="true">
-      {hits.flatMap((hit) => hit.rects.map((rect, rectIndex) => (
+      {resolvedHits.flatMap((hit) => hit.rects.map((rect, rectIndex) => (
         <span
           key={`${hit.id}:${rectIndex}`}
           className={hit.id === activeHitId ? "pdf-search-highlight is-active" : "pdf-search-highlight"}
-          style={rectStyle(viewport, rect)}
+          style={{ left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` }}
         />
       )))}
     </div>

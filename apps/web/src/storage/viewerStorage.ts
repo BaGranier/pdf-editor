@@ -1,5 +1,5 @@
 import type { OrganizePagePlan, OrganizedPage, PageRotation } from "../organize/pagePlan";
-import type { NativeTextEdit } from "../editing/types";
+import type { NativeTextEdit, PdfFormEdit } from "../editing/types";
 
 export type ThemeMode = "light" | "dark";
 export type ViewerMode = "continuous" | "single-page";
@@ -26,6 +26,7 @@ export type StoredPdfDocument = {
   scrollTop: number;
   updatedAt: number;
   nativeTextEdits?: NativeTextEdit[];
+  formEdits?: PdfFormEdit[];
 };
 
 export type ViewerDocumentSnapshot = {
@@ -39,6 +40,7 @@ export type ViewerDocumentSnapshot = {
   scrollLeft: number;
   scrollTop: number;
   nativeTextEdits?: NativeTextEdit[];
+  formEdits?: PdfFormEdit[];
 };
 
 export type StoredOrganizationPlan = {
@@ -361,6 +363,7 @@ export function toStoredPdfDocument(snapshot: ViewerDocumentSnapshot): StoredPdf
     scrollTop: snapshot.scrollTop,
     updatedAt: Date.now(),
     ...(snapshot.nativeTextEdits?.length ? { nativeTextEdits: snapshot.nativeTextEdits } : {}),
+    ...(snapshot.formEdits?.length ? { formEdits: snapshot.formEdits } : {}),
   };
 }
 

@@ -1,10 +1,8 @@
-import type { PdfRect } from "../editing/types";
-
 export type PdfSearchHit = {
   id: string;
   pageNumber: number;
-  rects: PdfRect[];
   context: string;
+  /** Offsets in the concatenated PDF.js text items for this page. */
   start: number;
   end: number;
 };
@@ -17,9 +15,6 @@ export type PdfSearchProgress = {
 
 type TextItemLike = {
   str: string;
-  transform: number[];
-  width: number;
-  height: number;
 };
 
 type SearchablePdfPage = {
@@ -33,10 +28,7 @@ export type SearchablePdfDocument = {
 
 function isTextItem(value: unknown): value is TextItemLike {
   return typeof value === "object" && value !== null &&
-    typeof (value as Partial<TextItemLike>).str === "string" &&
-    Array.isArray((value as Partial<TextItemLike>).transform) &&
-    typeof (value as Partial<TextItemLike>).width === "number" &&
-    typeof (value as Partial<TextItemLike>).height === "number";
+    typeof (value as Partial<TextItemLike>).str === "string";
 }
 
 function abortIfNeeded(signal: AbortSignal | undefined): void {
@@ -49,25 +41,10 @@ function normalizeForSearch(value: string): string {
   return value.normalize("NFC").toLocaleLowerCase();
 }
 
-function rectForMatch(item: TextItemLike, start: number, end: number): PdfRect {
-  const characterCount = Math.max(1, [...item.str].length);
-  const startRatio = Math.min(1, start / characterCount);
-  const endRatio = Math.min(1, end / characterCount);
-  const x = item.transform[4] ?? 0;
-  const baseline = item.transform[5] ?? 0;
-  const height = Math.max(1, Math.abs(item.height || item.transform[3] || 1));
-  const width = Math.max(1, Math.abs(item.width || item.transform[0] || 1));
-  return {
-    x0: x + width * startRatio,
-    y0: baseline - height,
-    x1: x + width * Math.max(startRatio, endRatio),
-    y1: baseline,
-  };
-}
-
 /**
- * Searches one PDF.js page without retaining its TextContent or PDF page
- * object. The returned hits are deliberately small, PDF-coordinate deltas.
+ * Searches one PDF.js page without retaining its TextContent or PDF page.
+ * The returned offsets map to the rendered text layer on demand, which gives
+ * a partial match its actual glyph geometry instead of its parent span's box.
  */
 export async function searchPdfPage(
   page: SearchablePdfPage,
@@ -83,23 +60,25 @@ export async function searchPdfPage(
   abortIfNeeded(signal);
   const hits: PdfSearchHit[] = [];
 
-  content.items.forEach((candidate, itemIndex) => {
-    if (!isTextItem(candidate) || !candidate.str) return;
-    const normalizedText = normalizeForSearch(candidate.str);
-    let start = normalizedText.indexOf(normalizedQuery);
-    while (start >= 0) {
-      const end = start + normalizedQuery.length;
-      hits.push({
-        id: `${pageNumber}:${itemIndex}:${start}`,
-        pageNumber,
-        rects: [rectForMatch(candidate, start, end)],
-        context: candidate.str,
-        start,
-        end,
-      });
-      start = normalizedText.indexOf(normalizedQuery, end);
-    }
-  });
+  const pageText = content.items
+    .filter(isTextItem)
+    .map((item) => item.str)
+    .join("");
+  const normalizedText = normalizeForSearch(pageText);
+  let start = normalizedText.indexOf(normalizedQuery);
+  while (start >= 0) {
+    const end = start + normalizedQuery.length;
+    const contextStart = Math.max(0, start - 40);
+    const contextEnd = Math.min(pageText.length, end + 40);
+    hits.push({
+      id: `${pageNumber}:${start}:${end}`,
+      pageNumber,
+      context: pageText.slice(contextStart, contextEnd),
+      start,
+      end,
+    });
+    start = normalizedText.indexOf(normalizedQuery, end);
+  }
 
   return hits;
 }

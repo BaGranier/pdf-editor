@@ -124,6 +124,10 @@ function editsAreEqual(left: PdfEdit, right: PdfEdit) {
       left.modifiedAt === right.modifiedAt && left.source === right.source;
   }
 
+  if (left.type === "form_field" && right.type === "form_field") {
+    return left.fieldName === right.fieldName && JSON.stringify(left.value) === JSON.stringify(right.value);
+  }
+
   return false;
 }
 

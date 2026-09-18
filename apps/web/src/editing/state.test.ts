@@ -4,7 +4,7 @@ import {
   pdfEditsReducer,
   type PdfEditsByDocument,
 } from "./state";
-import type { AddTextEdit, FreehandEdit, NativeTextEdit, PdfCommentEdit, PdfEdit, ShapeEdit, SignatureEdit, TextMarkupEdit } from "./types";
+import type { AddTextEdit, FreehandEdit, NativeTextEdit, PdfCommentEdit, PdfEdit, PdfFormEdit, ShapeEdit, SignatureEdit, TextMarkupEdit } from "./types";
 
 const textEdit: AddTextEdit = {
   id: "text-1",
@@ -26,6 +26,15 @@ const signatureEdit: SignatureEdit = {
   page: 1,
   rect: { x0: 20, y0: 20, x1: 120, y1: 60 },
   imageId: "image-1",
+};
+
+const formEdit: PdfFormEdit = {
+  id: "form-0-person.name",
+  type: "form_field",
+  page: 1,
+  rect: { x0: 10, y0: 10, x1: 100, y1: 32 },
+  fieldName: "person.name",
+  value: "Jean",
 };
 
 const shapeEdit: ShapeEdit = {
@@ -270,6 +279,19 @@ describe("pdfEditsReducer history", () => {
     expect(state["doc-a"].isDirty).toBe(true);
     state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
     expect(state["doc-a"].edits).toContainEqual({ ...commentEdit, content: "Mis à jour" });
+  });
+
+  it("tracks a form value as one coalesced dirty undoable mutation", () => {
+    let state = addEdits("doc-a", [formEdit]);
+    state = pdfEditsReducer(state, { type: "mark_saved", documentId: "doc-a" });
+    state = pdfEditsReducer(state, { type: "replace", documentId: "doc-a", edit: { ...formEdit, value: "Alice" }, coalesceKey: "form-0-person.name:value" });
+    state = pdfEditsReducer(state, { type: "replace", documentId: "doc-a", edit: { ...formEdit, value: "Alice Martin" }, coalesceKey: "form-0-person.name:value" });
+    state = pdfEditsReducer(state, { type: "finish_coalescing", documentId: "doc-a", coalesceKey: "form-0-person.name:value" });
+    expect(state["doc-a"].isDirty).toBe(true);
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toEqual([formEdit]);
+    state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
+    expect(state["doc-a"].edits[0]).toMatchObject({ value: "Alice Martin" });
   });
 
   it("coalesces a slider drag into one dirty undoable freehand update", () => {

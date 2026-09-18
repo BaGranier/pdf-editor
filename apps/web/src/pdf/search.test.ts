@@ -13,12 +13,12 @@ const pageWithText = (items: Array<{ str: string; transform?: number[]; width?: 
 });
 
 describe("PDF text search", () => {
-  it("returns compact PDF-coordinate hits without retaining page content", async () => {
+  it("returns compact page-text offsets without retaining page geometry", async () => {
     const hits = await searchPdfPage(pageWithText([{ str: "Paris Montparnasse Montparnasse" }]), 3, "montparnasse");
 
     expect(hits).toHaveLength(2);
-    expect(hits[0]).toMatchObject({ pageNumber: 3, context: "Paris Montparnasse Montparnasse" });
-    expect(hits[0].rects[0]).toEqual(expect.objectContaining({ x0: expect.any(Number), y0: 48 }));
+    expect(hits[0]).toMatchObject({ pageNumber: 3, start: 6, end: 18 });
+    expect(hits[0].context).toContain("Montparnasse");
   });
 
   it("scans sequentially, reports partial results and is case-insensitive Unicode", async () => {

@@ -294,6 +294,8 @@ export function PdfEditLayer({
 
         if (edit.type === "native_text") return null;
 
+        if (edit.type === "form_field") return null;
+
         const image = images[edit.imageId];
         return image ? (
           <SignatureEditBlock

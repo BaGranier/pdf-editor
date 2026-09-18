@@ -51,10 +51,20 @@ local ne déclenchent pas une commande documentaire.
 
 **Fichier → Imprimer** génère un PDF temporaire depuis l'état courant avant
 d'ouvrir l'impression ; les annotations et modifications non sauvegardées sont
-donc incluses sans modifier le dirty state. En web, le navigateur peut bloquer
-la fenêtre d'impression : autoriser les popups pour l'application puis relancer
-l'action. Dans Tauri, `Ctrl/Cmd+P` utilise le même flux applicatif ; la
-validation d'un dialogue système par plateforme reste une étape de release.
+donc incluses sans modifier le dirty state. Le document est chargé dans un
+iframe temporaire, retiré avec son URL objet après impression ou annulation :
+aucun onglet PDF persistant n'est créé. Dans Tauri, `Ctrl/Cmd+P` utilise le
+même flux WebView ; la validation d'un dialogue système natif par plateforme
+reste une étape de release.
+
+### Formulaires PDF
+
+Les widgets **AcroForm** standards de la page active (texte simple ou
+multiligne, cases à cocher, radios, listes et combos) sont rendus au-dessus du
+PDF. Une valeur modifiée participe au dirty state et à undo/redo, puis est
+réécrite sans aplatir le formulaire lors d'une sauvegarde qui conserve l'ordre
+et la rotation des pages. Les formulaires XFA et la sauvegarde d'un AcroForm
+après réorganisation des pages ne sont pas pris en charge.
 
 ### Modes de lecture
 

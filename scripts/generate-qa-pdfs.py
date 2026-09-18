@@ -232,6 +232,32 @@ def create_native_text_fixture() -> Path:
     return save_fitz_fixture("pdf-native-text.pdf", document)
 
 
+def create_acroform_fixture() -> Path:
+    """Small deterministic AcroForm coverage fixture, independent from user files."""
+    document = fitz.open()
+    page = document.new_page(width=612, height=792)
+    page.insert_text((48, 62), "PDF Studio Local — Formulaire QA", fontsize=17, fontname="hebo")
+
+    def add_widget(name: str, field_type: int, rect: fitz.Rect, value: str = "", flags: int = 0, choices: list[str] | None = None) -> None:
+        widget = fitz.Widget()
+        widget.field_name = name
+        widget.field_type = field_type
+        widget.field_value = value
+        widget.field_flags = flags
+        widget.rect = rect
+        if choices is not None:
+            widget.choice_values = choices
+        page.add_widget(widget)
+
+    add_widget("person.name", fitz.PDF_WIDGET_TYPE_TEXT, fitz.Rect(50, 100, 280, 126), "Jean Dupont", flags=2)
+    add_widget("person.notes", fitz.PDF_WIDGET_TYPE_TEXT, fitz.Rect(50, 150, 280, 215), "Note initiale", flags=4096)
+    add_widget("document.reference", fitz.PDF_WIDGET_TYPE_TEXT, fitz.Rect(320, 100, 560, 126), "READONLY", flags=1)
+    add_widget("options.newsletter", fitz.PDF_WIDGET_TYPE_CHECKBOX, fitz.Rect(50, 250, 68, 268), "Yes")
+    add_widget("person.country", fitz.PDF_WIDGET_TYPE_COMBOBOX, fitz.Rect(50, 330, 280, 356), "France", choices=["France", "Belgique", "Suisse"])
+    add_widget("person.interests", fitz.PDF_WIDGET_TYPE_LISTBOX, fitz.Rect(320, 330, 560, 390), "PDF", choices=["PDF", "OCR", "Desktop"])
+    return save_fitz_fixture("pdf-acroform.pdf", document)
+
+
 def generate_conversion_fixtures() -> list[Path]:
     generated: list[Path] = []
 
@@ -318,6 +344,7 @@ def generate(include_large: bool) -> list[Path]:
         write_pdf("pdf-small-1-page.pdf", [(320, 460)]),
         write_pdf("pdf-text-position.pdf", [(612, 792)]),
         create_native_text_fixture(),
+        create_acroform_fixture(),
         write_pdf(
             "pdf-small-5-pages.pdf",
             [(300 + index * 25, 500) for index in range(5)],

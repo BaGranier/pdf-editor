@@ -262,6 +262,28 @@ class PdfAnnotationResponse(BaseModel):
     modified_at: str | None = Field(default=None, alias="modifiedAt")
 
 
+class PdfFormFieldResponse(BaseModel):
+    id: str
+    page_index: int = Field(alias="pageIndex")
+    name: str
+    field_type: Literal["text", "checkbox", "radio", "combo", "list", "unsupported"] = Field(alias="fieldType")
+    value: str | list[str] = ""
+    rect: PdfEditRect
+    read_only: bool = Field(alias="readOnly")
+    required: bool = False
+    multiline: bool = False
+    editable: bool = False
+    options: list[str] = Field(default_factory=list)
+    button_value: str | None = Field(default=None, alias="buttonValue")
+
+
+class PdfFormValue(BaseModel):
+    source_document_id: str | None = Field(default=None, alias="sourceDocumentId")
+    page: int = Field(ge=1)
+    field_name: str = Field(alias="fieldName", min_length=1, max_length=500)
+    value: str | list[str]
+
+
 class OrganizeExportPlan(BaseModel):
     output_name: str | None = Field(default=None, alias="outputName")
     pages: list[OrganizeExportPage]
@@ -279,6 +301,7 @@ class OrganizeExportPlan(BaseModel):
         default_factory=list, alias="textMarkups"
     )
     comments: list[PdfCommentEdit] = Field(default_factory=list)
+    form_values: list[PdfFormValue] = Field(default_factory=list, alias="formValues")
     signature_images: list[SignatureImagePayload] = Field(
         default_factory=list,
         alias="signatureImages",
@@ -1387,6 +1410,37 @@ def _validate_native_text_font_for_export(
     )
 
 
+def _reader_has_acroform(reader: PdfReader) -> bool:
+    return "/AcroForm" in reader.trailer.get("/Root", {})
+
+
+def _can_preserve_acroform(plan: OrganizeExportPlan, readers: dict[str, PdfReader]) -> bool:
+    """pypdf can clone an AcroForm safely only for an unchanged source order."""
+    if len(readers) != 1 or not any(_reader_has_acroform(reader) for reader in readers.values()):
+        return False
+    document_id, reader = next(iter(readers.items()))
+    return len(plan.pages) == len(reader.pages) and all(
+        page.source_document_id in {None, document_id}
+        and page.source_page_index == index
+        and page.rotation == 0
+        for index, page in enumerate(plan.pages)
+    )
+
+
+def _apply_form_values_to_writer(
+    writer: PdfWriter, form_values_by_page: dict[int, dict[str, str | list[str]]]
+) -> None:
+    for page_index, values in form_values_by_page.items():
+        if page_index < 0 or page_index >= len(writer.pages):
+            raise HTTPException(status_code=422, detail="La page ciblée par un champ AcroForm est invalide.")
+        try:
+            writer.update_page_form_field_values(
+                writer.pages[page_index], values, auto_regenerate=True
+            )
+        except (KeyError, ValueError, TypeError) as error:
+            raise HTTPException(status_code=422, detail="Une valeur de formulaire AcroForm est invalide.") from error
+
+
 def export_organized_pdf(
     sources: dict[str, bytes],
     plan: OrganizeExportPlan,
@@ -1402,6 +1456,21 @@ def export_organized_pdf(
     }
 
     writer = PdfWriter()
+    preserve_acroform = _can_preserve_acroform(plan, readers)
+    if preserve_acroform:
+        writer.clone_document_from_reader(next(iter(readers.values())))
+
+    form_values_by_source_page: dict[tuple[str, int], dict[str, str | list[str]]] = {}
+    for form_value in plan.form_values:
+        source_document_id = _resolve_source_document_id(form_value.source_document_id, readers)
+        if form_value.page > len(readers[source_document_id].pages):
+            raise HTTPException(status_code=422, detail=f"La page {form_value.page} du champ {form_value.field_name!r} est invalide.")
+        form_values_by_source_page.setdefault((source_document_id, form_value.page - 1), {})[form_value.field_name] = form_value.value
+    if form_values_by_source_page and not preserve_acroform:
+        raise HTTPException(
+            status_code=422,
+            detail="Les champs AcroForm peuvent être sauvegardés tant que les pages du document ne sont pas réorganisées.",
+        )
 
     edits_by_source_page: dict[tuple[str, int], list[AddTextEdit]] = {}
     for edit in plan.edits:
@@ -1538,6 +1607,7 @@ def export_organized_pdf(
     text_markups_by_output_page: dict[int, list[TextMarkupEdit]] = {}
     comments_by_output_page: dict[int, list[PdfCommentEdit]] = {}
     native_text_edits_by_output_page: dict[int, list[NativeTextEdit]] = {}
+    form_values_by_output_page: dict[int, dict[str, str | list[str]]] = {}
 
     for output_page_index, page_plan in enumerate(plan.pages):
         source_document_id = _resolve_source_document_id(
@@ -1555,9 +1625,10 @@ def export_organized_pdf(
                 ),
             )
 
-        writer.add_page(reader.pages[page_plan.source_page_index])
-        if page_plan.rotation:
-            writer.pages[-1].rotate(page_plan.rotation)
+        if not preserve_acroform:
+            writer.add_page(reader.pages[page_plan.source_page_index])
+            if page_plan.rotation:
+                writer.pages[-1].rotate(page_plan.rotation)
         page_edits = edits_by_source_page.get(
             (source_document_id, page_plan.source_page_index),
         )
@@ -1593,7 +1664,14 @@ def export_organized_pdf(
         )
         if page_native_text_edits:
             native_text_edits_by_output_page[output_page_index] = page_native_text_edits
+        page_form_values = form_values_by_source_page.get(
+            (source_document_id, page_plan.source_page_index)
+        )
+        if page_form_values:
+            form_values_by_output_page[output_page_index] = page_form_values
 
+    if form_values_by_output_page:
+        _apply_form_values_to_writer(writer, form_values_by_output_page)
     output = io.BytesIO()
     writer.write(output)
     return apply_visual_edits(
@@ -1633,6 +1711,65 @@ def _annotation_type_name(annotation: fitz.Annot) -> str:
         "strike-out": "strikeout",
         "strikeout": "strikeout",
     }.get(name, "other")
+
+
+def _form_field_type(widget: fitz.Widget) -> Literal["text", "checkbox", "radio", "combo", "list", "unsupported"]:
+    return {
+        "Text": "text",
+        "CheckBox": "checkbox",
+        "RadioButton": "radio",
+        "ComboBox": "combo",
+        "ListBox": "list",
+    }.get(widget.field_type_string, "unsupported")
+
+
+@app.post("/pdf/forms", response_model=dict[str, list[PdfFormFieldResponse]])
+async def extract_pdf_form_fields(
+    file: Annotated[UploadFile, File(description="PDF source")],
+    page_index: Annotated[int, Form(alias="pageIndex", ge=0)],
+) -> dict[str, list[PdfFormFieldResponse]]:
+    """Extracts widgets for exactly one page; no document-wide widget cache."""
+    source = await file.read()
+    if not source:
+        raise HTTPException(status_code=400, detail="Le fichier PDF est vide.")
+    try:
+        with fitz.open(stream=source, filetype="pdf") as document:
+            if page_index >= document.page_count:
+                raise HTTPException(status_code=422, detail="La page de formulaire demandée est invalide.")
+            page = document[page_index]
+            inverse = ~page.transformation_matrix
+            fields: list[PdfFormFieldResponse] = []
+            for widget in page.widgets() or []:
+                flags = widget.field_flags
+                button_states = widget.button_states().get("normal", []) if widget.field_type_string in {"CheckBox", "RadioButton"} else []
+                button_value = next((state for state in button_states if state != "Off"), None)
+                value = widget.field_value or ""
+                fields.append(
+                    PdfFormFieldResponse(
+                        id=f"form-{page_index}-{widget.xref}",
+                        pageIndex=page_index,
+                        name=widget.field_name or f"widget-{widget.xref}",
+                        fieldType=_form_field_type(widget),
+                        value=value,
+                        rect=PdfEditRect(
+                            x0=(widget.rect * inverse).x0,
+                            y0=(widget.rect * inverse).y0,
+                            x1=(widget.rect * inverse).x1,
+                            y1=(widget.rect * inverse).y1,
+                        ),
+                        readOnly=bool(flags & 1),
+                        required=bool(flags & 2),
+                        multiline=bool(flags & 4096),
+                        editable=bool(flags & 262144),
+                        options=list(widget.choice_values or []),
+                        buttonValue=button_value,
+                    )
+                )
+            return {"fields": fields}
+    except HTTPException:
+        raise
+    except (fitz.FileDataError, RuntimeError, ValueError) as error:
+        raise HTTPException(status_code=422, detail="Les champs AcroForm du PDF sont illisibles.") from error
 
 
 @app.post("/pdf/annotations", response_model=dict[str, list[PdfAnnotationResponse]])

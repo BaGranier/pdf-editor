@@ -22,6 +22,7 @@ export const fixtures = {
   ),
   textPosition: path.resolve(fixtureDirectory, "pdf-text-position.pdf"),
   nativeText: path.resolve(fixtureDirectory, "pdf-native-text.pdf"),
+  acroform: path.resolve(fixtureDirectory, "pdf-acroform.pdf"),
 } as const;
 
 export async function openApp(page: Page): Promise<void> {

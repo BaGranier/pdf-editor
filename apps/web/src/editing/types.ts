@@ -134,7 +134,14 @@ export type PdfCommentEdit = BasePdfEdit & {
   source: "pdf" | "local";
 };
 
-export type PdfEdit = AddTextEdit | NativeTextEdit | SignatureEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit;
+/** A lightweight value delta for an interactive AcroForm field. */
+export type PdfFormEdit = BasePdfEdit & {
+  type: "form_field";
+  fieldName: string;
+  value: string | string[];
+};
+
+export type PdfEdit = AddTextEdit | NativeTextEdit | SignatureEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit | PdfFormEdit;
 
 export type SignatureImage = {
   id: string;
