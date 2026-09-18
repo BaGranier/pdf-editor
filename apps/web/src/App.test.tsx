@@ -761,10 +761,11 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Fichier/ }));
     const fileMenu = screen.getByRole("menu", { name: "Fichier" });
-    expect(within(fileMenu).getAllByRole("menuitem")).toHaveLength(1);
+    expect(within(fileMenu).getAllByRole("menuitem")).toHaveLength(2);
     expect(
       within(fileMenu).getByRole("menuitem", { name: "Enregistrer sous…" }),
     ).toBeInTheDocument();
+    expect(within(fileMenu).getByRole("menuitem", { name: /Imprimer/ })).toBeInTheDocument();
     expect(screen.queryByText("Sauvegarder")).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("menu", { name: "Fichier" })).not.toBeInTheDocument();
