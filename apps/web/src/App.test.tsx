@@ -12,6 +12,7 @@ import {
 
 vi.mock("pdfjs-dist", () => ({
   GlobalWorkerOptions: {},
+  AnnotationMode: { ENABLE: 1, ENABLE_FORMS: 2 },
   getDocument: vi.fn(),
   TextLayer: class TextLayerMock {
     textContentItemsStr: string[] = [];

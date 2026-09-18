@@ -68,7 +68,9 @@ réécrite sans aplatir le formulaire lors d'une sauvegarde qui conserve l'ordre
 et la rotation des pages. Les cases à cocher et radios conservent leur valeur
 d’export et leur état d’apparence PDF (`/V` et `/AS`). Les formulaires XFA et
 la sauvegarde d'un AcroForm après réorganisation des pages ne sont pas pris en
-charge.
+charge. À l’écran, les appearances des widgets gérés par la couche interactive
+ne sont pas rendues dans le canvas PDF.js : chaque valeur est donc affichée une
+seule fois.
 
 ### Modes de lecture
 

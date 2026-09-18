@@ -119,6 +119,7 @@ import { loadPdfComments } from "./pdf/comments";
 import { getCommentTypeLabel } from "./editing/comments";
 import { offsetPdfRectWithinPage } from "./editing/coordinates";
 import { getAnnotationScrollTop } from "./pdf/annotationNavigation";
+import { getDisplayAnnotationMode } from "./pdf/formRenderMode";
 import {
   getDocumentEditingState,
   pdfEditsReducer,
@@ -141,6 +142,12 @@ const VIEWER_PAN_STEP = 56;
 const DEFAULT_RECOMMENDED_MAX_FILE_SIZE_MB = 50;
 const DEFAULT_RECOMMENDED_MAX_PAGE_COUNT = 250;
 const DEFAULT_RECOMMENDED_MAX_OPEN_DOCUMENTS = 8;
+// PDF.js 6.1.200 exports these values. The numeric fallback keeps existing
+// lightweight PDF.js test doubles compatible with the display contract.
+const PDFJS_DISPLAY_ANNOTATION_MODES = {
+  ENABLE: pdfjsLib.AnnotationMode?.ENABLE ?? 1,
+  ENABLE_FORMS: pdfjsLib.AnnotationMode?.ENABLE_FORMS ?? 2,
+};
 
 type RenderState = "idle" | "loading" | "ready" | "error";
 type WorkspaceMode = "read" | "organize";
@@ -581,6 +588,7 @@ function PdfPageCanvas({
   const [viewport, setViewport] = useState<PageViewport | null>(null);
   const [nativeTextSpans, setNativeTextSpans] = useState<NativeTextSpan[]>([]);
   const [formFields, setFormFields] = useState<PdfFormField[]>([]);
+  const [canvasAnnotationMode, setCanvasAnnotationMode] = useState<number | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [nativeTextError, setNativeTextError] = useState<string | null>(null);
   const [nativeTextIndexed, setNativeTextIndexed] = useState(false);
@@ -595,6 +603,14 @@ function PdfPageCanvas({
       : committed;
   })();
   const nativeTextMaskKey = nativeTextMaskEdits.map((edit) => edit.source.sourceFingerprint).sort().join(":");
+  // PDF.js 6.1.200's ENABLE_FORMS excludes interactive widget appearances from
+  // the canvas. They are rendered exactly once by PdfFormLayer instead.
+  const formLayerActive = formRuntimeActive && formFields.length > 0;
+  const requestedAnnotationMode = getDisplayAnnotationMode(
+    formLayerActive,
+    PDFJS_DISPLAY_ANNOTATION_MODES,
+  );
+  const isFormCanvasReady = formLayerActive && canvasAnnotationMode === PDFJS_DISPLAY_ANNOTATION_MODES.ENABLE_FORMS;
 
   useEffect(() => () => {
     if (nativeTextPreviewUrl) URL.revokeObjectURL(nativeTextPreviewUrl);
@@ -894,12 +910,14 @@ function PdfPageCanvas({
           canvas,
           canvasContext: context,
           viewport,
+          annotationMode: requestedAnnotationMode,
           transform: [renderDimensions.outputScale, 0, 0, renderDimensions.outputScale, 0, 0],
         });
 
         await renderTask.promise;
 
         if (!isCancelled) {
+          setCanvasAnnotationMode(requestedAnnotationMode);
           setRenderState("ready");
           onRenderReady?.(displayPageNumber);
         }
@@ -919,7 +937,7 @@ function PdfPageCanvas({
       textLayerContainer.replaceChildren();
       textLayerContainer.hidden = true;
     };
-  }, [displayPageNumber, onRenderReady, pdfDocument, rotation, shouldRender, sourcePageNumber, suspendRender, zoom]);
+  }, [displayPageNumber, onRenderReady, pdfDocument, requestedAnnotationMode, rotation, shouldRender, sourcePageNumber, suspendRender, zoom]);
 
   useEffect(() => {
     return () => {
@@ -938,6 +956,7 @@ function PdfPageCanvas({
       data-page-number={displayPageNumber}
       data-source-page-number={sourcePageNumber}
       data-rotation={rotation}
+      data-annotation-mode={canvasAnnotationMode === PDFJS_DISPLAY_ANNOTATION_MODES.ENABLE_FORMS ? "enable_forms" : "enable"}
       aria-label={`Page ${displayPageNumber}`}
       aria-hidden={isIncomingPage || undefined}
     >
@@ -1036,7 +1055,7 @@ function PdfPageCanvas({
             fontValidationByEditId={nativeTextFontValidation}
           />
         ) : null}
-        {viewport && formRuntimeActive && formFields.length > 0 ? (
+        {viewport && isFormCanvasReady ? (
           <PdfFormLayer
             fields={formFields}
             edits={edits.filter((edit): edit is PdfFormEdit => edit.type === "form_field")}
