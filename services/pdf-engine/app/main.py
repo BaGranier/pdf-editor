@@ -1441,6 +1441,38 @@ def _pdf_object(value: object) -> object:
     return value.get_object() if hasattr(value, "get_object") else value
 
 
+def _validate_acroform_structure(source: bytes) -> None:
+    """Reject malformed AcroForm catalogs before the page-scoped MuPDF walk."""
+    # Avoid a second PDF parser for ordinary documents; only form-bearing
+    # candidates need structural validation before the page-scoped MuPDF walk.
+    if b"/AcroForm" not in source:
+        return
+    try:
+        reader = PdfReader(io.BytesIO(source), strict=True)
+        root = _pdf_object(reader.trailer.get("/Root"))
+        if not isinstance(root, dict):
+            raise ValueError("PDF catalog is invalid")
+        acroform_reference = root.get("/AcroForm")
+        if acroform_reference is None:
+            return
+        acroform = _pdf_object(acroform_reference)
+        if not isinstance(acroform, dict):
+            raise ValueError("AcroForm is not a dictionary")
+        fields = acroform.get("/Fields")
+        if fields is None:
+            return
+        fields = _pdf_object(fields)
+        if not isinstance(fields, list):
+            raise ValueError("AcroForm fields are not an array")
+        if any(not isinstance(_pdf_object(field), dict) for field in fields):
+            raise ValueError("AcroForm field is not a dictionary")
+    except (AttributeError, KeyError, PdfReadError, TypeError, ValueError) as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Les champs AcroForm du PDF sont illisibles.",
+        ) from error
+
+
 def _inherited_widget_value(widget: object, key: str) -> object | None:
     current = _pdf_object(widget)
     while isinstance(current, dict):
@@ -1910,6 +1942,7 @@ async def extract_pdf_form_fields(
     if not source:
         raise HTTPException(status_code=400, detail="Le fichier PDF est vide.")
     try:
+        _validate_acroform_structure(source)
         with fitz.open(stream=source, filetype="pdf") as document:
             if page_index >= document.page_count:
                 raise HTTPException(status_code=422, detail="La page de formulaire demandée est invalide.")
