@@ -1,3 +1,5 @@
+@import "./styles/forms.css";
+
 :root {
   color-scheme: light;
   color: #172033;
@@ -214,88 +216,6 @@ textarea {
   opacity: 0;
   pointer-events: none;
 }
-
-.pdf-form-layer {
-  position: absolute;
-  inset: 0;
-  z-index: 6;
-  pointer-events: none;
-}
-
-.pdf-form-field {
-  position: absolute;
-  box-sizing: border-box;
-  min-width: 0;
-  min-height: 0;
-  margin: 0;
-  padding: 1px 3px;
-  border: 1px solid color-mix(in srgb, var(--accent) 58%, transparent);
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--surface-bg) 12%, transparent);
-  color: var(--text-primary);
-  font: inherit;
-  pointer-events: auto;
-}
-
-.pdf-form-field[type="checkbox"],
-.pdf-form-field[type="radio"] {
-  padding: 0;
-  accent-color: var(--accent);
-}
-
-.pdf-form-field:focus-visible { outline: 2px solid var(--selection); outline-offset: 1px; }
-.pdf-form-field:read-only, .pdf-form-field:disabled { cursor: not-allowed; opacity: .7; }
-.pdf-form-field.pdf-form-field--native-readonly {
-  pointer-events: none;
-  opacity: 0;
-  border-color: transparent;
-  background: transparent;
-  color: transparent;
-  caret-color: transparent;
-}
-.pdf-form-field--unsupported { overflow: hidden; color: var(--danger, #b91c1c); font-size: .7rem; }
-.pdf-form-lock-toolbar {
-  position: absolute;
-  z-index: 7;
-  top: .5rem;
-  right: .5rem;
-  pointer-events: auto;
-}
-.pdf-form-lock-control {
-  display: grid;
-  width: 2rem;
-  height: 2rem;
-  padding: .35rem;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface-bg) 94%, transparent);
-  box-shadow: 0 1px 4px rgb(0 0 0 / .16);
-  color: var(--text-primary);
-}
-.pdf-form-lock-control svg { display: block; width: 1.1rem; height: 1.1rem; }
-.pdf-form-lock-control:focus-visible { outline: 2px solid var(--selection); outline-offset: 2px; }
-.pdf-form-lock-popover {
-  position: absolute;
-  top: calc(100% + .35rem);
-  right: 0;
-  width: min(18rem, calc(100vw - 2rem));
-  padding: .65rem;
-  border: 1px solid var(--border);
-  border-radius: .5rem;
-  background: var(--surface-bg);
-  box-shadow: 0 6px 20px rgb(0 0 0 / .2);
-  color: var(--text-primary);
-  font-size: .8rem;
-}
-.pdf-form-lock-popover > p { margin: .25rem 0 .55rem; color: var(--text-secondary); }
-.pdf-form-lock-popover [role="radiogroup"] { display: grid; gap: .25rem; }
-.pdf-form-lock-popover [role="radio"] { display: flex; gap: .45rem; width: 100%; padding: .45rem; text-align: left; align-items: flex-start; }
-.pdf-form-lock-popover [role="radio"] svg { flex: 0 0 auto; width: 1rem; height: 1rem; margin-top: .1rem; }
-.pdf-form-lock-popover [role="radio"] span { display: grid; gap: .12rem; }
-.pdf-form-lock-popover small { color: var(--text-secondary); font-size: .72rem; }
-.pdf-form-lock-popover__persistent { margin-top: .55rem; padding-top: .55rem; border-top: 1px solid var(--border); }
-.pdf-form-lock-popover__persistent button { font-size: .75rem; }
 
 .app-shell {
   height: 100%;
