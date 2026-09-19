@@ -56,7 +56,7 @@ test("FORM-LOCK-UX-001 utilise le cadenas pour le verrouillage local sans dirty 
   await expect(reference).toHaveAttribute("readonly");
 
   await page.getByRole("button", { name: "Formulaire modifiable" }).click();
-  await page.getByRole("button", { name: "Verrouiller dans le PDF…" }).click();
+  await page.getByRole("button", { name: "Verrouiller le PDF pour l'export" }).click();
   await expect(page.getByRole("dialog", { name: "Verrouiller le formulaire ?" })).toBeVisible();
   await page.getByRole("button", { name: "Verrouiller", exact: true }).click();
   await expect(page.getByRole("button", { name: "Formulaire verrouillé dans le PDF" })).toHaveAttribute("data-lock-icon", "closed");

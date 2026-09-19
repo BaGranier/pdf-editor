@@ -90,7 +90,7 @@ export function FormLockToolbar({
             {pdfLocked ? (
               <button type="button" onClick={() => { onUnlockPdf(); setIsOpen(false); }}>Déverrouiller le PDF</button>
             ) : (
-              <button type="button" onClick={() => { onRequestPdfLock(); setIsOpen(false); }}>Verrouiller dans le PDF…</button>
+              <button type="button" onClick={() => { onRequestPdfLock(); setIsOpen(false); }}>Verrouiller le PDF pour l'export</button>
             )}
           </div>
         </div>
