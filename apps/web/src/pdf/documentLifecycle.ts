@@ -95,8 +95,10 @@ export function releasePdfDocument(document: OpenPdfDocument) {
     // Page canvases and render tasks are unmounted before this deferred work.
     // cleanup releases PDF.js page/font resources without retaining loaded
     // fonts; destroying the loading task then tears down the worker transport.
-    void document.pdfDocument
-      .cleanup()
+    const cleanup = document.pdfDocument.cleanup;
+    void Promise.resolve(
+      typeof cleanup === "function" ? cleanup.call(document.pdfDocument) : undefined,
+    )
       .catch(() => undefined)
       .finally(() => document.loadingTask.destroy().catch(() => undefined));
   }, 0);
