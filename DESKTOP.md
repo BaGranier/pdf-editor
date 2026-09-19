@@ -268,6 +268,30 @@ Windows, Linux et macOS. La CI active la validation Linux. Les builds doivent
 encore être exécutés nativement sur chaque OS pour produire leur sidecar et leur
 bundle ; le cross-compiling du backend Python n’est pas pris en charge.
 
+### Matrice de support de release
+
+Cette matrice décrit l'état vérifié du dépôt, et non une promesse de support.
+`À valider` signifie qu'aucun run natif versionné n'a encore confirmé le
+scénario. Le shell n'expose volontairement ni plugin de dialogue de fichiers ni
+permission filesystem au frontend : l'ouverture/sauvegarde reste donc le flux
+Web tant qu'un adapter natif dédié n'est pas livré.
+
+| Fonction | Windows | macOS | Linux |
+| --- | --- | --- | --- |
+| Build du shell + sidecar | À valider nativement | À valider nativement | Configuration et `desktop:check` contrôlés en CI, bundle utilisateur à valider |
+| Ouverture depuis l'application | À valider dans la WebView | À valider dans la WebView | À valider dans la WebView |
+| Ouvrir un `.pdf` depuis l'OS / double-clic | Non implémenté | Non implémenté | Non implémenté |
+| Save As avec destination native | Non implémenté ; téléchargement Web | Non implémenté ; téléchargement Web | Non implémenté ; téléchargement Web |
+| Sidecar FastAPI, port loopback et health | À valider nativement | À valider nativement | Couvert par les tests du lanceur lorsque le loopback est disponible |
+| OCR `eng` / `fra` | Outils système ou packaging à définir | Outils système ou packaging à définir | Outils système ou packaging à définir |
+| Conversion | Outils système ou packaging à définir | Outils système ou packaging à définir | Outils système ou packaging à définir |
+| Impression et AcroForms | À valider dans la WebView | À valider dans la WebView | À valider dans la WebView |
+
+Les exécutables OCR (`ocrmypdf`, Tesseract, Ghostscript et QPDF) et les données
+de langue ne sont pas inclus par le sidecar PyInstaller. Une release devra soit
+les embarquer par plateforme, soit les détecter au démarrage et expliquer la
+fonction dégradée sans empêcher le viewer ou l'édition de démarrer.
+
 Il n'existe pas encore d'installateur final validé comme entièrement autonome.
 Node.js, Rust/Cargo, Visual Studio Build Tools, MSVC, le Windows SDK, Xcode et le
 Python de développement sont des outils de construction, pas des dépendances
