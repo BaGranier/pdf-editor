@@ -81,6 +81,7 @@ import { FreehandEditToolbar } from "./components/FreehandEditToolbar";
 import { PdfSearchBar } from "./components/PdfSearchBar";
 import { PdfSearchHighlights } from "./components/PdfSearchHighlights";
 import { PdfFormLayer } from "./components/PdfFormLayer";
+import { FormLockToolbar } from "./components/FormLockToolbar";
 import { AppLogo } from "./components/AppLogo";
 import { AppStateScreen } from "./components/AppStateScreen";
 import { ColorPicker } from "./components/ColorPicker";
@@ -109,6 +110,8 @@ import {
   type TextMarkupKind,
   type NativeTextEdit,
   type PdfFormEdit,
+  type PdfFormLockEdit,
+  type PdfFormStateEdit,
 } from "./editing/types";
 import { clearNativeTextCache, loadNativeTextPage, renderNativeTextBackground, validateNativeTextFont, type NativeTextFontValidation, type NativeTextSpan } from "./pdf/nativeText";
 import { normalizeSubsetFontName } from "./fonts/catalog";
@@ -374,7 +377,7 @@ function getInitialTheme(preferences: ViewerPreferences | null): ThemeMode {
   return preferences?.theme ?? getSystemTheme();
 }
 
-function buildViewerSnapshot(document: OpenPdfDocument, nativeTextEdits: NativeTextEdit[] = [], formEdits: PdfFormEdit[] = []): ViewerDocumentSnapshot {
+function buildViewerSnapshot(document: OpenPdfDocument, nativeTextEdits: NativeTextEdit[] = [], formEdits: PdfFormStateEdit[] = []): ViewerDocumentSnapshot {
   return {
     id: document.id,
     fileName: document.fileName,
@@ -513,6 +516,8 @@ type PdfPageCanvasProps = {
   activeTool: EditingTool;
   nativeTextRuntimeActive: boolean;
   formRuntimeActive: boolean;
+  formUiLocked: boolean;
+  pdfFormLocked: boolean;
   freehandStyle: FreehandStyle;
   pendingSignatureImage: SignatureImage | null;
   eyedropperTarget: "stroke" | "fill" | null;
@@ -530,6 +535,9 @@ type PdfPageCanvasProps = {
   onFinishEditCoalescing: (editId: string, property: string) => void;
   onDeleteEdit: (editId: string) => void;
   onSampleColor: (color: string) => void;
+  onToggleFormUiLock: () => void;
+  onRequestPdfFormLock: () => void;
+  onUnlockPdfForm: () => void;
   fontLibraryRevision: number;
   searchHits: PdfSearchHit[];
   activeSearchHitId: string | null;
@@ -553,6 +561,8 @@ function PdfPageCanvas({
   activeTool,
   nativeTextRuntimeActive,
   formRuntimeActive,
+  formUiLocked,
+  pdfFormLocked,
   freehandStyle,
   pendingSignatureImage,
   eyedropperTarget,
@@ -570,6 +580,9 @@ function PdfPageCanvas({
   onFinishEditCoalescing,
   onDeleteEdit,
   onSampleColor,
+  onToggleFormUiLock,
+  onRequestPdfFormLock,
+  onUnlockPdfForm,
   fontLibraryRevision,
   searchHits,
   activeSearchHitId,
@@ -1056,10 +1069,13 @@ function PdfPageCanvas({
           />
         ) : null}
         {viewport && isFormCanvasReady ? (
+          <>
           <PdfFormLayer
             fields={formFields}
             edits={edits.filter((edit): edit is PdfFormEdit => edit.type === "form_field")}
             viewport={viewport}
+            uiLocked={formUiLocked}
+            pdfLocked={pdfFormLocked}
             onChange={(field, value) => {
               const existing = edits.find((edit): edit is PdfFormEdit => edit.type === "form_field" && edit.fieldName === field.name);
               const next: PdfFormEdit = existing ?? { id: `form-${field.pageIndex}-${field.name}`, type: "form_field", page: sourcePageNumber, rect: field.rect, fieldName: field.name, value };
@@ -1067,6 +1083,14 @@ function PdfPageCanvas({
             }}
             onFinish={(field) => onFinishEditCoalescing(`form-${field.pageIndex}-${field.name}`, "value")}
           />
+          <FormLockToolbar
+            uiLocked={formUiLocked}
+            pdfLocked={pdfFormLocked}
+            onToggleUiLock={onToggleFormUiLock}
+            onRequestPdfLock={onRequestPdfFormLock}
+            onUnlockPdf={onUnlockPdfForm}
+          />
+          </>
         ) : null}
         {formError && formRuntimeActive ? <p className="native-text-layer__error" role="status">{formError}</p> : null}
         {nativeTextError && nativeTextRuntimeActive ? <p className="native-text-layer__error" role="status">{nativeTextError}</p> : null}
@@ -1116,6 +1140,8 @@ type PdfViewerProps = {
   signatureImages: Record<string, SignatureImage>;
   selectedEditId: string | null;
   activeTool: EditingTool;
+  formUiLocked: boolean;
+  pdfFormLocked: boolean;
   freehandStyle: FreehandStyle;
   pendingSignatureImage: SignatureImage | null;
   eyedropperTarget: "stroke" | "fill" | null;
@@ -1135,6 +1161,9 @@ type PdfViewerProps = {
   onDeleteEdit: (editId: string) => void;
   onActivePageChange: (documentId: string, pageNumber: number) => void;
   onSampleColor: (color: string) => void;
+  onToggleFormUiLock: () => void;
+  onRequestPdfFormLock: () => void;
+  onUnlockPdfForm: () => void;
   fontLibraryRevision: number;
   searchHits: PdfSearchHit[];
   activeSearchHitId: string | null;
@@ -1155,6 +1184,8 @@ function PdfViewer({
   signatureImages,
   selectedEditId,
   activeTool,
+  formUiLocked,
+  pdfFormLocked,
   freehandStyle,
   pendingSignatureImage,
   eyedropperTarget,
@@ -1174,6 +1205,9 @@ function PdfViewer({
   onDeleteEdit,
   onActivePageChange,
   onSampleColor,
+  onToggleFormUiLock,
+  onRequestPdfFormLock,
+  onUnlockPdfForm,
   fontLibraryRevision,
   searchHits,
   activeSearchHitId,
@@ -1693,6 +1727,8 @@ function PdfViewer({
               activeTool={viewerMode === "presentation" ? "select" : isActiveDocumentSource ? activeTool : "select"}
               nativeTextRuntimeActive={nativeTextRuntimeActive}
               formRuntimeActive={formRuntimeActive}
+              formUiLocked={formUiLocked}
+              pdfFormLocked={pdfFormLocked}
               freehandStyle={freehandStyle}
               pendingSignatureImage={
                 viewerMode !== "presentation" && isActiveDocumentSource ? pendingSignatureImage : null
@@ -1712,6 +1748,9 @@ function PdfViewer({
               onFinishEditCoalescing={onFinishEditCoalescing}
               onDeleteEdit={onDeleteEdit}
               onSampleColor={onSampleColor}
+              onToggleFormUiLock={onToggleFormUiLock}
+              onRequestPdfFormLock={onRequestPdfFormLock}
+              onUnlockPdfForm={onUnlockPdfForm}
               fontLibraryRevision={fontLibraryRevision}
               searchHits={
                 isActiveDocumentSource
@@ -2782,6 +2821,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     pdfEditsReducer,
     {},
   );
+  // This is deliberately runtime-only: it prevents accidental edits in this
+  // application without changing the PDF or its undo/dirty state.
+  const [formUiLockedByDocument, setFormUiLockedByDocument] = useState<Record<string, boolean>>({});
+  const [isFormLockConfirmOpen, setIsFormLockConfirmOpen] = useState(false);
   const [selectedEditId, setSelectedEditId] = useState<string | null>(null);
   const [fontLibraryRevision, setFontLibraryRevision] = useState(0);
   const [eyedropperTarget, setEyedropperTarget] = useState<
@@ -2881,6 +2924,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     ? getDocumentEditingState(pdfEditsByDocument, activeDocument.id)
     : null;
   const activePdfEdits = activeDocumentEditingState?.edits ?? [];
+  const activePdfFormLock = activePdfEdits.find(
+    (edit): edit is PdfFormLockEdit => edit.type === "form_lock",
+  ) ?? null;
+  const isActivePdfFormLocked = Boolean(activePdfFormLock);
+  const isActiveFormUiLocked = activeDocument
+    ? Boolean(formUiLockedByDocument[activeDocument.id])
+    : false;
   const isActiveDocumentDirty = activeDocumentEditingState?.isDirty ?? false;
   const activeSearch = activeDocument
     ? searchByDocument[activeDocument.id] ?? EMPTY_SEARCH_STATE
@@ -3341,7 +3391,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       void Promise.all(documents.map((document) => saveStoredDocument(buildViewerSnapshot(
         document,
         getDocumentEditingState(pdfEditsByDocument, document.id).edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text"),
-        getDocumentEditingState(pdfEditsByDocument, document.id).edits.filter((edit): edit is PdfFormEdit => edit.type === "form_field"),
+        getDocumentEditingState(pdfEditsByDocument, document.id).edits.filter((edit): edit is PdfFormStateEdit => edit.type === "form_field" || edit.type === "form_lock"),
       )))).then((results) => {
         if (results.some((saved) => !saved)) {
           setStorageWarning(
@@ -3808,6 +3858,36 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     },
     [activeDocument, pdfEditsByDocument],
   );
+
+  const toggleActiveFormUiLock = useCallback(() => {
+    if (!activeDocument) return;
+    setFormUiLockedByDocument((current) => ({
+      ...current,
+      [activeDocument.id]: !current[activeDocument.id],
+    }));
+  }, [activeDocument]);
+
+  const lockActivePdfForm = useCallback(() => {
+    if (!activeDocument || isActivePdfFormLocked) return;
+    const lock: PdfFormLockEdit = {
+      id: "form-lock",
+      type: "form_lock",
+      // The operation is document-scoped. These harmless coordinates allow it
+      // to travel through the existing lightweight edit/history pipeline.
+      page: 1,
+      rect: { x0: 0, y0: 0, x1: 1, y1: 1 },
+      locked: true,
+    };
+    dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit: lock });
+    setIsFormLockConfirmOpen(false);
+    setExportFeedback(null);
+  }, [activeDocument, isActivePdfFormLocked]);
+
+  const unlockActivePdfForm = useCallback(() => {
+    if (!activeDocument || !activePdfFormLock) return;
+    dispatchPdfEdits({ type: "delete", documentId: activeDocument.id, editId: activePdfFormLock.id });
+    setExportFeedback(null);
+  }, [activeDocument, activePdfFormLock]);
 
   const undoPdfEdit = useCallback(() => {
     if (!activeDocument) {
@@ -4609,6 +4689,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     const exportedFormValues = exportedPdfEdits.filter(
       (edit): edit is PdfFormEdit & { sourceDocumentId: string; order: number } => edit.type === "form_field",
     );
+    // Form locking is document-scoped, so it must not depend on the sentinel
+    // edit's page still being part of the current organization plan.
+    const exportedFormLocks = requiredDocumentIds.flatMap((documentId) =>
+      getDocumentEditingState(pdfEditsByDocument, documentId).edits.flatMap((edit, order) =>
+        edit.type === "form_lock" ? [{ ...edit, sourceDocumentId: documentId, order }] : [],
+      ),
+    );
     const exportedSignatureImageIds = new Set(
       exportedSignatureEdits.map((edit) => edit.imageId),
     );
@@ -4668,6 +4755,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         ...(exportedComments.length > 0 ? { comments: exportedComments } : {}),
         ...(exportedFormValues.length > 0
           ? { formValues: exportedFormValues.map((edit) => ({ sourceDocumentId: edit.sourceDocumentId, page: edit.page, fieldName: edit.fieldName, value: edit.value })) }
+          : {}),
+        ...(exportedFormLocks.length > 0
+          ? { formLocks: exportedFormLocks.map((edit) => ({ sourceDocumentId: edit.sourceDocumentId, locked: edit.locked })) }
           : {}),
       }),
     );
@@ -5381,6 +5471,22 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         />
       ) : null}
 
+      {isFormLockConfirmOpen ? (
+        <div className="unsaved-dialog-backdrop" role="presentation">
+          <section className="unsaved-dialog" role="dialog" aria-modal="true" aria-labelledby="form-lock-title">
+            <h2 id="form-lock-title">Verrouiller le formulaire ?</h2>
+            <p>
+              Les champs resteront présents et interactifs dans le PDF, mais ne pourront plus être modifiés dans les lecteurs qui respectent le flag ReadOnly.
+            </p>
+            <p>Cette action peut être annulée avant l’enregistrement avec Annuler ou Annuler l’action.</p>
+            <div className="unsaved-dialog__actions">
+              <button type="button" autoFocus onClick={() => setIsFormLockConfirmOpen(false)}>Annuler</button>
+              <button type="button" onClick={lockActivePdfForm}>Verrouiller</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {pendingComment ? (
         <div className="unsaved-dialog-backdrop" role="presentation">
           <section className="unsaved-dialog comment-dialog" role="dialog" aria-modal="true" aria-labelledby="comment-dialog-title">
@@ -5731,6 +5837,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             signatureImages={signatureImages}
             selectedEditId={selectedEditId}
             activeTool={activeEditingTool}
+            formUiLocked={isActiveFormUiLocked}
+            pdfFormLocked={isActivePdfFormLocked}
             freehandStyle={freehandToolStyle}
             pendingSignatureImage={pendingSignatureImage}
             eyedropperTarget={eyedropperTarget}
@@ -5749,6 +5857,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onDeleteEdit={deletePdfEdit}
             onActivePageChange={recordActivePage}
             onSampleColor={applySampledShapeColor}
+            onToggleFormUiLock={toggleActiveFormUiLock}
+            onRequestPdfFormLock={() => setIsFormLockConfirmOpen(true)}
+            onUnlockPdfForm={unlockActivePdfForm}
             fontLibraryRevision={fontLibraryRevision}
             searchHits={activeSearch.hits}
             activeSearchHitId={activeSearch.hits[activeSearch.activeHitIndex]?.id ?? null}

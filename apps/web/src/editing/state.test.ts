@@ -4,7 +4,7 @@ import {
   pdfEditsReducer,
   type PdfEditsByDocument,
 } from "./state";
-import type { AddTextEdit, FreehandEdit, NativeTextEdit, PdfCommentEdit, PdfEdit, PdfFormEdit, ShapeEdit, SignatureEdit, TextMarkupEdit } from "./types";
+import type { AddTextEdit, FreehandEdit, NativeTextEdit, PdfCommentEdit, PdfEdit, PdfFormEdit, PdfFormLockEdit, ShapeEdit, SignatureEdit, TextMarkupEdit } from "./types";
 
 const textEdit: AddTextEdit = {
   id: "text-1",
@@ -35,6 +35,14 @@ const formEdit: PdfFormEdit = {
   rect: { x0: 10, y0: 10, x1: 100, y1: 32 },
   fieldName: "person.name",
   value: "Jean",
+};
+
+const formLockEdit: PdfFormLockEdit = {
+  id: "form-lock",
+  type: "form_lock",
+  page: 1,
+  rect: { x0: 0, y0: 0, x1: 1, y1: 1 },
+  locked: true,
 };
 
 const shapeEdit: ShapeEdit = {
@@ -292,6 +300,19 @@ describe("pdfEditsReducer history", () => {
     expect(state["doc-a"].edits).toEqual([formEdit]);
     state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
     expect(state["doc-a"].edits[0]).toMatchObject({ value: "Alice Martin" });
+  });
+
+  it("locks a form as one undoable document mutation", () => {
+    let state = addEdits("doc-a", [formEdit]);
+    state = pdfEditsReducer(state, { type: "mark_saved", documentId: "doc-a" });
+    state = pdfEditsReducer(state, { type: "add", documentId: "doc-a", edit: formLockEdit });
+    expect(state["doc-a"].isDirty).toBe(true);
+    expect(state["doc-a"].past).toHaveLength(2);
+    expect(state["doc-a"].edits).toContainEqual(formLockEdit);
+    state = pdfEditsReducer(state, { type: "undo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toEqual([formEdit]);
+    state = pdfEditsReducer(state, { type: "redo", documentId: "doc-a" });
+    expect(state["doc-a"].edits).toContainEqual(formLockEdit);
   });
 
   it("coalesces a slider drag into one dirty undoable freehand update", () => {

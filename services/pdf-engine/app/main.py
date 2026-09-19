@@ -25,7 +25,7 @@ from pydantic import (
 )
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
-from pypdf.generic import NameObject
+from pypdf.generic import NameObject, NumberObject
 
 from app.conversion import router as conversion_router
 from app.conversion.errors import ConversionError
@@ -285,6 +285,13 @@ class PdfFormValue(BaseModel):
     value: str | list[str]
 
 
+class PdfFormLock(BaseModel):
+    """A document-scoped request to set the standard AcroForm ReadOnly flag."""
+
+    source_document_id: str | None = Field(default=None, alias="sourceDocumentId")
+    locked: bool = True
+
+
 class OrganizeExportPlan(BaseModel):
     output_name: str | None = Field(default=None, alias="outputName")
     pages: list[OrganizeExportPage]
@@ -303,6 +310,7 @@ class OrganizeExportPlan(BaseModel):
     )
     comments: list[PdfCommentEdit] = Field(default_factory=list)
     form_values: list[PdfFormValue] = Field(default_factory=list, alias="formValues")
+    form_locks: list[PdfFormLock] = Field(default_factory=list, alias="formLocks")
     signature_images: list[SignatureImagePayload] = Field(
         default_factory=list,
         alias="signatureImages",
@@ -1553,6 +1561,50 @@ def _apply_form_values_to_writer(
             raise HTTPException(status_code=422, detail="Une valeur de formulaire AcroForm est invalide.") from error
 
 
+def _iter_acroform_field_dictionaries(writer: PdfWriter):
+    """Yield AcroForm field dictionaries recursively without touching widgets' values.
+
+    A field tree can have terminal widgets, a parent field with widget children,
+    or several intermediate dictionaries. Applying ``/Ff`` to the dictionaries
+    which define ``/FT`` preserves existing /V and /AS appearance states.
+    """
+    root = _pdf_object(writer._root_object)
+    if not isinstance(root, dict):
+        return
+    acroform = _pdf_object(root.get("/AcroForm"))
+    if not isinstance(acroform, dict):
+        return
+    fields = _pdf_object(acroform.get("/Fields"))
+    if not isinstance(fields, list):
+        return
+    pending = list(fields)
+    seen: set[int] = set()
+    while pending:
+        field = _pdf_object(pending.pop())
+        if not isinstance(field, dict) or id(field) in seen:
+            continue
+        seen.add(id(field))
+        if field.get("/FT") is not None:
+            yield field
+        children = _pdf_object(field.get("/Kids"))
+        if isinstance(children, list):
+            pending.extend(children)
+
+
+def _apply_acroform_read_only_lock(writer: PdfWriter) -> None:
+    """Marks every editable field ReadOnly while keeping the AcroForm interactive.
+
+    This deliberately updates only bit 1 of /Ff. It neither flattens widgets
+    nor regenerates appearances, so checkbox/radio /V and /AS stay intact.
+    """
+    for field in _iter_acroform_field_dictionaries(writer):
+        try:
+            flags = int(field.get("/Ff", 0))
+        except (TypeError, ValueError):
+            flags = 0
+        field[NameObject("/Ff")] = NumberObject(flags | 1)
+
+
 def export_organized_pdf(
     sources: dict[str, bytes],
     plan: OrganizeExportPlan,
@@ -1582,6 +1634,17 @@ def export_organized_pdf(
         raise HTTPException(
             status_code=422,
             detail="Les champs AcroForm peuvent être sauvegardés tant que les pages du document ne sont pas réorganisées.",
+        )
+
+    form_lock_source_ids = {
+        _resolve_source_document_id(form_lock.source_document_id, readers)
+        for form_lock in plan.form_locks
+        if form_lock.locked
+    }
+    if form_lock_source_ids and not preserve_acroform:
+        raise HTTPException(
+            status_code=422,
+            detail="Le verrouillage AcroForm est disponible tant que les pages du document ne sont pas réorganisées.",
         )
 
     edits_by_source_page: dict[tuple[str, int], list[AddTextEdit]] = {}
@@ -1784,6 +1847,8 @@ def export_organized_pdf(
 
     if form_values_by_output_page:
         _apply_form_values_to_writer(writer, form_values_by_output_page)
+    if form_lock_source_ids:
+        _apply_acroform_read_only_lock(writer)
     output = io.BytesIO()
     writer.write(output)
     return apply_visual_edits(

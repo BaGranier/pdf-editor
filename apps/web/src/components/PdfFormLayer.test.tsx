@@ -30,4 +30,14 @@ describe("PDF AcroForm layer", () => {
     expect(onChange).toHaveBeenCalledWith(fields[3], "pro");
     expect(screen.getByRole("textbox", { name: "document.reference" })).toHaveAttribute("readonly");
   });
+
+  it("keeps values visible while a local or pending PDF lock prevents changes", () => {
+    const onChange = vi.fn();
+    render(<PdfFormLayer fields={fields} edits={[]} viewport={viewport} uiLocked onChange={onChange} onFinish={vi.fn()} />);
+    expect(screen.getByRole("textbox", { name: "person.name (requis)" })).toHaveAttribute("readonly");
+    expect(screen.getByRole("checkbox", { name: "options.newsletter" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "person.name (requis)" })).toHaveValue("Jean");
+    render(<PdfFormLayer fields={fields} edits={[]} viewport={viewport} pdfLocked onChange={onChange} onFinish={vi.fn()} />);
+    expect(screen.getAllByRole("radio", { name: "plan.level: pro" })[0]).toBeDisabled();
+  });
 });

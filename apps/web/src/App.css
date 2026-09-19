@@ -246,6 +246,25 @@ textarea {
 .pdf-form-field:focus-visible { outline: 2px solid var(--selection); outline-offset: 1px; }
 .pdf-form-field:read-only, .pdf-form-field:disabled { cursor: not-allowed; opacity: .7; }
 .pdf-form-field--unsupported { overflow: hidden; color: var(--danger, #b91c1c); font-size: .7rem; }
+.pdf-form-lock-toolbar {
+  position: absolute;
+  z-index: 7;
+  top: .5rem;
+  right: .5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem;
+  align-items: center;
+  max-width: min(32rem, calc(100% - 1rem));
+  padding: .3rem;
+  border: 1px solid var(--border);
+  border-radius: .4rem;
+  background: color-mix(in srgb, var(--surface-bg) 94%, transparent);
+  box-shadow: 0 1px 4px rgb(0 0 0 / .16);
+  pointer-events: auto;
+  font-size: .75rem;
+}
+.pdf-form-lock-toolbar button { font-size: inherit; }
 
 .app-shell {
   height: 100%;

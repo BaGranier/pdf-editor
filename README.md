@@ -72,6 +72,16 @@ charge. À l’écran, les appearances des widgets gérés par la couche interac
 ne sont pas rendues dans le canvas PDF.js : chaque valeur est donc affichée une
 seule fois.
 
+**Verrouiller l’édition** est un verrou local temporaire : il bloque les
+contrôles dans PDF Studio Local sans modifier le PDF, le dirty state ou
+l’historique. **Verrouiller le formulaire** est différent : après confirmation,
+la sauvegarde applique le flag AcroForm standard `ReadOnly` à tous les champs
+encore modifiables. Les widgets et leurs valeurs restent interactifs au sens
+PDF, les valeurs et appearances des boutons sont conservées, et l’opération est
+une seule action undoable avant enregistrement. Ce n’est ni un aplatissement ni
+une protection cryptographique ; l’aplatissement des formulaires reste hors
+périmètre.
+
 ### Modes de lecture
 
 Le viewer propose trois modes complémentaires :

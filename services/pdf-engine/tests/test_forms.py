@@ -181,6 +181,51 @@ def test_exports_radio_value_and_widget_appearances_after_reopening() -> None:
     assert appearances == ["/Off", "/pro"]
 
 
+def test_locks_acroform_fields_without_flattening_or_changing_values() -> None:
+    source = make_acroform_pdf()
+    plan = main.OrganizeExportPlan.model_validate({
+        "pages": [{"sourcePageIndex": 0}],
+        "formValues": [
+            {"page": 1, "fieldName": "person.name", "value": "Alice"},
+            {"page": 1, "fieldName": "options.newsletter", "value": "Off"},
+        ],
+        "formLocks": [{"locked": True}],
+    })
+
+    exported = main.export_organized_pdf({"document-1": source}, plan)
+    reader = PdfReader(io.BytesIO(exported))
+    fields = reader.get_fields()
+    assert fields is not None
+    assert fields["person.name"]["/V"] == "Alice"
+    assert str(fields["options.newsletter"]["/V"]) == "/Off"
+    assert all(int(fields[name].get("/Ff", 0)) & 1 for name in fields)
+    widget = next(
+        annotation.get_object()
+        for annotation in reader.pages[0]["/Annots"]
+        if annotation.get_object().get("/T") == "options.newsletter"
+    )
+    assert str(widget["/AS"]) == "/Off"
+    with fitz.open(stream=exported, filetype="pdf") as document:
+        widgets = list(document[0].widgets() or [])
+        assert len(widgets) == 3
+        assert all(widget.field_flags & 1 for widget in widgets)
+
+
+def test_locks_radio_parent_without_changing_button_appearance_states() -> None:
+    plan = main.OrganizeExportPlan.model_validate({
+        "pages": [{"sourcePageIndex": 0}],
+        "formLocks": [{"locked": True}],
+    })
+    exported = main.export_organized_pdf({"document-1": make_radio_pdf()}, plan)
+    reader = PdfReader(io.BytesIO(exported))
+    fields = reader.get_fields()
+    assert fields is not None
+    assert str(fields["plan.level"]["/V"]) == "/standard"
+    assert int(fields["plan.level"].get("/Ff", 0)) & 1
+    appearances = [str(annotation.get_object()["/AS"]) for annotation in reader.pages[0]["/Annots"]]
+    assert appearances == ["/standard", "/Off"]
+
+
 def test_rejects_form_updates_when_pages_are_reorganized() -> None:
     document = fitz.open(stream=make_acroform_pdf(), filetype="pdf")
     document.new_page()
@@ -191,3 +236,14 @@ def test_rejects_form_updates_when_pages_are_reorganized() -> None:
     })
     with pytest.raises(main.HTTPException, match="ne sont pas réorganisées"):
         main.export_organized_pdf({"document-1": source}, plan)
+
+
+def test_rejects_form_lock_when_pages_are_reorganized() -> None:
+    document = fitz.open(stream=make_acroform_pdf(), filetype="pdf")
+    document.new_page()
+    plan = main.OrganizeExportPlan.model_validate({
+        "pages": [{"sourcePageIndex": 1}, {"sourcePageIndex": 0}],
+        "formLocks": [{"locked": True}],
+    })
+    with pytest.raises(main.HTTPException, match="verrouillage AcroForm"):
+        main.export_organized_pdf({"document-1": document.tobytes()}, plan)

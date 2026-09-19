@@ -141,7 +141,15 @@ export type PdfFormEdit = BasePdfEdit & {
   value: string | string[];
 };
 
-export type PdfEdit = AddTextEdit | NativeTextEdit | SignatureEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit | PdfFormEdit;
+/** A document delta which asks the export engine to mark AcroForm fields ReadOnly. */
+export type PdfFormLockEdit = BasePdfEdit & {
+  type: "form_lock";
+  locked: true;
+};
+
+export type PdfFormStateEdit = PdfFormEdit | PdfFormLockEdit;
+
+export type PdfEdit = AddTextEdit | NativeTextEdit | SignatureEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit | PdfFormStateEdit;
 
 export type SignatureImage = {
   id: string;
