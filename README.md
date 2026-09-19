@@ -68,19 +68,22 @@ réécrite sans aplatir le formulaire lors d'une sauvegarde qui conserve l'ordre
 et la rotation des pages. Les cases à cocher et radios conservent leur valeur
 d’export et leur état d’apparence PDF (`/V` et `/AS`). Les formulaires XFA et
 la sauvegarde d'un AcroForm après réorganisation des pages ne sont pas pris en
-charge. À l’écran, les appearances des widgets gérés par la couche interactive
-ne sont pas rendues dans le canvas PDF.js : chaque valeur est donc affichée une
-seule fois.
+charge. À l’écran, les widgets éditables sont rendus par la couche interactive
+afin que chaque valeur n'apparaisse qu'une seule fois. Les widgets
+nativement `ReadOnly` conservent au contraire leur apparence PDF dans le
+canvas ; leur couche React est seulement sémantique et non interactive, ce qui
+évite aussi toute duplication visuelle.
 
-**Verrouiller l’édition** est un verrou local temporaire : il bloque les
+Le cadenas au-dessus d'un formulaire ouvre un choix entre deux verrouillages
+distincts. **Verrouiller** est un verrou local temporaire : il bloque les
 contrôles dans PDF Studio Local sans modifier le PDF, le dirty state ou
-l’historique. **Verrouiller le formulaire** est différent : après confirmation,
-la sauvegarde applique le flag AcroForm standard `ReadOnly` à tous les champs
-encore modifiables. Les widgets et leurs valeurs restent interactifs au sens
-PDF, les valeurs et appearances des boutons sont conservées, et l’opération est
-une seule action undoable avant enregistrement. Ce n’est ni un aplatissement ni
-une protection cryptographique ; l’aplatissement des formulaires reste hors
-périmètre.
+l’historique. **Verrouiller le PDF pour l’export** est différent : après
+confirmation, la sauvegarde applique le flag AcroForm standard `ReadOnly` à
+tous les champs encore modifiables. Les widgets et leurs valeurs restent
+interactifs au sens PDF, les valeurs et appearances des boutons sont
+conservées, et l’opération est une seule action undoable avant enregistrement.
+Ce n’est ni un aplatissement ni une protection cryptographique ; l’aplatissement
+des formulaires reste hors périmètre.
 
 ### Modes de lecture
 
