@@ -360,8 +360,17 @@ function clearCanvas(canvas: HTMLCanvasElement | null) {
 }
 
 function releasePdfDocument(document: OpenPdfDocument) {
+  // Native-text previews are keyed by the File. Clear their page-scoped cache
+  // before the document object becomes unreachable.
+  clearNativeTextCache(document.file);
   window.setTimeout(() => {
-    void document.loadingTask.destroy().catch(() => undefined);
+    // Page canvases and render tasks are unmounted before this deferred work.
+    // cleanup releases PDF.js page/font resources without retaining loaded
+    // fonts; destroying the loading task then tears down the worker transport.
+    void document.pdfDocument
+      .cleanup()
+      .catch(() => undefined)
+      .finally(() => document.loadingTask.destroy().catch(() => undefined));
   }, 0);
 }
 

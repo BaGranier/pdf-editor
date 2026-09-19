@@ -49,6 +49,7 @@ function createPdfDocumentMock(pageCount = 1) {
   return {
     numPages: pageCount,
     getPage: vi.fn().mockResolvedValue(page),
+    cleanup: vi.fn().mockResolvedValue(undefined),
   };
 }
 
