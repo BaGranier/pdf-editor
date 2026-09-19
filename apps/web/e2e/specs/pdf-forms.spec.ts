@@ -18,22 +18,29 @@ test("FORMS-VISUAL-LAYER-004 rend les widgets AcroForm une seule fois dans la co
   await expect(page.getByRole("button", { name: "pdf-acroform.pdf, document actif" })).toHaveAccessibleDescription("Modifications non sauvegardées.");
 });
 
-test("FORMS-LOCKING-005 distingue le verrouillage local du ReadOnly PDF undoable", async ({ page }) => {
+test("FORM-LOCK-UX-001 utilise le cadenas pour le verrouillage local sans dirty state", async ({ page }) => {
   await openApp(page);
   await openPdf(page, fixtures.acroform);
   const name = page.getByRole("textbox", { name: "person.name (requis)" });
   const tab = page.getByRole("button", { name: "pdf-acroform.pdf, document actif" });
 
-  await page.getByRole("button", { name: "Verrouiller l’édition" }).click();
+  const lock = page.getByRole("button", { name: "Formulaire modifiable" });
+  await expect(lock).toHaveAttribute("data-lock-icon", "open");
+  await lock.click();
+  await expect(page.getByRole("dialog", { name: "Mode d’édition du formulaire" })).toBeVisible();
+  await page.getByRole("radio", { name: /Verrouiller/ }).click();
   await expect(name).toHaveAttribute("readonly");
   await expect(tab).not.toHaveAccessibleDescription("Modifications non sauvegardées.");
-  await page.getByRole("button", { name: "Autoriser l’édition" }).click();
+  await expect(page.getByRole("button", { name: "Formulaire verrouillé" })).toHaveAttribute("data-lock-icon", "closed");
+  await page.getByRole("button", { name: "Formulaire verrouillé" }).click();
+  await page.getByRole("radio", { name: /Autoriser l’édition/ }).click();
   await expect(name).not.toHaveAttribute("readonly");
 
-  await page.getByRole("button", { name: "Verrouiller le formulaire" }).click();
+  await page.getByRole("button", { name: "Formulaire modifiable" }).click();
+  await page.getByRole("button", { name: "Verrouiller dans le PDF…" }).click();
   await expect(page.getByRole("dialog", { name: "Verrouiller le formulaire ?" })).toBeVisible();
   await page.getByRole("button", { name: "Verrouiller", exact: true }).click();
-  await expect(page.getByRole("status")).toContainText("Formulaire verrouillé");
+  await expect(page.getByRole("button", { name: "Formulaire verrouillé dans le PDF" })).toHaveAttribute("data-lock-icon", "closed");
   await expect(name).toHaveAttribute("readonly");
   await expect(tab).toHaveAccessibleDescription("Modifications non sauvegardées.");
   await page.keyboard.press("Control+z");

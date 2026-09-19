@@ -535,7 +535,7 @@ type PdfPageCanvasProps = {
   onFinishEditCoalescing: (editId: string, property: string) => void;
   onDeleteEdit: (editId: string) => void;
   onSampleColor: (color: string) => void;
-  onToggleFormUiLock: () => void;
+  onSetFormUiLock: (locked: boolean) => void;
   onRequestPdfFormLock: () => void;
   onUnlockPdfForm: () => void;
   fontLibraryRevision: number;
@@ -580,7 +580,7 @@ function PdfPageCanvas({
   onFinishEditCoalescing,
   onDeleteEdit,
   onSampleColor,
-  onToggleFormUiLock,
+  onSetFormUiLock,
   onRequestPdfFormLock,
   onUnlockPdfForm,
   fontLibraryRevision,
@@ -1086,7 +1086,7 @@ function PdfPageCanvas({
           <FormLockToolbar
             uiLocked={formUiLocked}
             pdfLocked={pdfFormLocked}
-            onToggleUiLock={onToggleFormUiLock}
+            onSetUiLocked={onSetFormUiLock}
             onRequestPdfLock={onRequestPdfFormLock}
             onUnlockPdf={onUnlockPdfForm}
           />
@@ -1161,7 +1161,7 @@ type PdfViewerProps = {
   onDeleteEdit: (editId: string) => void;
   onActivePageChange: (documentId: string, pageNumber: number) => void;
   onSampleColor: (color: string) => void;
-  onToggleFormUiLock: () => void;
+  onSetFormUiLock: (locked: boolean) => void;
   onRequestPdfFormLock: () => void;
   onUnlockPdfForm: () => void;
   fontLibraryRevision: number;
@@ -1205,7 +1205,7 @@ function PdfViewer({
   onDeleteEdit,
   onActivePageChange,
   onSampleColor,
-  onToggleFormUiLock,
+  onSetFormUiLock,
   onRequestPdfFormLock,
   onUnlockPdfForm,
   fontLibraryRevision,
@@ -1748,7 +1748,7 @@ function PdfViewer({
               onFinishEditCoalescing={onFinishEditCoalescing}
               onDeleteEdit={onDeleteEdit}
               onSampleColor={onSampleColor}
-              onToggleFormUiLock={onToggleFormUiLock}
+              onSetFormUiLock={onSetFormUiLock}
               onRequestPdfFormLock={onRequestPdfFormLock}
               onUnlockPdfForm={onUnlockPdfForm}
               fontLibraryRevision={fontLibraryRevision}
@@ -3859,11 +3859,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     [activeDocument, pdfEditsByDocument],
   );
 
-  const toggleActiveFormUiLock = useCallback(() => {
+  const setActiveFormUiLock = useCallback((locked: boolean) => {
     if (!activeDocument) return;
     setFormUiLockedByDocument((current) => ({
       ...current,
-      [activeDocument.id]: !current[activeDocument.id],
+      [activeDocument.id]: locked,
     }));
   }, [activeDocument]);
 
@@ -5857,7 +5857,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onDeleteEdit={deletePdfEdit}
             onActivePageChange={recordActivePage}
             onSampleColor={applySampledShapeColor}
-            onToggleFormUiLock={toggleActiveFormUiLock}
+            onSetFormUiLock={setActiveFormUiLock}
             onRequestPdfFormLock={() => setIsFormLockConfirmOpen(true)}
             onUnlockPdfForm={unlockActivePdfForm}
             fontLibraryRevision={fontLibraryRevision}
