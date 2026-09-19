@@ -78,7 +78,8 @@ sudo apt-get install ghostscript ocrmypdf qpdf \
   tesseract-ocr-eng tesseract-ocr-fra
 ```
 
-Le workflow GitHub Actions installe ces paquets avant la campagne.
+Le job backend GitHub Actions, exécuté sur Ubuntu 24.04, installe et vérifie
+explicitement cette toolchain (dont `eng`) avant `uv sync --locked` et pytest.
 
 ## Sorties
 

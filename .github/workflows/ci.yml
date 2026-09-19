@@ -39,7 +39,9 @@ jobs:
 
   backend:
     name: Backend — tests et Ruff
-    runs-on: ubuntu-latest
+    # The OCR packages below are verified against this supported runtime.
+    # Avoid silently changing the system toolchain with ubuntu-latest.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
@@ -59,6 +61,35 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: services/pdf-engine/uv.lock
+
+      - name: Installer la toolchain OCR système
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            ghostscript \
+            ocrmypdf \
+            qpdf \
+            tesseract-ocr \
+            tesseract-ocr-eng
+
+      - name: Vérifier la toolchain OCR
+        run: |
+          set -euo pipefail
+          echo "Tesseract:"
+          command -v tesseract
+          tesseract --version
+          echo "Langues Tesseract:"
+          tesseract --list-langs
+          tesseract --list-langs | grep --fixed-strings --line-regexp "eng"
+          echo "OCRmyPDF:"
+          command -v ocrmypdf
+          ocrmypdf --version
+          echo "Ghostscript:"
+          command -v gs
+          gs --version
+          echo "QPDF:"
+          command -v qpdf
+          qpdf --version
 
       - name: Installer les dépendances
         run: uv sync --locked
