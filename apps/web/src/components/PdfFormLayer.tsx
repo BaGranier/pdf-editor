@@ -32,14 +32,32 @@ export function PdfFormLayer({
       {fields.map((field) => {
         const value = formValue(field, edits);
         const readOnly = field.readOnly || uiLocked || pdfLocked;
+        // PDF.js retains native appearances for original ReadOnly widgets in
+        // the canvas. Keep a semantic, non-interactive hit target only; the
+        // canvas remains the single visual owner of the value.
+        const usesNativeReadOnlyAppearance = field.readOnly;
         const common = {
-          className: "pdf-form-field",
+          className: usesNativeReadOnlyAppearance
+            ? "pdf-form-field pdf-form-field--native-readonly"
+            : "pdf-form-field",
           style: pdfRectToViewportStyle(viewport, field.rect),
           "data-form-field": field.name,
+          "data-form-rendering": usesNativeReadOnlyAppearance ? "canvas" : "interactive",
         };
         const label = `${field.name}${field.required ? " (requis)" : ""}`;
         if (field.fieldType === "text") {
-          const props = { value: String(value), readOnly, required: field.required, "aria-label": label, "aria-readonly": readOnly || undefined, onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(field, event.target.value), onBlur: () => onFinish(field) };
+          const props = {
+            value: String(value),
+            readOnly,
+            required: field.required,
+            tabIndex: usesNativeReadOnlyAppearance ? -1 : undefined,
+            "aria-label": label,
+            "aria-readonly": readOnly || undefined,
+            onChange: usesNativeReadOnlyAppearance
+              ? undefined
+              : (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(field, event.target.value),
+            onBlur: usesNativeReadOnlyAppearance ? undefined : () => onFinish(field),
+          };
           return field.multiline ? <textarea key={field.id} {...common} {...props} /> : <input key={field.id} {...common} {...props} />;
         }
         if (field.fieldType === "checkbox") {

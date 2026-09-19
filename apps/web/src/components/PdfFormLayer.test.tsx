@@ -28,13 +28,19 @@ describe("PDF AcroForm layer", () => {
     expect(screen.getByRole("checkbox", { name: "options.newsletter" })).not.toBeChecked();
     fireEvent.click(screen.getByRole("radio", { name: "plan.level: pro" }));
     expect(onChange).toHaveBeenCalledWith(fields[3], "pro");
-    expect(screen.getByRole("textbox", { name: "document.reference" })).toHaveAttribute("readonly");
+    const reference = screen.getByRole("textbox", { name: "document.reference" });
+    expect(reference).toHaveAttribute("readonly");
+    expect(reference).toHaveAttribute("data-form-rendering", "canvas");
+    expect(screen.getByRole("textbox", { name: "person.name (requis)" })).toHaveAttribute("data-form-rendering", "interactive");
+    fireEvent.change(reference, { target: { value: "Ne pas modifier" } });
+    expect(onChange).not.toHaveBeenCalledWith(fields[4], "Ne pas modifier");
   });
 
   it("keeps values visible while a local or pending PDF lock prevents changes", () => {
     const onChange = vi.fn();
     render(<PdfFormLayer fields={fields} edits={[]} viewport={viewport} uiLocked onChange={onChange} onFinish={vi.fn()} />);
     expect(screen.getByRole("textbox", { name: "person.name (requis)" })).toHaveAttribute("readonly");
+    expect(screen.getByRole("textbox", { name: "document.reference" })).toHaveAttribute("data-form-rendering", "canvas");
     expect(screen.getByRole("checkbox", { name: "options.newsletter" })).toBeDisabled();
     expect(screen.getByRole("textbox", { name: "person.name (requis)" })).toHaveValue("Jean");
     render(<PdfFormLayer fields={fields} edits={[]} viewport={viewport} pdfLocked onChange={onChange} onFinish={vi.fn()} />);

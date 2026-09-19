@@ -245,6 +245,14 @@ textarea {
 
 .pdf-form-field:focus-visible { outline: 2px solid var(--selection); outline-offset: 1px; }
 .pdf-form-field:read-only, .pdf-form-field:disabled { cursor: not-allowed; opacity: .7; }
+.pdf-form-field.pdf-form-field--native-readonly {
+  pointer-events: none;
+  opacity: 0;
+  border-color: transparent;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+}
 .pdf-form-field--unsupported { overflow: hidden; color: var(--danger, #b91c1c); font-size: .7rem; }
 .pdf-form-lock-toolbar {
   position: absolute;
