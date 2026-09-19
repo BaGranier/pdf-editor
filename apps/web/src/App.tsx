@@ -137,8 +137,9 @@ import { getSuggestedPdfSaveName } from "./saving/fileName";
 import { openPdfBlobForPrint, printPdfBlob } from "./saving/print";
 import { computeFitScale } from "./viewer/fit";
 import { getCanvasRenderDimensions } from "./viewer/rendering";
-import { searchPdfDocument, type PdfSearchHit } from "./pdf/search";
+import { type PdfSearchHit } from "./pdf/search";
 import { loadPdfFormPage, type PdfFormField } from "./pdf/forms";
+import { usePdfSearch } from "./hooks/usePdfSearch";
 import "./App.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -160,28 +161,6 @@ type ViewerMode = PersistedViewerMode | "presentation";
 type ExportFeedback = {
   kind: "success" | "warning" | "error";
   message: string;
-};
-
-type DocumentSearchState = {
-  isOpen: boolean;
-  query: string;
-  hits: PdfSearchHit[];
-  activeHitIndex: number;
-  pagesScanned: number;
-  totalPages: number;
-  status: "idle" | "searching" | "complete" | "error";
-  error: string | null;
-};
-
-const EMPTY_SEARCH_STATE: DocumentSearchState = {
-  isOpen: false,
-  query: "",
-  hits: [],
-  activeHitIndex: 0,
-  pagesScanned: 0,
-  totalPages: 0,
-  status: "idle",
-  error: null,
 };
 
 type PdfExportWarning = {
@@ -2742,8 +2721,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [isConversionDialogOpen, setIsConversionDialogOpen] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
-  const [searchByDocument, setSearchByDocument] = useState<Record<string, DocumentSearchState>>({});
-  const searchGenerationRef = useRef(0);
   const [status, setStatus] = useState("Sélectionnez un PDF local.");
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [viewerFocusRequest, setViewerFocusRequest] = useState(0);
@@ -2801,12 +2778,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     ? Boolean(formUiLockedByDocument[activeDocument.id])
     : false;
   const isActiveDocumentDirty = activeDocumentEditingState?.isDirty ?? false;
-  const activeSearch = activeDocument
-    ? searchByDocument[activeDocument.id] ?? EMPTY_SEARCH_STATE
-    : EMPTY_SEARCH_STATE;
-  const activeSearchDocumentId = activeDocument?.id ?? null;
-  const activeSearchPdfDocument = activeDocument?.pdfDocument ?? null;
-  const activeSearchPageCount = activeDocument?.pageCount ?? 0;
   const dirtyDocumentIds = useMemo(
     () =>
       new Set(
@@ -2817,82 +2788,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       ),
     [pdfEditsByDocument],
   );
-
-  useEffect(() => {
-    if (!activeSearchDocumentId || !activeSearchPdfDocument || !activeSearch.isOpen || !activeSearch.query.trim()) {
-      return;
-    }
-
-    const documentId = activeSearchDocumentId;
-    const query = activeSearch.query;
-    const controller = new AbortController();
-    const generation = ++searchGenerationRef.current;
-    const timer = window.setTimeout(() => {
-      setSearchByDocument((current) => ({
-        ...current,
-        [documentId]: {
-          ...(current[documentId] ?? EMPTY_SEARCH_STATE),
-          status: "searching",
-          hits: [],
-          activeHitIndex: 0,
-          pagesScanned: 0,
-          totalPages: activeSearchPageCount,
-          error: null,
-        },
-      }));
-      void searchPdfDocument(activeSearchPdfDocument, query, {
-        signal: controller.signal,
-        onProgress: ({ pagesScanned, totalPages, hits }) => {
-          if (controller.signal.aborted || generation !== searchGenerationRef.current) return;
-          setSearchByDocument((current) => {
-            const state = current[documentId];
-            if (!state || state.query !== query || !state.isOpen) return current;
-            return {
-              ...current,
-              [documentId]: {
-                ...state,
-                hits,
-                pagesScanned,
-                totalPages,
-                activeHitIndex: Math.min(state.activeHitIndex, Math.max(0, hits.length - 1)),
-              },
-            };
-          });
-        },
-      }).then((hits) => {
-        if (controller.signal.aborted || generation !== searchGenerationRef.current) return;
-        setSearchByDocument((current) => {
-          const state = current[documentId];
-          if (!state || state.query !== query || !state.isOpen) return current;
-          return {
-            ...current,
-            [documentId]: {
-              ...state,
-              hits,
-              pagesScanned: activeSearchPageCount,
-              totalPages: activeSearchPageCount,
-              status: "complete",
-            },
-          };
-        });
-      }).catch((error: unknown) => {
-        if (controller.signal.aborted || generation !== searchGenerationRef.current) return;
-        setSearchByDocument((current) => ({
-          ...current,
-          [documentId]: {
-            ...(current[documentId] ?? EMPTY_SEARCH_STATE),
-            status: "error",
-            error: error instanceof Error ? error.message : "Recherche impossible.",
-          },
-        }));
-      });
-    }, 180);
-
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [activeSearchDocumentId, activeSearchPageCount, activeSearchPdfDocument, activeSearch.isOpen, activeSearch.query]);
 
   useEffect(() => {
     const referencedFonts = Object.values(pdfEditsByDocument).flatMap((state) =>
@@ -3345,65 +3240,25 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     recordActivePage(activeDocument.id, Math.min(pageCount, Math.max(1, pageNumber)));
   }, [activeDocument, activeOrganizationPlan, recordActivePage]);
 
-  const openPdfSearch = useCallback(() => {
-    if (!activeDocument || workspaceMode !== "read") return;
-    setSearchByDocument((current) => ({
-      ...current,
-      [activeDocument.id]: {
-        ...(current[activeDocument.id] ?? EMPTY_SEARCH_STATE),
-        isOpen: true,
-        error: null,
-      },
-    }));
-  }, [activeDocument, workspaceMode]);
-
-  const closePdfSearch = useCallback(() => {
+  const navigateToSearchResult = useCallback((pageNumber: number) => {
     if (!activeDocument) return;
-    searchGenerationRef.current += 1;
-    setSearchByDocument((current) => ({
-      ...current,
-      [activeDocument.id]: EMPTY_SEARCH_STATE,
-    }));
-  }, [activeDocument]);
+    recordActivePage(activeDocument.id, pageNumber);
+    setPageNavigationRequest({ pageNumber, requestId: ++pageNavigationRequestId.current });
+  }, [activeDocument, recordActivePage]);
 
-  const updatePdfSearchQuery = useCallback((query: string) => {
-    if (!activeDocument) return;
-    setSearchByDocument((current) => ({
-      ...current,
-      [activeDocument.id]: {
-        ...(current[activeDocument.id] ?? EMPTY_SEARCH_STATE),
-        isOpen: true,
-        query,
-        hits: [],
-        activeHitIndex: 0,
-        pagesScanned: 0,
-        totalPages: activeDocument.pageCount,
-        status: query.trim() ? "searching" : "idle",
-        error: null,
-      },
-    }));
-  }, [activeDocument]);
-
-  const navigatePdfSearch = useCallback((direction: 1 | -1) => {
-    if (!activeDocument || activeSearch.hits.length === 0) return;
-    const nextIndex = (activeSearch.activeHitIndex + direction + activeSearch.hits.length) % activeSearch.hits.length;
-    const hit = activeSearch.hits[nextIndex];
-    const displayPageNumber = activeOrganizationPlan?.pages.findIndex(
-      (page) => page.sourceDocumentId === activeDocument.id && page.sourcePageIndex === hit.pageNumber - 1,
-    );
-    setSearchByDocument((current) => ({
-      ...current,
-      [activeDocument.id]: {
-        ...(current[activeDocument.id] ?? EMPTY_SEARCH_STATE),
-        activeHitIndex: nextIndex,
-      },
-    }));
-    if (displayPageNumber !== undefined && displayPageNumber >= 0) {
-      const pageNumber = displayPageNumber + 1;
-      recordActivePage(activeDocument.id, pageNumber);
-      setPageNavigationRequest({ pageNumber, requestId: ++pageNavigationRequestId.current });
-    }
-  }, [activeDocument, activeOrganizationPlan, activeSearch.activeHitIndex, activeSearch.hits, recordActivePage]);
+  const {
+    activeSearch,
+    openPdfSearch,
+    closePdfSearch,
+    updatePdfSearchQuery,
+    navigatePdfSearch,
+    forgetPdfSearchDocument,
+  } = usePdfSearch({
+    activeDocument,
+    activeOrganizationPlan,
+    workspaceMode,
+    onNavigateToPage: navigateToSearchResult,
+  });
 
   const changeViewerMode = useCallback((nextMode: ViewerMode) => {
     if (!activeDocument || nextMode === viewerMode) return;
@@ -3947,12 +3802,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
       setExportFeedback(null);
       setDocuments(nextDocuments);
-      searchGenerationRef.current += 1;
-      setSearchByDocument((current) => {
-        const remaining = { ...current };
-        delete remaining[documentId];
-        return remaining;
-      });
+      forgetPdfSearchDocument(documentId);
       dispatchPdfEdits({ type: "remove_document", documentId });
       setSelectedEditId(null);
       setActiveEditingTool("select");
