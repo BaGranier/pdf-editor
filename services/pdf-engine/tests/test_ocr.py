@@ -137,8 +137,9 @@ def test_missing_file_is_rejected_over_http() -> None:
     [
         b"not a pdf",
         b"%PDF-1.7\nthis file is corrupt",
+        b"prefix%PDF-1.7\nthis is not a PDF header",
     ],
-    ids=["not-pdf", "corrupt-pdf"],
+    ids=["not-pdf", "corrupt-pdf", "pdf-header-not-at-offset-zero"],
 )
 def test_invalid_pdf_is_rejected_and_cleaned(
     content: bytes,
@@ -151,6 +152,25 @@ def test_invalid_pdf_is_rejected_and_cleaned(
         run(ocr.ocr_pdf(file=make_upload(content)))
 
     assert_ocr_error(error, "INVALID_PDF")
+    assert not temporary_directory.exists()
+
+
+def test_encrypted_pdf_is_rejected_and_cleaned(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    writer.encrypt("secret")
+    encrypted = io.BytesIO()
+    writer.write(encrypted)
+    temporary_directory = track_temporary_directory(monkeypatch, tmp_path)
+
+    with pytest.raises(ocr.OcrError) as error:
+        run(ocr.ocr_pdf(file=make_upload(encrypted.getvalue())))
+
+    assert_ocr_error(error, "INVALID_PDF")
+    assert "protégés" in error.value.message
     assert not temporary_directory.exists()
 
 
