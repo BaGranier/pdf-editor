@@ -53,11 +53,7 @@ import {
   requestConversion,
   type ConversionOptions,
 } from "./conversion/conversion";
-import {
-  getDownloadFileName,
-  requestOcrPdf,
-  type OcrOptions,
-} from "./ocr/ocr";
+import { requestOcrPdf, type OcrOptions } from "./ocr/ocr";
 import {
   renderPdfTextLayer,
   type PdfTextLayerRenderTask,
@@ -132,8 +128,10 @@ import {
   getDocumentEditingState,
   pdfEditsReducer,
 } from "./editing/state";
-import { downloadPdfToBrowser } from "./saving/destination";
 import { getSuggestedPdfSaveName } from "./saving/fileName";
+import { downloadPdfToBrowser } from "./saving/destination";
+import { buildPdfExportPayload } from "./saving/exportPayload";
+import { executePdfExport } from "./saving/exportRequest";
 import { openPdfBlobForPrint, printPdfBlob } from "./saving/print";
 import { computeFitScale } from "./viewer/fit";
 import { getContinuousRenderWindow } from "./viewer/continuousRenderWindow";
@@ -163,37 +161,6 @@ type ExportFeedback = {
   kind: "success" | "warning" | "error";
   message: string;
 };
-
-type PdfExportWarning = {
-  type: "text_overflow";
-  editId: string;
-  page: number;
-  rendering: "expanded" | "partial";
-};
-
-function parsePdfExportWarnings(value: string | null): PdfExportWarning[] {
-  if (!value) {
-    return [];
-  }
-  try {
-    const warnings: unknown = JSON.parse(value);
-    return Array.isArray(warnings)
-      ? warnings.filter(
-          (warning): warning is PdfExportWarning =>
-            typeof warning === "object" &&
-            warning !== null &&
-            (warning as Partial<PdfExportWarning>).type === "text_overflow" &&
-            typeof (warning as Partial<PdfExportWarning>).editId === "string" &&
-            typeof (warning as Partial<PdfExportWarning>).page === "number" &&
-            ["expanded", "partial"].includes(
-              String((warning as Partial<PdfExportWarning>).rendering),
-            ),
-        )
-      : [];
-  } catch {
-    return [];
-  }
-}
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -4316,260 +4283,73 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     operation: "export" | "save_as" | "print",
     requestedOutputName?: string,
   ): Promise<boolean> => {
-    const sourceDocument = documents.find(
-      (document) => document.id === documentId,
-    );
-    if (!sourceDocument) {
-      setExportFeedback({ kind: "error", message: "Le document à sauvegarder n'est plus ouvert." });
-      return false;
-    }
-    const organizationPlan =
-      organizationPlans[documentId] ??
-      createInitialPagePlan(
-        sourceDocument.id,
-        sourceDocument.fileName,
-        sourceDocument.pageCount,
-      );
-    if (organizationPlan.pages.length === 0) {
-      setExportFeedback({ kind: "error", message: "Aucune page n'est disponible pour l'export." });
-      return false;
-    }
-
-    const requiredDocumentIds = [...new Set(organizationPlan.pages.map((page) => page.sourceDocumentId))];
-    const sourceFiles = requiredDocumentIds.map((documentId) =>
-      documents.find((document) => document.id === documentId),
-    );
-
-    if (sourceFiles.some((document) => !document)) {
-      setExportFeedback({
-        kind: "error",
-        message: "Un PDF source requis par le plan n'est plus disponible. Retirez ses pages ou réinitialisez le plan.",
-      });
-      return false;
-    }
-
-    const sourceDocumentInfo = Object.fromEntries(
-      documents.map((document) => [
-        document.id,
-        { fileName: document.fileName, pageCount: document.pageCount },
-      ]),
-    );
-    if (!isValidPagePlanForDocument(organizationPlan, sourceDocument.id, sourceDocumentInfo)) {
-      setExportFeedback({
-        kind: "error",
-        message: "Le plan d'organisation est invalide. Réinitialisez-le avant d'exporter.",
-      });
-      return false;
-    }
-
-    const resolvedOutputName =
-      operation === "save_as" && requestedOutputName
-        ? requestedOutputName
-        : operation === "export" && sourceDocument.id === activeDocumentId
-          ? outputName.trim() ||
-            getSuggestedPdfSaveName(
-              sourceDocument.fileName,
-              sourceDocument.workingSaveName,
-            )
-          : getSuggestedPdfSaveName(
-              sourceDocument.fileName,
-              sourceDocument.workingSaveName,
-            );
-    const formData = new FormData();
-    sourceFiles.forEach((sourceDocument) => {
-      if (sourceDocument) {
-        formData.append("files", sourceDocument.file, sourceDocument.fileName);
-      }
-    });
-    formData.append("documentIds", JSON.stringify(requiredDocumentIds));
-    const exportedPagesByDocument = new Map<string, Set<number>>();
-    organizationPlan.pages.forEach((page) => {
-      const exportedPages =
-        exportedPagesByDocument.get(page.sourceDocumentId) ?? new Set<number>();
-      exportedPages.add(page.sourcePageIndex + 1);
-      exportedPagesByDocument.set(page.sourceDocumentId, exportedPages);
-    });
-    const exportedPdfEdits = requiredDocumentIds.flatMap((documentId) =>
-      getDocumentEditingState(pdfEditsByDocument, documentId).edits.flatMap((edit, order) => {
-        const pageIsExported = exportedPagesByDocument
-          .get(documentId)
-          ?.has(edit.page);
-        const editIsExportable =
-          edit.type === "add_text"
-            ? edit.text.length > 0
-            : edit.type === "signature"
-              ? signatureImages[edit.imageId] !== undefined
-              : true;
-        return pageIsExported && editIsExportable
-          ? [{ ...edit, sourceDocumentId: documentId, order }]
-          : [];
-      }),
-    );
-    const exportedTextEdits = exportedPdfEdits.filter(
-      (edit): edit is AddTextEdit & { sourceDocumentId: string; order: number } =>
-        edit.type === "add_text",
-    );
-    const exportedNativeTextEdits = exportedPdfEdits.filter(
-      (edit): edit is NativeTextEdit & { sourceDocumentId: string; order: number } =>
-        edit.type === "native_text",
-    );
-    const exportedSignatureEdits = exportedPdfEdits.filter(
-      (edit): edit is SignatureEdit & {
-        sourceDocumentId: string;
-        order: number;
-      } => edit.type === "signature",
-    );
-    const exportedShapeEdits = exportedPdfEdits.filter(
-      (edit): edit is ShapeEdit & {
-        sourceDocumentId: string;
-        order: number;
-      } => edit.type === "shape",
-    );
-    const exportedFreehandEdits = exportedPdfEdits.filter(
-      (edit): edit is FreehandEdit & { sourceDocumentId: string; order: number } => edit.type === "freehand",
-    );
-    const exportedTextMarkupEdits = exportedPdfEdits.filter(
-      (edit): edit is TextMarkupEdit & { sourceDocumentId: string; order: number } => edit.type === "text_markup",
-    );
-    const exportedComments = exportedPdfEdits.filter(
-      (edit): edit is PdfCommentEdit & { sourceDocumentId: string; order: number } => edit.type === "comment" && edit.source === "local",
-    );
-    const exportedFormValues = exportedPdfEdits.filter(
-      (edit): edit is PdfFormEdit & { sourceDocumentId: string; order: number } => edit.type === "form_field",
-    );
-    // Form locking is document-scoped, so it must not depend on the sentinel
-    // edit's page still being part of the current organization plan.
-    const exportedFormLocks = requiredDocumentIds.flatMap((documentId) =>
-      getDocumentEditingState(pdfEditsByDocument, documentId).edits.flatMap((edit, order) =>
-        edit.type === "form_lock" ? [{ ...edit, sourceDocumentId: documentId, order }] : [],
-      ),
-    );
-    const exportedSignatureImageIds = new Set(
-      exportedSignatureEdits.map((edit) => edit.imageId),
-    );
-    const exportedSignatureImages = [...exportedSignatureImageIds].flatMap(
-      (imageId) => {
-        const image = signatureImages[imageId];
-        return image ? [image] : [];
-      },
-    );
-    const customFontRefs = [...new Set(
-      [...exportedTextEdits, ...exportedNativeTextEdits]
-        .map((edit) => edit.style.fontRef)
-        .filter((fontRef): fontRef is string => Boolean(fontRef?.startsWith("custom:"))),
-    )];
     setIsExporting(true);
     setExportFeedback(null);
-    let exportedFontResources: Array<{ id: string; sha256: string; format: "ttf" | "otf"; fileName: string; dataUrl: string }> = [];
     try {
-      if (customFontRefs.length > 0) {
-        exportedFontResources = await Promise.all(customFontRefs.map(async (fontRef) => {
-          const font = await getCustomFont(fontRef);
-          if (!font) throw new Error(`La police personnalisée ${fontRef} n'est plus disponible. Remplacez-la avant l'export.`);
-          return { id: font.id, sha256: font.sha256, format: font.format, fileName: font.originalFileName, dataUrl: await blobToDataUrl(font.binary) };
-        }));
-      }
-    } catch (error) {
-      setIsExporting(false);
-      setExportFeedback({ kind: "error", message: error instanceof Error ? error.message : "Une police personnalisée est indisponible." });
-      return false;
-    }
-    formData.append(
-      "plan",
-      JSON.stringify({
-        outputName: resolvedOutputName,
-        saveToOutputDir: operation === "export" ? saveToOutputDir : false,
-        pages: organizationPlan.pages.map((page) => ({
-          sourceDocumentId: page.sourceDocumentId,
-          sourcePageIndex: page.sourcePageIndex,
-          rotation: page.rotation,
-        })),
-        ...(exportedTextEdits.length > 0
-          ? { edits: exportedTextEdits }
-          : {}),
-        ...(exportedNativeTextEdits.length > 0 ? { nativeTextEdits: exportedNativeTextEdits } : {}),
-        ...(exportedFontResources.length > 0 ? { fontResources: exportedFontResources } : {}),
-        ...(exportedSignatureEdits.length > 0
-          ? {
-              signatures: exportedSignatureEdits,
-              signatureImages: exportedSignatureImages,
-            }
-          : {}),
-        ...(exportedShapeEdits.length > 0
-          ? { shapes: exportedShapeEdits }
-          : {}),
-        ...(exportedFreehandEdits.length > 0 ? { freehands: exportedFreehandEdits } : {}),
-        ...(exportedTextMarkupEdits.length > 0 ? { textMarkups: exportedTextMarkupEdits } : {}),
-        ...(exportedComments.length > 0 ? { comments: exportedComments } : {}),
-        ...(exportedFormValues.length > 0
-          ? { formValues: exportedFormValues.map((edit) => ({ sourceDocumentId: edit.sourceDocumentId, page: edit.page, fieldName: edit.fieldName, value: edit.value })) }
-          : {}),
-        ...(exportedFormLocks.length > 0
-          ? { formLocks: exportedFormLocks.map((edit) => ({ sourceDocumentId: edit.sourceDocumentId, locked: edit.locked })) }
-          : {}),
-      }),
-    );
-
-    try {
-      const response = await fetch(`${backendUrl}/pdf/export/organize`, {
-        method: "POST",
-        body: formData,
+      const payloadResult = buildPdfExportPayload({
+        documentId,
+        operation,
+        requestedOutputName,
+        activeDocumentId,
+        outputName,
+        saveToOutputDir,
+        documents,
+        organizationPlans,
+        editsByDocument: pdfEditsByDocument,
+        signatureImages,
       });
-
-      if (!response.ok) {
-        let detail = "Le PDF modifié n'a pas pu être exporté.";
-
-        try {
-          const errorBody = (await response.json()) as { detail?: string };
-          detail = errorBody.detail ?? detail;
-        } catch {
-          // The backend may return an empty or non-JSON error response.
-        }
-
-        throw new Error(detail);
+      const payload = payloadResult instanceof Promise
+        ? await payloadResult
+        : payloadResult;
+      if (!payload.ok) {
+        setExportFeedback({ kind: "error", message: payload.message });
+        return false;
       }
-
-      const pdfBlob = await response.blob();
-      const downloadedName = getDownloadFileName(
-        response.headers.get("content-disposition"),
-        resolvedOutputName,
-      );
+      const exported = await executePdfExport({
+        backendUrl,
+        formData: payload.formData,
+        fallbackFileName: payload.outputName,
+      });
+      if (!exported.ok) {
+        setExportFeedback({
+          kind: "error",
+          message: exported.kind === "network"
+            ? exported.message
+            : `Erreur du backend : ${exported.message}`,
+        });
+        return false;
+      }
       if (operation === "print") {
         setPrintPreview({
-          documentName: downloadedName,
-          pdfBlob,
+          documentName: exported.downloadedName,
+          pdfBlob: exported.pdfBlob,
           stage: "ready",
         });
         return true;
       }
-      const outputWarning = response.headers.get("x-pdf-output-warning");
-      const outputStatus = response.headers.get("x-pdf-output-status");
-      const exportWarnings = parsePdfExportWarnings(
-        response.headers.get("x-pdf-export-warnings"),
-      );
-      const textOverflowWarningCount = exportWarnings.filter(
+      const textOverflowWarningCount = exported.warnings.filter(
         (warning) => warning.type === "text_overflow",
       ).length;
       const textOverflowMessage = textOverflowWarningCount
         ? ` ${textOverflowWarningCount} zone${textOverflowWarningCount > 1 ? "s" : ""} de texte dépassai${textOverflowWarningCount > 1 ? "ent" : "t"} de ${textOverflowWarningCount > 1 ? "leur" : "son"} cadre. ${textOverflowWarningCount > 1 ? "Leur export a" : "Son export a"} été réalisé en mode best effort.`
         : "";
-      const exportedFile = downloadPdfToBrowser(pdfBlob, downloadedName);
+      const exportedFile = downloadPdfToBrowser(exported.pdfBlob, exported.downloadedName);
       const operationLabel = operation === "export" ? "exporté" : "sauvegardé";
-      const exportMessage = outputWarning
-        ? `PDF ${operationLabel} avec succès : ${downloadedName}. ${outputWarning}`
-        : outputStatus === "saved"
-          ? `PDF ${operationLabel} avec succès : ${downloadedName}. Copie enregistrée dans data/output.`
-          : `PDF ${operationLabel} avec succès : ${downloadedName}.`;
+      const exportMessage = exported.outputWarning
+        ? `PDF ${operationLabel} avec succès : ${exported.downloadedName}. ${exported.outputWarning}`
+        : exported.outputStatus === "saved"
+          ? `PDF ${operationLabel} avec succès : ${exported.downloadedName}. Copie enregistrée dans data/output.`
+          : `PDF ${operationLabel} avec succès : ${exported.downloadedName}.`;
 
       try {
         const { usageWarnings: exportUsageWarnings } =
           await openGeneratedPdfDocument(
             exportedFile,
-            operation === "export" ? null : downloadedName,
+            operation === "export" ? null : exported.downloadedName,
           );
         setExportFeedback({
           kind:
-            outputWarning ||
+            exported.outputWarning ||
             textOverflowWarningCount > 0 ||
             exportUsageWarnings.length > 0
               ? "warning"
@@ -4589,12 +4369,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       }
       return true;
     } catch (error) {
-      const message =
-        error instanceof TypeError
-          ? "Backend indisponible ou erreur réseau. Vérifiez que le service PDF est démarré."
-          : error instanceof Error
-            ? `Erreur du backend : ${error.message}`
-            : "Le PDF n'a pas pu être exporté.";
+      const message = error instanceof TypeError
+        ? "Backend indisponible ou erreur réseau. Vérifiez que le service PDF est démarré."
+        : error instanceof Error
+          ? `Erreur du backend : ${error.message}`
+          : "Le PDF n'a pas pu être exporté.";
       setExportFeedback({ kind: "error", message });
       return false;
     } finally {
