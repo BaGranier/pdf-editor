@@ -106,6 +106,41 @@ génère en plus `pdf-large.pdf`, un fichier reproductible de plus de 50 Mo et
 250 pages. `QA_SKIP_LARGE=1` permet d'éviter cette génération lors d'un diagnostic
 local ciblé.
 
+### Qualification gros PDF multi-moteurs
+
+Les scénarios `QA-E2E-015` et `PERF-MEMORY-002` sont marqués `@slow @performance`.
+Ils réutilisent `pdf-large.pdf` pour vérifier le premier rendu, la navigation et
+le zoom, trois cycles ouverture/fermeture, deux documents lourds simultanés et
+l'export d'une modification légère. Les artefacts Playwright contiennent les
+durées d'opération et les compteurs structurels (canvases actifs, iframes
+d'impression et contenu IndexedDB).
+
+`performance.memory` est une mesure du heap JavaScript utile sous Chromium,
+mais ne représente ni la mémoire totale du navigateur ni le GPU. Firefox est
+donc qualifié par les mêmes invariants structurels et les durées attachées, sans
+seuil absolu de RAM. La WebView Tauri doit être mesurée séparément dans une
+campagne native ; elle n'est pas couverte par Playwright Web.
+
+#### Dernière campagne locale — 20 septembre 2026
+
+Exécutée avec Playwright 1.62.0 sur la fixture synthétique `pdf-large.pdf`
+(250 pages, 53 508 898 octets). Ces chiffres sont des observations du runner
+local, pas des seuils de CI ni une mesure de la RAM totale du navigateur.
+
+| Scénario | Chromium | Firefox | Tauri/WebView |
+| --- | --- | --- | --- |
+| 250 pages, navigation et zoom | OK — ouverture 1,30 s, fermeture 0,08 s | OK — ouverture 1,36 s, fermeture 0,19 s | Non testé : Rust/Cargo indisponible |
+| Trois cycles ouverture/fermeture | OK — ouverture 0,98–1,31 s ; fermeture 0,08–0,09 s | OK — ouverture 1,93–2,03 s ; fermeture 0,17–0,41 s | Non testé : Rust/Cargo indisponible |
+| Deux documents lourds | OK — deux entrées IndexedDB, puis 1 et 0 après fermeture | OK — deux entrées IndexedDB, puis 1 et 0 après fermeture | Non testé : Rust/Cargo indisponible |
+| Export modifié puis fermeture | OK — scénario complet 6,39 s | OK — scénario complet 6,94 s | Non testé : Rust/Cargo indisponible |
+
+En mode Continu, l'ouverture initiale matérialise actuellement 250 canvases
+pour cette fixture dans les deux moteurs. Le passage en Page unique borne le
+rendu observé à un ou deux canvases, et les quatre scénarios vérifient zéro
+canvas, iframe d'impression ou entrée IndexedDB après fermeture. Cette campagne
+ne détecte aucune rétention structurelle après fermeture, mais ne remplace pas
+un profilage RAM/GPU ou WebView sur les machines de release.
+
 La régression DOCX critique est couverte dans
 `conversion-docx-regression.spec.ts` sur Chromium et Firefox. Le scénario
 convertit une fixture synthétique immédiatement après ouverture, puis après
