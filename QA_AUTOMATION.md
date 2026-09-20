@@ -112,8 +112,8 @@ Les scénarios `QA-E2E-015` et `PERF-MEMORY-002` sont marqués `@slow @performan
 Ils réutilisent `pdf-large.pdf` pour vérifier le premier rendu, la navigation et
 le zoom, trois cycles ouverture/fermeture, deux documents lourds simultanés et
 l'export d'une modification légère. Les artefacts Playwright contiennent les
-durées d'opération et les compteurs structurels (canvases actifs, iframes
-d'impression et contenu IndexedDB).
+durées d'opération et les compteurs structurels (canvases, text/form layers
+actifs, iframes d'impression et contenu IndexedDB).
 
 `performance.memory` est une mesure du heap JavaScript utile sous Chromium,
 mais ne représente ni la mémoire totale du navigateur ni le GPU. Firefox est
@@ -134,12 +134,21 @@ local, pas des seuils de CI ni une mesure de la RAM totale du navigateur.
 | Deux documents lourds | OK — deux entrées IndexedDB, puis 1 et 0 après fermeture | OK — deux entrées IndexedDB, puis 1 et 0 après fermeture | Non testé : Rust/Cargo indisponible |
 | Export modifié puis fermeture | OK — scénario complet 6,39 s | OK — scénario complet 6,94 s | Non testé : Rust/Cargo indisponible |
 
-En mode Continu, l'ouverture initiale matérialise actuellement 250 canvases
-pour cette fixture dans les deux moteurs. Le passage en Page unique borne le
-rendu observé à un ou deux canvases, et les quatre scénarios vérifient zéro
-canvas, iframe d'impression ou entrée IndexedDB après fermeture. Cette campagne
-ne détecte aucune rétention structurelle après fermeture, mais ne remplace pas
-un profilage RAM/GPU ou WebView sur les machines de release.
+Depuis `VIEWER-CONTINUOUS-VIRTUALIZATION-001`, le mode Continu conserve les 250
+shells de page et leurs dimensions PDF, mais ne matérialise canvas, text layer
+et overlays que dans une fenêtre centrale : pages visibles plus deux pages de
+marge avant/après. Un saut transitoire conserve deux petites fenêtres plutôt
+que l'intervalle complet entre les pages. La campagne ciblée du 20 septembre a
+observé trois canvases/text layers au premier rendu sous Chromium et Firefox,
+et au plus douze pendant les sauts vers les pages 125 et 250. Les assertions
+E2E vérifient cette borne structurelle et le démontage de la page 1 après le
+saut ; elles ne constituent pas un seuil de RAM/GPU.
+
+Le passage en Page unique reste borné à un ou deux canvases, et les scénarios
+vérifient zéro canvas, text/form layer, iframe d'impression ou entrée IndexedDB
+après fermeture. Cette campagne ne détecte aucune rétention structurelle après
+fermeture, mais ne remplace pas un profilage RAM/GPU ou WebView sur les machines
+de release.
 
 La régression DOCX critique est couverte dans
 `conversion-docx-regression.spec.ts` sur Chromium et Firefox. Le scénario

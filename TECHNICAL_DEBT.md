@@ -75,12 +75,13 @@ backing store proportionnel au DPR dans les deux navigateurs.
 ## PDF-PERF-001 — Limites mémoire et exports extrêmes
 
 Les seuils de 50 Mo, 250 pages et huit documents ouverts restent des
-avertissements non bloquants. L'extraction de texte natif est désormais bornée à
-la page active et le rendu mono-page à deux buffers, mais PDF.js charge encore
-les documents en mémoire et IndexedDB les persiste intégralement ; les exports
-de plusieurs milliers de pages et les quotas navigateur doivent encore être
-mesurés sur les machines cibles. Le warning Vite sur la taille du bundle PDF.js
-reste non bloquant.
+avertissements non bloquants. L'extraction de texte natif est bornée à la page
+active, le rendu mono-page à deux buffers et le mode Continu à une fenêtre de
+pages visibles avec deux pages de marge. PDF.js charge néanmoins les documents
+en mémoire et IndexedDB les persiste intégralement ; les exports de plusieurs
+milliers de pages, les quotas navigateur, la RAM/GPU réelle et la WebView native
+doivent encore être mesurés sur les machines cibles. Le warning Vite sur la
+taille du bundle PDF.js reste non bloquant.
 
 ## BACKEND-TEST-001 — Multipart FastAPI d'intégration
 

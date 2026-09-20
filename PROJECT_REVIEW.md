@@ -22,8 +22,8 @@ qualifié une fixture de 250 pages / 53 508 898 octets dans Chromium et Firefox.
 La fermeture ne conserve plus de ressource structurelle observée (canvases,
 iframe d'impression ou entrée IndexedDB), y compris après trois cycles et deux
 documents lourds. Ce résultat ne suffit pas à déclarer les très gros PDF
-complets : le mode Continu matérialise encore 250 canvases pour cette fixture,
-et il n'existe pas de profil RAM/GPU ou WebView natif. Les risques prioritaires
+complets : Continu borne désormais ses canvases/text layers à une fenêtre autour
+du viewport, mais il n'existe pas de profil RAM/GPU ou WebView natif. Les risques prioritaires
 sont donc le workflow de fichiers Desktop réellement natif, sa validation par
 OS, la stratégie de distribution OCR/conversion, la scalabilité de Continu et
 la poursuite de la modularisation de `App.tsx` / `App.css`.
@@ -49,7 +49,7 @@ la poursuite de la modularisation de `App.tsx` / `App.css`.
 | Fichiers | PDF chiffrés / corrompus | Partiel | `test_robustness.py`, `test_ocr.py`, validation backend et `CONVERSION.md` | Pas de saisie de mot de passe ; le corpus reste synthétique | P2 selon cible produit |
 | Viewer | Continu, Page unique, Présentation, navigation | Complet | `App.tsx`, `viewer-modes.spec.ts`, `QA_AUTOMATION.md` | Validation physique Tauri/HiDPI séparée | Maintenir la campagne Web |
 | Viewer | DPR, resize et transition front/back | Partiel | `viewer/rendering.test.ts`, `viewer-page-transition.spec.ts`, `ui-workspace-responsive.spec.ts` | GPU, WebView Tauri et HiDPI réels non couverts automatiquement | P1 QA Desktop |
-| Viewer | Gros PDF / mémoire | Partiel | `QA-E2E-015`/`PERF-MEMORY-002`, `documentLifecycle.ts`, `QA_AUTOMATION.md` : 250 pages / 53 508 898 octets testés dans Chromium et Firefox, trois cycles, deux documents et export ; zéro ressource structurelle après fermeture | Continu matérialise 250 canvases ; aucune mesure RAM/GPU totale ni WebView native ; IndexedDB conserve volontairement les documents ouverts | P1 décider puis tester un rendu Continu virtualisé/lazy |
+| Viewer | Gros PDF / mémoire | Partiel | `QA-E2E-015`/`PERF-MEMORY-002`, `continuousRenderWindow.ts`, `documentLifecycle.ts`, `QA_AUTOMATION.md` : 250 pages / 53 508 898 octets testés dans Chromium et Firefox ; shells complets, fenêtre Continu bornée (3 canvases initiaux, ≤12 pendant sauts), trois cycles, deux documents et export ; zéro ressource structurelle après fermeture | Aucune mesure RAM/GPU totale ni WebView native ; PDF.js et IndexedDB conservent volontairement le document ouvert | P2 profiler RAM/GPU/WebView et qualifier des corpus extrêmes |
 | Édition | Texte ajouté, signatures, formes, dessin, commentaires, markup | Complet | couches d'édition, exports et E2E dédiés | Fidélité dépendante de la police source | Maintenir les tests export |
 | Édition | Texte PDF natif | Partiel | `NativeTextLayer.tsx`, API `/pdf/native-text*`, `NATIVE_TEXT_EDITING.md` | Spans homogènes/rotations orthogonales ; shaping et transforms avancés exclus | P2 `NATIVE-TEXT-002` |
 | Édition | Polices intégrées et personnalisées | Partiel | `FontRegistry`, import/sélecteur, diagnostics et export | Collections, variables, shaping et subsets avancés limités | P2 corpus de compatibilité |
@@ -108,8 +108,8 @@ la poursuite de la modularisation de `App.tsx` / `App.css`.
    `.pdf` est **configurée**, mais l'import des arguments, le double-clic, Save
    As natif et la QA d'un installateur restent **non supportés/non testés**.
 5. `QA_AUTOMATION.md` apporte une preuve Chromium + Firefox de nettoyage
-   structurel sur 250 pages, mais constate 250 canvases en mode Continu. Cette
-   observation n'est ni une fuite démontrée ni une preuve de scalabilité RAM/GPU.
+   structurel et de fenêtre de rendu bornée sur 250 pages. Elle ne constitue pas
+   pour autant un profil de mémoire RAM/GPU ni une validation WebView native.
 
 ## Priorités restantes
 
@@ -117,7 +117,7 @@ la poursuite de la modularisation de `App.tsx` / `App.css`.
 | --- | --- | --- | --- | --- |
 | P1 | Workflow fichiers Desktop natif : Open, Save/Save As, gestion de chemin et erreurs | Élevé / élevé | L | Rust/Cargo, API native de dialogue/fichiers, machine cible |
 | P1 | Build/installateur Tauri et packaging OCR/conversion par OS | Élevé / élevé | XL | Windows, macOS, Linux, licences/outils système, credentials éventuels |
-| P1 | Scalabilité du mode Continu sur très gros PDF : décider/mesurer une virtualisation ou un rendu lazy | Élevé / moyen | L | profilage RAM/GPU/WebView, QA 250+ pages |
+| P2 | Qualifier la RAM/GPU et la WebView sur des corpus Continu extrêmes | Moyen / moyen | L | profilage natif/WebView, corpus 500+ pages si justifié |
 | P1 | Modularisation progressive de `App.tsx` et `App.css` | Élevé / élevé | XL | tests de non-régression |
 | P2 | QA Desktop/HiDPI et compatibilité impression/formulaires avec lecteurs tiers | Moyen / moyen | L | runners natifs, machines/lecteurs réels |
 | P2 | Corpus fidélité native text/fonts, DOCX complexe et apparences AcroForm non standard | Moyen / moyen | L | fontes redistribuables, fixtures synthétiques |
@@ -136,9 +136,9 @@ la poursuite de la modularisation de `App.tsx` / `App.css`.
 2. Préparer un ticket distinct pour le workflow fichier natif, avec une
    interface IPC bornée et des mocks frontend, sans exposer le filesystem entier
    à la WebView.
-3. Prototyper la virtualisation/lazy rendering de Continu seulement après un
-   profilage qui relie les 250 canvases à une pression mémoire ou à une latence
-   utilisateur mesurable.
+3. Réserver un profilage RAM/GPU/WebView à un corpus plus extrême avant toute
+   optimisation supplémentaire du viewer ; la fenêtre de rendu Continu borne
+   déjà les ressources DOM coûteuses sur 250 pages.
 4. Extraire progressivement les domaines Forms, print, OCR/conversion ou export
    de `App.tsx` sans mélanger refactor et changement fonctionnel.
 
@@ -149,11 +149,10 @@ la poursuite de la modularisation de `App.tsx` / `App.css`.
    écart entre l'application Desktop annoncée et le flux actuellement livré :
    l'association `.pdf` est déclarée, mais aucun double-clic/argument n'est
    consommé, et Save/Save As restent des téléchargements WebView.
-2. **`VIEWER-CONTINUOUS-VIRTUALIZATION-001` — décider puis borner le rendu
-   Continu**, si aucune machine Tauri native n'est disponible. Les campagnes
-   Chromium/Firefox ne montrent pas de rétention après fermeture, mais 250
-   canvases en Continu constituent un risque de capacité mesurable avant les
-   corpus plus grands.
+2. **Qualifier le viewer sur un corpus plus extrême et une WebView native**,
+   seulement après disponibilité d'une machine Tauri : la fenêtre Continu est
+   désormais bornée dans Chromium/Firefox, mais la RAM/GPU et WebView restent
+   non mesurées.
 3. **`MODULARIZATION-003` — extraire un domaine fortement couplé**, après le
    choix Desktop/Continu. Cette dette reste P1, mais elle n'est pas un blocage
    fonctionnel aussi direct que les deux candidats précédents.
