@@ -149,6 +149,36 @@ test("QA-E2E-015 @slow @performance ouvre et ferme le PDF de robustesse", async 
   });
 });
 
+test("VIEWER-CONTINUOUS-VIRTUALIZATION-001 conserve les edits hors de la fenêtre de rendu", async ({ page }) => {
+  test.skip(
+    !existsSync(fixtures.large),
+    "Fixture > 50 Mo générée uniquement par la campagne complète.",
+  );
+  await openApp(page);
+  await openPdf(page, fixtures.large);
+
+  await expect(page.locator('.pdf-page[data-page-number="1"]')).toHaveAttribute("data-rendered", "true");
+  const firstLayer = page.getByLabel("Couche d'édition de la page 1");
+  await expect(firstLayer).toBeVisible();
+  await page.getByRole("button", { name: "Ajouter du texte" }).click();
+  const firstLayerBox = await firstLayer.boundingBox();
+  expect(firstLayerBox).not.toBeNull();
+  if (!firstLayerBox) throw new Error("La couche d’édition de la page 1 est introuvable.");
+  await page.mouse.move(firstLayerBox.x + 60, firstLayerBox.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(firstLayerBox.x + 180, firstLayerBox.y + 130, { steps: 3 });
+  await page.mouse.up();
+  await page.getByLabel("Texte ajouté page 1").fill("Edition conservée page 1");
+
+  const middlePage = page.locator('.pdf-page[data-page-number="125"]');
+  await middlePage.scrollIntoViewIfNeeded();
+  await expect(middlePage).toHaveAttribute("data-rendered", "true");
+  await expect(page.locator('.pdf-page[data-page-number="1"]')).toHaveAttribute("data-rendered", "false");
+
+  await page.locator('.pdf-page[data-page-number="1"]').scrollIntoViewIfNeeded();
+  await expect(page.getByLabel("Texte ajouté page 1")).toHaveValue("Edition conservée page 1");
+});
+
 test("PERF-MEMORY-002 @slow @performance répète les cycles ouverture-fermeture d'un gros PDF", async ({
   page,
   qa,
