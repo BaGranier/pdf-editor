@@ -23,6 +23,8 @@ async function sampleLargeDocumentResources(page: import("@playwright/test").Pag
     return {
       activePageCanvases: canvas.length,
       canvasPixels,
+      activeTextLayers: document.querySelectorAll(".pdf-page .pdf-text-layer").length,
+      activeFormLayers: document.querySelectorAll(".pdf-page .pdf-form-layer").length,
       activePrintFrames: printFrames,
       storedDocumentCount: documents.length,
       storedDocumentBytes: documents.reduce((total, entry) => total + (entry.content?.size ?? 0), 0),
@@ -68,9 +70,33 @@ test("QA-E2E-015 @slow @performance ouvre et ferme le PDF de robustesse", async 
     return memory?.usedJSHeapSize ?? null;
   });
   await qa.measure("open-large-pdf", () => openPdf(page, fixtures.large));
-  const resourcesAfterOpen = await sampleLargeDocumentResources(page);
   await expect(page.getByText(/250 pages/).first()).toBeVisible();
   await expect(page.getByText(/50 Mo/)).toBeVisible();
+  await expect(page.locator(".pdf-page")).toHaveCount(250);
+  await expect.poll(async () => (await sampleLargeDocumentResources(page)).activePageCanvases).toBeLessThanOrEqual(8);
+  const resourcesAfterOpen = await sampleLargeDocumentResources(page);
+  // Continu keeps all logical page shells but only a small render window.
+  expect(resourcesAfterOpen.activeTextLayers).toBeLessThanOrEqual(8);
+  expect(resourcesAfterOpen.activeFormLayers).toBeLessThanOrEqual(8);
+
+  await qa.measure("continuous-scroll-middle-and-end", async () => {
+    const middlePage = page.locator('.pdf-page[data-page-number="125"]');
+    await middlePage.scrollIntoViewIfNeeded();
+    await expect(middlePage).toHaveAttribute("data-rendered", "true");
+    await expect(page.locator('.pdf-page[data-page-number="1"]')).toHaveAttribute("data-rendered", "false");
+    await expect.poll(async () => (await sampleLargeDocumentResources(page)).activePageCanvases).toBeLessThanOrEqual(12);
+
+    const lastPage = page.locator('.pdf-page[data-page-number="250"]');
+    await lastPage.scrollIntoViewIfNeeded();
+    await expect(lastPage).toHaveAttribute("data-rendered", "true");
+    await expect.poll(async () => (await sampleLargeDocumentResources(page)).activePageCanvases).toBeLessThanOrEqual(12);
+
+    await page.getByRole("button", { name: "Augmenter le zoom" }).click();
+    await expect(lastPage).toHaveAttribute("data-rendered", "true");
+    await page.setViewportSize({ width: 1280, height: 760 });
+    await expect(lastPage).toHaveAttribute("data-rendered", "true");
+    await expect.poll(async () => (await sampleLargeDocumentResources(page)).activePageCanvases).toBeLessThanOrEqual(12);
+  });
   await qa.measure("navigate-and-zoom-large-pdf", async () => {
     await page.getByLabel("Mode d'affichage").selectOption("single-page");
     await page.getByTestId("pdf-viewer").focus();

@@ -136,6 +136,7 @@ import { downloadPdfToBrowser } from "./saving/destination";
 import { getSuggestedPdfSaveName } from "./saving/fileName";
 import { openPdfBlobForPrint, printPdfBlob } from "./saving/print";
 import { computeFitScale } from "./viewer/fit";
+import { getContinuousRenderWindow } from "./viewer/continuousRenderWindow";
 import { getCanvasRenderDimensions } from "./viewer/rendering";
 import { type PdfSearchHit } from "./pdf/search";
 import { loadPdfFormPage, type PdfFormField } from "./pdf/forms";
@@ -369,7 +370,6 @@ type PdfPageCanvasProps = {
   freehandStyle: FreehandStyle;
   pendingSignatureImage: SignatureImage | null;
   eyedropperTarget: "stroke" | "fill" | null;
-  scrollRootRef: RefObject<HTMLElement | null>;
   registerPageRef: (pageNumber: number, node: HTMLElement | null) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddNativeText: (span: NativeTextSpan, text: string) => void;
@@ -390,8 +390,7 @@ type PdfPageCanvasProps = {
   searchHits: PdfSearchHit[];
   activeSearchHitId: string | null;
   isIncomingPage?: boolean;
-  renderImmediately?: boolean;
-  suspendRender?: boolean;
+  renderEnabled: boolean;
   onRenderReady?: (pageNumber: number) => void;
 };
 
@@ -414,7 +413,6 @@ function PdfPageCanvas({
   freehandStyle,
   pendingSignatureImage,
   eyedropperTarget,
-  scrollRootRef,
   registerPageRef,
   onAddText,
   onAddNativeText,
@@ -435,8 +433,7 @@ function PdfPageCanvas({
   searchHits,
   activeSearchHitId,
   isIncomingPage = false,
-  renderImmediately = false,
-  suspendRender = false,
+  renderEnabled,
   onRenderReady,
 }: PdfPageCanvasProps) {
   const pageRef = useRef<HTMLElement | null>(null);
@@ -444,7 +441,7 @@ function PdfPageCanvas({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const textLayerRef = useRef<HTMLDivElement | null>(null);
   const [textLayerRevision, setTextLayerRevision] = useState(0);
-  const [shouldRender, setShouldRender] = useState(false);
+  const shouldRender = renderEnabled;
   const [renderState, setRenderState] = useState<RenderState>("idle");
   const [viewport, setViewport] = useState<PageViewport | null>(null);
   const [nativeTextSpans, setNativeTextSpans] = useState<NativeTextSpan[]>([]);
@@ -472,6 +469,30 @@ function PdfPageCanvas({
     PDFJS_DISPLAY_ANNOTATION_MODES,
   );
   const isFormCanvasReady = formLayerActive && canvasAnnotationMode === PDFJS_DISPLAY_ANNOTATION_MODES.ENABLE_FORMS;
+
+  // Every continuous-mode page keeps a lightweight shell with its exact PDF
+  // dimensions. This preserves scroll geometry while canvases and overlays are
+  // only mounted for the shared render window around the viewport.
+  useEffect(() => {
+    let cancelled = false;
+    void pdfDocument.getPage(sourcePageNumber).then((page) => {
+      if (cancelled) return;
+      setViewport(page.getViewport({
+        scale: zoom,
+        rotation: ((page.rotate ?? 0) + rotation) % 360,
+      }));
+    }).catch(() => {
+      if (!cancelled) setRenderState("error");
+    });
+    return () => { cancelled = true; };
+  }, [pdfDocument, rotation, sourcePageNumber, zoom]);
+
+  useEffect(() => {
+    if (shouldRender) return;
+    setRenderState("idle");
+    setCanvasAnnotationMode(null);
+    setTextLayerRevision((revision) => revision + 1);
+  }, [shouldRender]);
 
   useEffect(() => () => {
     if (nativeTextPreviewUrl) URL.revokeObjectURL(nativeTextPreviewUrl);
@@ -656,44 +677,6 @@ function PdfPageCanvas({
   );
 
   useEffect(() => {
-    const pageElement = pageRef.current;
-
-    if (!pageElement) {
-      return;
-    }
-
-    if (renderImmediately) {
-      setShouldRender(true);
-      return;
-    }
-
-    if (!("IntersectionObserver" in window)) {
-      setShouldRender(true);
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry?.isIntersecting) {
-          setShouldRender(true);
-          observer.disconnect();
-        }
-      },
-      {
-        root: scrollRootRef.current,
-        rootMargin: "1200px 0px",
-        threshold: 0.01,
-      },
-    );
-
-    observer.observe(pageElement);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [renderImmediately, scrollRootRef]);
-
-  useEffect(() => {
     let isCancelled = false;
     let renderTask: RenderTask | null = null;
     let textLayerTask: PdfTextLayerRenderTask | null = null;
@@ -701,7 +684,7 @@ function PdfPageCanvas({
     const surface = surfaceRef.current;
     const textLayerContainer = textLayerRef.current;
 
-    if (suspendRender || !shouldRender || !canvas || !surface || !textLayerContainer) {
+    if (!shouldRender || !canvas || !surface || !textLayerContainer) {
       return;
     }
 
@@ -797,8 +780,9 @@ function PdfPageCanvas({
       textLayerTask?.cancel();
       textLayerContainer.replaceChildren();
       textLayerContainer.hidden = true;
+      clearCanvas(canvas);
     };
-  }, [displayPageNumber, onRenderReady, pdfDocument, requestedAnnotationMode, rotation, shouldRender, sourcePageNumber, suspendRender, zoom]);
+  }, [displayPageNumber, onRenderReady, pdfDocument, requestedAnnotationMode, rotation, shouldRender, sourcePageNumber, zoom]);
 
   useEffect(() => {
     return () => {
@@ -817,6 +801,7 @@ function PdfPageCanvas({
       data-page-number={displayPageNumber}
       data-source-page-number={sourcePageNumber}
       data-rotation={rotation}
+      data-rendered={shouldRender ? "true" : "false"}
       data-annotation-mode={canvasAnnotationMode === PDFJS_DISPLAY_ANNOTATION_MODES.ENABLE_FORMS ? "enable_forms" : "enable"}
       aria-label={`Page ${displayPageNumber}`}
       aria-hidden={isIncomingPage || undefined}
@@ -825,6 +810,7 @@ function PdfPageCanvas({
       <div
         ref={surfaceRef}
         className="page-surface"
+        style={viewport ? { width: `${viewport.width}px`, height: `${viewport.height}px` } : undefined}
         onClick={(event) => {
           if (sampleRenderedColor(event)) {
             return;
@@ -854,16 +840,17 @@ function PdfPageCanvas({
           }
         }}
       >
-        {renderState === "error" ? (
+        {!shouldRender ? <div className="page-placeholder" aria-hidden="true" /> : null}
+        {shouldRender && renderState === "error" ? (
           <p className="page-error">Impossible d'afficher cette page.</p>
         ) : null}
-        {renderState !== "ready" && renderState !== "error" ? (
+        {shouldRender && renderState !== "ready" && renderState !== "error" ? (
           <div className="page-placeholder" aria-hidden="true">
             {renderState === "loading" ? "Chargement..." : ""}
           </div>
         ) : null}
-        <canvas ref={canvasRef} className="pdf-canvas" />
-        {searchHits.length > 0 ? (
+        {shouldRender ? <canvas ref={canvasRef} className="pdf-canvas" /> : null}
+        {shouldRender && searchHits.length > 0 ? (
           <PdfSearchHighlights
             hits={searchHits}
             activeHitId={activeSearchHitId}
@@ -872,8 +859,8 @@ function PdfPageCanvas({
             textLayerRevision={textLayerRevision}
           />
         ) : null}
-        {nativeTextPreviewUrl ? <img className="native-text-preview" data-native-preview-kind="clean-background" src={nativeTextPreviewUrl} alt="" aria-hidden="true" /> : null}
-        <div
+        {shouldRender && nativeTextPreviewUrl ? <img className="native-text-preview" data-native-preview-kind="clean-background" src={nativeTextPreviewUrl} alt="" aria-hidden="true" /> : null}
+        {shouldRender ? <div
           ref={textLayerRef}
           className="textLayer pdf-text-layer"
           hidden
@@ -900,8 +887,8 @@ function PdfPageCanvas({
               window.dispatchEvent(new CustomEvent("pdf-text-markup-selection", { detail: { page: sourcePageNumber, rects, top: anchor.top, left: anchor.left + anchor.width / 2 } }));
             }, 0);
           }}
-        />
-        {viewport && nativeTextRuntimeActive ? (
+        /> : null}
+        {shouldRender && viewport && nativeTextRuntimeActive ? (
           <NativeTextLayer
             spans={nativeTextSpans.length ? nativeTextSpans : edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text").map((edit) => ({ ...edit.source, page: edit.page, rect: edit.rect, fontWeight: edit.style.bold ? 700 : 400, fontStyle: edit.style.fontStyle ?? "normal" }))}
             edits={edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text")}
@@ -916,7 +903,7 @@ function PdfPageCanvas({
             fontValidationByEditId={nativeTextFontValidation}
           />
         ) : null}
-        {viewport && isFormCanvasReady ? (
+        {shouldRender && viewport && isFormCanvasReady ? (
           <>
           <PdfFormLayer
             fields={formFields}
@@ -940,10 +927,10 @@ function PdfPageCanvas({
           />
           </>
         ) : null}
-        {formError && formRuntimeActive ? <p className="native-text-layer__error" role="status">{formError}</p> : null}
-        {nativeTextError && nativeTextRuntimeActive ? <p className="native-text-layer__error" role="status">{nativeTextError}</p> : null}
-        {nativeTextRuntimeActive && !nativeTextIndexed && !nativeTextError ? <p className="native-text-layer__error" role="status">Analyse du texte de cette page…</p> : null}
-        {nativeTextRuntimeActive &&
+        {shouldRender && formError && formRuntimeActive ? <p className="native-text-layer__error" role="status">{formError}</p> : null}
+        {shouldRender && nativeTextError && nativeTextRuntimeActive ? <p className="native-text-layer__error" role="status">{nativeTextError}</p> : null}
+        {shouldRender && nativeTextRuntimeActive && !nativeTextIndexed && !nativeTextError ? <p className="native-text-layer__error" role="status">Analyse du texte de cette page…</p> : null}
+        {shouldRender && nativeTextRuntimeActive &&
         nativeTextIndexed &&
         !nativeTextError &&
         nativeTextSpans.length === 0 &&
@@ -952,7 +939,7 @@ function PdfPageCanvas({
             Aucun texte PDF natif modifiable sur cette page. Le texte présent uniquement dans une image ou converti en courbes ne peut pas être édité directement.
           </p>
         ) : null}
-        {viewport ? (
+        {shouldRender && viewport ? (
           <PdfEditLayer
             pageNumber={sourcePageNumber}
             viewport={viewport}
@@ -1070,6 +1057,7 @@ function PdfViewer({
   const scrollFrameRef = useRef<number | null>(null);
   const lastFocusRequestRef = useRef<number | null>(null);
   const pageRefs = useRef(new Map<number, HTMLElement | null>());
+  const observedPageNumbersRef = useRef(new Set<number>());
   const dragStateRef = useRef<{
     startX: number;
     startY: number;
@@ -1078,6 +1066,7 @@ function PdfViewer({
   } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [fitLayoutVersion, setFitLayoutVersion] = useState(0);
+  const [observedPageNumbers, setObservedPageNumbers] = useState<number[]>([]);
   const previousViewerModeRef = useRef<ViewerMode>(viewerMode);
   const pages = useMemo(
     () =>
@@ -1117,13 +1106,55 @@ function PdfViewer({
   }, [activePageNumber, pages, viewerMode, visiblePageNumber]);
 
   const registerPageRef = useCallback((pageNumber: number, node: HTMLElement | null) => {
+    const previous = pageRefs.current.get(pageNumber) ?? null;
+    if (previous === node) return;
     if (node === null) {
       pageRefs.current.delete(pageNumber);
-      return;
+    } else {
+      pageRefs.current.set(pageNumber, node);
     }
-
-    pageRefs.current.set(pageNumber, node);
   }, []);
+
+  useEffect(() => {
+    observedPageNumbersRef.current.clear();
+    setObservedPageNumbers([]);
+  }, [document.id, viewerMode]);
+
+  // A single observer owned by the viewer drives the bounded continuous render
+  // window. Page components no longer keep one sticky observer/canvas each.
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (viewerMode !== "continuous" || !viewer || !("IntersectionObserver" in window)) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      const next = new Set(observedPageNumbersRef.current);
+      for (const entry of entries) {
+        const pageNumber = Number((entry.target as HTMLElement).dataset.pageNumber);
+        if (!Number.isInteger(pageNumber)) continue;
+        if (entry.isIntersecting) next.add(pageNumber);
+        else next.delete(pageNumber);
+      }
+      observedPageNumbersRef.current = next;
+      const nextNumbers = [...next].sort((left, right) => left - right);
+      setObservedPageNumbers((current) =>
+        current.length === nextNumbers.length && current.every((pageNumber, index) => pageNumber === nextNumbers[index])
+          ? current
+          : nextNumbers,
+      );
+    }, { root: viewer, threshold: 0.01 });
+
+    for (const pageElement of pageRefs.current.values()) {
+      if (pageElement) observer.observe(pageElement);
+    }
+    return () => observer.disconnect();
+  }, [document.id, pages, viewerMode]);
+
+  const continuousRenderPageNumbers = useMemo(
+    () => viewerMode === "continuous"
+      ? getContinuousRenderWindow(pages.length, [activePageNumber, ...observedPageNumbers])
+      : null,
+    [activePageNumber, observedPageNumbers, pages.length, viewerMode],
+  );
 
   const goToPage = useCallback((pageNumber: number) => {
     onActivePageChange(document.id, Math.min(pages.length, Math.max(1, pageNumber)));
@@ -1582,7 +1613,6 @@ function PdfViewer({
                 viewerMode !== "presentation" && isActiveDocumentSource ? pendingSignatureImage : null
               }
               eyedropperTarget={isActiveDocumentSource ? eyedropperTarget : null}
-              scrollRootRef={viewerRef}
               registerPageRef={registerPageRef}
               onAddText={onAddText}
               onAddNativeText={onAddNativeText}
@@ -1607,8 +1637,7 @@ function PdfViewer({
               }
               activeSearchHitId={activeSearchHitId}
               isIncomingPage={isIncoming}
-              renderImmediately={viewerMode !== "continuous"}
-              suspendRender={viewerMode !== "continuous" && !isIncoming && page.displayPageNumber !== activePageNumber}
+              renderEnabled={viewerMode !== "continuous" || continuousRenderPageNumbers?.has(page.displayPageNumber) === true}
               onRenderReady={viewerMode === "continuous" ? undefined : commitVisiblePage}
             />
           );
