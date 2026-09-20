@@ -100,9 +100,10 @@ contournés par rasterisation, faux style CSS ou remplacement visuel opaque.
 ## DESKTOP-RELEASE-001 — Packaging et validation de release
 
 Le sidecar FastAPI local est supervisé en développement, mais les installateurs
-autonomes ne sont pas encore validés sous Windows, macOS et Linux. En
-particulier, les binaires et données OCR (OCRmyPDF, Tesseract, Ghostscript,
-QPDF), l'association `.pdf`, l'ouverture par double-clic, la signature Windows,
+autonomes ne sont pas encore validés sous Windows, macOS et Linux. Le manifeste
+déclare désormais l'association `.pdf`, mais l'ouverture d'un argument ou d'un
+double-clic n'est pas encore importée dans React. Les binaires et données OCR
+(OCRmyPDF, Tesseract, Ghostscript, QPDF), Save As natif, la signature Windows,
 la notarisation macOS et la mise à jour applicative restent à traiter.
 
 Cette dette est durable car elle conditionne une diffusion desktop générale ;

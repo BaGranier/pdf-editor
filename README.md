@@ -239,9 +239,11 @@ plan d'export. Le frontend conserve un historique local pour les interactions
 d'édition prises en charge, et le backend signale les éventuels débordements de
 texte sans altérer les PDF sources.
 
-En web pur, le téléchargement navigateur est le comportement standard ; le choix
-libre d'un dossier et un vrai « Enregistrer sous… » système seront traités plus
-tard avec Tauri. `/workspace/data/output` est une sortie de développement.
+En web pur, le téléchargement navigateur est le comportement standard. Le shell
+Tauri actuel conserve ce flux WebView : la destination native, l'ouverture par
+double-clic et la réception des arguments de lancement ne sont pas encore
+implémentées. Leur statut de release est détaillé dans [DESKTOP.md](DESKTOP.md).
+`/workspace/data/output` est une sortie de développement.
 
 ### Limites d'usage recommandées
 

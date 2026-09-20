@@ -1,4 +1,4 @@
-# DESKTOP-001 — shell Tauri et backend local
+# DESKTOP-RELEASE-001 — shell Tauri et préparation de release
 
 ## Architecture retenue
 
@@ -23,6 +23,31 @@ services/pdf-engine (FastAPI / OCR / conversion locale)
 Le nom **PDF Studio Local** et l’identifiant `com.local.pdfstudio` sont
 provisoires. Un changement d’identifiant changera également les répertoires OS
 de l’application.
+
+## Frontières Web / Desktop pour les fichiers
+
+Le frontend reste volontairement utilisable dans un navigateur sans accès au
+système de fichiers. Le flux réellement livré est donc actuellement le suivant :
+
+| Action | Web | Desktop actuel |
+| --- | --- | --- |
+| Ouvrir depuis l'interface | sélecteur de fichiers du navigateur | même sélecteur WebView |
+| Exporter | téléchargement navigateur | même téléchargement WebView |
+| Enregistrer sous | dialogue applicatif de nom, puis téléchargement | même dialogue applicatif et téléchargement |
+| Enregistrer après un Save As | nouveau téléchargement au même nom proposé | même comportement : aucun chemin natif n'est mémorisé |
+
+Il n'existe pas encore de permission filesystem ni de plugin de dialogue dans
+la capability de la WebView. Ce choix limite volontairement la surface IPC : un
+futur adaptateur Desktop devra exposer des commandes Rust minimales et testées
+pour choisir un chemin, écrire le PDF exporté et associer ce chemin au document.
+Il ne devra pas donner un accès générique au système de fichiers au JavaScript.
+
+Le manifeste Tauri déclare désormais `.pdf` / `application/pdf` comme type que
+l'application peut éditer. Cette déclaration prépare les installateurs et
+« Ouvrir avec » ; elle ne suffit pas à elle seule à importer les arguments de
+lancement dans React. L'ouverture par double-clic, les arguments de démarrage et
+le second lancement restent donc non pris en charge tant qu'un flux de chemins
+borné et un test natif n'ont pas été livrés.
 
 ## Prérequis de développement et de compilation
 
@@ -171,6 +196,27 @@ langue. Les bundles produits aujourd'hui ne doivent donc pas être présentés
 comme des installateurs autonomes validés pour toutes les fonctionnalités et
 toutes les plateformes.
 
+### Stratégie des dépendances OCR et conversion
+
+La stratégie actuelle est **dépendance système détectée au runtime**, sur les
+trois OS. Le backend reste l'unique autorité pour le diagnostic : il retourne
+des erreurs métier explicites lorsque Tesseract, une langue ou OCRmyPDF manque.
+Le viewer, l'édition et l'ouverture de PDF continuent de fonctionner.
+
+| Outil / donnée | Utilisation réelle | Windows | macOS | Linux | Décision de release actuelle |
+| --- | --- | --- | --- | --- | --- |
+| Tesseract | langues installées et OCR indirect via OCRmyPDF | dépendance système | dépendance système | dépendance système | Ne pas embarquer avant inventaire des binaires, données et notices ; Tesseract est sous Apache-2.0, mais ses dépendances et données doivent être revues séparément. |
+| `tessdata` `eng`, `fra` | langues proposées par l'interface | dépendance système | dépendance système | dépendance système | Ne pas présumer de la disponibilité : vérifier `tesseract --list-langs` lors de la QA native. |
+| OCRmyPDF | commande OCR appelée par `app/ocr.py` | dépendance système | dépendance système | dépendance système | Pas de bundle ; revue des dépendances transitives et de sa licence MPL-2.0 requise avant redistribution. |
+| Ghostscript | dépendance d'OCRmyPDF | dépendance système | dépendance système | dépendance système | Pas de bundle ; décision juridique préalable obligatoire (AGPL ou licence commerciale selon le mode de redistribution). |
+| QPDF | dépendance d'OCRmyPDF et des environnements de conversion | dépendance système | dépendance système | dépendance système | Pas de bundle ; vérifier la version, les notices et la licence Apache-2.0 de l'artefact retenu. |
+| LibreOffice | validation visuelle DOCX, pas la conversion applicative courante | non requis au runtime | non requis au runtime | non requis au runtime | Réservé à la QA, non distribué avec l'application. |
+
+Ce tableau décrit une stratégie technique, non une autorisation de
+redistribution. Toute décision d'empaquetage doit inclure les licences exactes
+des versions retenues, les notices, les dépendances transitives et une
+validation juridique/distribution par plateforme.
+
 Les artefacts PyInstaller, `target/`, `src-tauri/gen/` et tous les sidecars
 générés sont ignorés par Git. On peut préparer manuellement un binaire déjà
 construit :
@@ -235,15 +281,22 @@ données applicatif. Il ne doit donc écrire ni dans `data/input`, ni dans
 cd apps/desktop
 npm run desktop:check
 
+# Vérifie la configuration, le frontend et le lanceur backend lorsque Rust/Cargo
+# ne sont pas disponibles. Ce n'est pas une validation Tauri native.
+npm run desktop:check:static
+
 cd src-tauri
 cargo check --locked
 ```
 
 `desktop:check` valide la configuration et les capabilities, détecte soit le
 sidecar courant soit le repli dev, construit le frontend, exécute les tests du
-lanceur desktop et lance `cargo check`. Dans un sandbox qui interdit les sockets
-loopback, le test `/health` est explicitement sauté avec le marqueur
-`desktop_network`; il reste actif en local et en CI standard.
+lanceur desktop et lance `cargo check`. `desktop:check:static` effectue les mêmes
+contrôles sauf `cargo check` et annonce explicitement cette limite : il est utile
+dans un sandbox sans Rust mais ne valide ni le code Rust ni une WebView. Dans un
+sandbox qui interdit les sockets loopback, le test `/health` est explicitement
+sauté avec le marqueur `desktop_network`; il reste actif en local et en CI
+standard.
 
 Validations complètes complémentaires :
 
@@ -271,26 +324,27 @@ bundle ; le cross-compiling du backend Python n’est pas pris en charge.
 ### Matrice de support de release
 
 Cette matrice décrit l'état vérifié du dépôt, et non une promesse de support.
-`À valider` signifie qu'aucun run natif versionné n'a encore confirmé le
-scénario. Le shell n'expose volontairement ni plugin de dialogue de fichiers ni
-permission filesystem au frontend : l'ouverture/sauvegarde reste donc le flux
-Web tant qu'un adapter natif dédié n'est pas livré.
+Les valeurs sont limitées à `OK`, `KO`, `Configuré`, `Non testé`, `Non supporté`
+et `Bloqué environnement`. Une configuration déclarative n'est jamais une QA
+native.
 
 | Fonction | Windows | macOS | Linux |
 | --- | --- | --- | --- |
-| Build du shell + sidecar | À valider nativement | À valider nativement | Configuration et `desktop:check` contrôlés en CI, bundle utilisateur à valider |
-| Ouverture depuis l'application | À valider dans la WebView | À valider dans la WebView | À valider dans la WebView |
-| Ouvrir un `.pdf` depuis l'OS / double-clic | Non implémenté | Non implémenté | Non implémenté |
-| Save As avec destination native | Non implémenté ; téléchargement Web | Non implémenté ; téléchargement Web | Non implémenté ; téléchargement Web |
-| Sidecar FastAPI, port loopback et health | À valider nativement | À valider nativement | Couvert par les tests du lanceur lorsque le loopback est disponible |
-| OCR `eng` / `fra` | Outils système ou packaging à définir | Outils système ou packaging à définir | Outils système ou packaging à définir |
-| Conversion | Outils système ou packaging à définir | Outils système ou packaging à définir | Outils système ou packaging à définir |
-| Impression et AcroForms | À valider dans la WebView | À valider dans la WebView | À valider dans la WebView |
-
-Les exécutables OCR (`ocrmypdf`, Tesseract, Ghostscript et QPDF) et les données
-de langue ne sont pas inclus par le sidecar PyInstaller. Une release devra soit
-les embarquer par plateforme, soit les détecter au démarrage et expliquer la
-fonction dégradée sans empêcher le viewer ou l'édition de démarrer.
+| Build shell + sidecar | Non testé | Non testé | Non testé |
+| Installation / désinstallation | Non testé | Non testé | Non testé |
+| Icône et métadonnées bundle | Configuré | Configuré | Configuré |
+| Association `.pdf` dans le bundle | Configuré | Configuré | Configuré |
+| Double-clic `.pdf` / argument au lancement | Non supporté : argument non importé par React | Non supporté : argument non importé par React | Non supporté : argument non importé par React |
+| Second lancement avec un PDF | Non supporté : aucune stratégie single-instance | Non supporté : aucune stratégie single-instance | Non supporté : aucune stratégie single-instance |
+| Ouverture depuis l'interface | Non testé : sélecteur WebView | Non testé : sélecteur WebView | Non testé : sélecteur WebView |
+| Save As vers une destination native | Non supporté : téléchargement WebView | Non supporté : téléchargement WebView | Non supporté : téléchargement WebView |
+| Save vers un chemin déjà choisi | Non supporté : chemin non mémorisé | Non supporté : chemin non mémorisé | Non supporté : chemin non mémorisé |
+| Sidecar, port dynamique, health/restart/shutdown | Configuré ; non testé nativement | Configuré ; non testé nativement | Configuré ; non testé nativement |
+| OCR `eng` / `fra` | Configuré comme dépendance système ; non testé | Configuré comme dépendance système ; non testé | Configuré comme dépendance système ; non testé |
+| Conversion | Configuré ; non testé | Configuré ; non testé | Configuré ; non testé |
+| Impression et AcroForms | Non testé | Non testé | Non testé |
+| Signature Windows | Non supporté | Non supporté | Non supporté |
+| Signature / notarisation macOS | Non supporté | Non supporté | Non supporté |
 
 Il n'existe pas encore d'installateur final validé comme entièrement autonome.
 Node.js, Rust/Cargo, Visual Studio Build Tools, MSVC, le Windows SDK, Xcode et le
@@ -299,13 +353,28 @@ fonctionnelles que l'utilisateur final devrait installer. En revanche, tant que
 le packaging OCR n'est pas finalisé, une build locale peut encore dépendre des
 outils OCR système listés plus haut.
 
-DESKTOP-001 ne garantit pas encore :
+### Procédure de QA native avant release
 
-- l’association PDF par défaut, « Ouvrir avec » ou l’ouverture par double-clic ;
-- une boîte de dialogue de sauvegarde native complète ;
-- le packaging de toutes les dépendances OCR/conversion sur les trois OS ;
-- les installateurs utilisateur finaux ;
-- la signature Windows ou la notarisation macOS ;
-- l’auto-update.
+Exécuter cette procédure sur une machine de chaque OS cible ; un résultat Web
+Playwright ne valide pas une WebView Tauri.
 
-Ces sujets restent réservés à DESKTOP-002 à DESKTOP-006.
+1. Installer les prérequis de build de l'OS, Rust >= 1.88, Node 22, `uv` et les
+   dépendances OCR de la stratégie retenue.
+2. Depuis le dépôt, lancer `cd apps/web && npm ci`, `cd ../desktop && npm ci`,
+   puis `cd ../../services/pdf-engine && uv sync --locked`.
+3. Lancer `cd apps/desktop && npm run desktop:check`, puis
+   `npm run desktop:build` sur l'OS cible. Le sidecar Python est construit pour
+   cet OS : ne pas le cross-compiler depuis un autre système.
+4. Installer l'artefact généré et vérifier : lancement, health backend,
+   ouverture depuis l'interface, édition, Save As WebView, fermeture dirty,
+   impression, formulaires, OCR `eng` et `fra`, conversion et arrêt complet.
+5. Vérifier les cas de chemin avec espaces et Unicode. Vérifier l'association
+   `.pdf` dans l'installateur, puis enregistrer séparément que le double-clic
+   reste non supporté tant que le flux d'arguments n'est pas implémenté.
+6. Relever la version de chaque dépendance système et le résultat de
+   `tesseract --list-langs`; archiver les journaux `pdf-engine.log` si un
+   scénario échoue.
+
+La signature Windows, la signature/notarisation macOS et l'auto-update exigent
+des credentials et une infrastructure de distribution qui ne sont pas présents
+dans ce dépôt. Ils doivent rester `Non supporté` jusqu'à une validation réelle.
