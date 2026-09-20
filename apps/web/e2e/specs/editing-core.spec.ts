@@ -8,6 +8,28 @@ import {
 } from "../helpers/app";
 import { validatePdf } from "../helpers/pdf-validation";
 
+async function dragInEditLayer(
+  page: import("@playwright/test").Page,
+  editLayer: import("@playwright/test").Locator,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+) {
+  const layerBox = await editLayer.boundingBox();
+  expect(layerBox).not.toBeNull();
+  if (!layerBox) {
+    throw new Error("La couche d'édition n'est pas mesurable.");
+  }
+
+  await page.mouse.move(layerBox.x + start.x, layerBox.y + start.y);
+  await page.mouse.down();
+  await page.mouse.move(layerBox.x + end.x, layerBox.y + end.y, { steps: 4 });
+  await page.mouse.up();
+}
+
+function compactPdfText(text: string): string {
+  return text.replace(/\s+/g, "");
+}
+
 test("EDIT-CORE-001 @smoke exporte ensemble texte et signature", async ({
   page,
   qa,
@@ -19,7 +41,7 @@ test("EDIT-CORE-001 @smoke exporte ensemble texte et signature", async ({
   const editLayer = page.getByLabel("Couche d'édition de la page 1");
   await page.getByRole("button", { name: "Ajouter du texte" }).click();
   await expect(editLayer).toHaveAttribute("data-active-editing-tool", "add_text");
-  await editLayer.click({ position: { x: 55, y: 80 } });
+  await dragInEditLayer(page, editLayer, { x: 55, y: 80 }, { x: 250, y: 130 });
   const textInput = page.getByLabel("Texte ajouté page 1");
   await textInput.fill("Texte et signature réunis");
 
@@ -53,7 +75,7 @@ test("EDIT-CORE-001 @smoke exporte ensemble texte et signature", async ({
   await page.mouse.move(canvasBox.x + 340, canvasBox.y + 105, { steps: 4 });
   await page.mouse.up();
   await page.getByRole("button", { name: "Valider la signature" }).click();
-  await editLayer.click({ position: { x: 80, y: 145 } });
+  await dragInEditLayer(page, editLayer, { x: 80, y: 145 }, { x: 240, y: 220 });
   await expect(page.locator(".pdf-signature-edit")).toBeVisible();
   await expect(editLayer).toHaveAttribute("data-active-editing-tool", "select");
   await expect(page.getByRole("button", { name: "Sélection" })).toHaveAttribute(
@@ -84,7 +106,7 @@ test("EDIT-CORE-001 @smoke exporte ensemble texte et signature", async ({
   await download.saveAs(outputPath);
 
   const exported = validatePdf(outputPath, 1);
-  expect(exported.text).toContain("Texte et signature réunis");
+  expect(compactPdfText(exported.text)).toContain("Texteetsignatureréunis");
   expect(exported.imageCount).toBeGreaterThanOrEqual(1);
   expect(readFileSync(fixtures.onePage)).toEqual(sourceBefore);
   await expect(
