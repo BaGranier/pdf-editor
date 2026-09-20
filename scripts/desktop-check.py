@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -26,6 +27,15 @@ def validate_configuration() -> None:
     assert configuration["build"]["frontendDist"] == "../../web/dist"
     assert configuration["build"]["devUrl"] == "http://127.0.0.1:5173"
     assert configuration["bundle"]["externalBin"] == ["binaries/pdf-engine"]
+    assert configuration["bundle"]["fileAssociations"] == [
+        {
+            "ext": ["pdf"],
+            "mimeType": "application/pdf",
+            "name": "PDF document",
+            "description": "PDF document",
+            "role": "Editor",
+        }
+    ]
 
     package = json.loads((DESKTOP_ROOT / "package.json").read_text())
     web_dev_command = package["scripts"]["web:dev"]
@@ -64,7 +74,14 @@ def loopback_available() -> bool:
         return False
 
 
-def main() -> int:
+def main(arguments: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--skip-cargo",
+        action="store_true",
+        help="Exécute les validations statiques sans prétendre vérifier Rust/Tauri.",
+    )
+    options = parser.parse_args(arguments)
     os.environ["UV_CACHE_DIR"] = str(
         Path(tempfile.gettempdir()) / "pdf-engine-uv-cache"
     )
@@ -82,15 +99,21 @@ def main() -> int:
         if not loopback_available():
             backend_tests.extend(["-m", "not desktop_network"])
         run(backend_tests, REPOSITORY_ROOT / "services" / "pdf-engine")
-        if shutil.which("cargo") is None:
+        if options.skip_cargo:
+            print("SKIP cargo check: validation Rust/Tauri non exécutée à la demande.")
+        elif shutil.which("cargo") is None:
             raise RuntimeError(
                 "cargo est absent; installez Rust >= 1.88 avant desktop:check."
             )
-        run(["cargo", "check", "--locked"], TAURI_ROOT)
+        else:
+            run(["cargo", "check", "--locked"], TAURI_ROOT)
     except (AssertionError, OSError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"desktop check failed: {error}", file=sys.stderr)
         return 1
-    print("Desktop check terminé avec succès.")
+    if options.skip_cargo:
+        print("Desktop check statique terminé ; Rust/Tauri reste non vérifié.")
+    else:
+        print("Desktop check terminé avec succès.")
     return 0
 
 

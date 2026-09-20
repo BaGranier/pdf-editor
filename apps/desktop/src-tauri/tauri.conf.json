@@ -38,6 +38,17 @@
     ],
     "externalBin": [
       "binaries/pdf-engine"
+    ],
+    "fileAssociations": [
+      {
+        "ext": [
+          "pdf"
+        ],
+        "mimeType": "application/pdf",
+        "name": "PDF document",
+        "description": "PDF document",
+        "role": "Editor"
+      }
     ]
   }
 }

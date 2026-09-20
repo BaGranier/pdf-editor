@@ -8,7 +8,8 @@
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:build": "python3 ../../scripts/build-backend-sidecar.py && tauri build",
-    "desktop:check": "python3 ../../scripts/desktop-check.py"
+    "desktop:check": "python3 ../../scripts/desktop-check.py",
+    "desktop:check:static": "python3 ../../scripts/desktop-check.py --skip-cargo"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.4"
