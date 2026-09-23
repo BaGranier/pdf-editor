@@ -379,7 +379,7 @@ native.
 | Ouverture depuis l'interface | Non testé | Non testé | Implémenté ; QA dialogue interactive restante |
 | Save As vers une destination native | Non testé | Non testé | Implémenté ; QA dialogue interactive restante |
 | Save vers un chemin déjà choisi | Non testé | Non testé | Implémenté ; test Rust/Frontend OK, QA interactive restante |
-| Sidecar, port dynamique, health/restart/shutdown | Configuré ; non testé nativement | Configuré ; non testé nativement | Dev et `.deb` : WebView, port dynamique, health et arrêt sidecar OK ; restart UI à qualifier |
+| Sidecar, port dynamique, health/restart/shutdown | Configuré ; non testé nativement | Configuré ; non testé nativement | Dev et `.deb` : WebView, port dynamique, health et arrêt sidecar OK ; crash détecté, restart UI manuel à qualifier |
 | OCR `eng` / `fra` | Configuré comme dépendance système ; non testé | Configuré comme dépendance système ; non testé | Configuré comme dépendance système ; non testé |
 | Conversion | Configuré ; non testé | Configuré ; non testé | Configuré ; non testé |
 | Impression et AcroForms | Non testé | Non testé | Non testé |
@@ -426,7 +426,7 @@ dans ce dépôt. Ils doivent rester `Non supporté` jusqu'à une validation rée
 | lancement, WebView et backend health | OK | OK — `.deb` extrait depuis `/tmp` |
 | Open / Save / Save As | PARTIEL — pont testé, dialogue non piloté | NT |
 | Ctrl+O / Ctrl+S / Ctrl+Shift+S | PARTIEL — couverture unitaire et route UI | NT |
-| fermeture dirty / restart backend | PARTIEL — fermeture sidecar OK | NT |
+| fermeture dirty / restart backend | PARTIEL — fermeture et crash health vérifiés ; relance UI couverte par test unitaire | NT |
 | multi-document, viewer, recherche, impression, formulaires | NT | NT |
 | OCR, conversion, gros PDF, HiDPI | NT | NT |
 
