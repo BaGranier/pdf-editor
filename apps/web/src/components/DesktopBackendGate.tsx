@@ -29,6 +29,7 @@ const UNKNOWN_ERROR: DesktopBackendStatus = {
   logPath: "",
   message: "Impossible de démarrer le moteur PDF local.",
 };
+const READY_POLL_DELAY_MS = 1_000;
 
 function stateFromStatus(status: DesktopBackendStatus): GateState {
   if (status.state === "starting") {
@@ -63,11 +64,15 @@ export function DesktopBackendGate({
       try {
         while (active) {
           const status = await resolveStatus();
-          if (status.state !== "starting") {
-            setState(stateFromStatus(status));
+          const nextState = stateFromStatus(status);
+          setState(nextState);
+          if (nextState.kind === "error") {
             return;
           }
-          await new Promise((resolve) => window.setTimeout(resolve, 150));
+          await new Promise((resolve) => window.setTimeout(
+            resolve,
+            status.state === "starting" ? 150 : READY_POLL_DELAY_MS,
+          ));
         }
       } catch (error) {
         logDesktopStartupError("backend-status", error);

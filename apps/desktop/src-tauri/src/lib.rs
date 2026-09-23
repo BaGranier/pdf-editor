@@ -298,7 +298,8 @@ impl BackendRuntime {
     }
 
     fn status(&self) -> BackendStatus {
-        self.status
+        let status = self
+            .status
             .lock()
             .map(|status| status.clone())
             .unwrap_or_else(|_| {
@@ -306,7 +307,20 @@ impl BackendRuntime {
                     "L'état du moteur PDF local est indisponible.",
                     &self.paths.log_file(),
                 )
-            })
+            });
+        if status.state == "ready"
+            && status
+                .base_url
+                .as_deref()
+                .and_then(port_from_base_url)
+                .is_none_or(|port| !health_is_ready(port))
+        {
+            return BackendStatus::error(
+                "Le moteur PDF local ne répond plus. Relancez-le pour continuer.",
+                &self.paths.log_file(),
+            );
+        }
+        status
     }
 
     fn stop(&self) {
@@ -350,6 +364,12 @@ fn health_is_ready(port: u16) -> bool {
     stream.read_to_string(&mut response).is_ok()
         && response.starts_with("HTTP/1.1 200")
         && response.contains("\"status\":\"ok\"")
+}
+
+fn port_from_base_url(base_url: &str) -> Option<u16> {
+    base_url
+        .rsplit_once(':')
+        .and_then(|(_, port)| port.parse::<u16>().ok())
 }
 
 fn wait_for_health(port: u16) -> bool {
@@ -504,7 +524,7 @@ fn get_backend_status(runtime: State<'_, BackendRuntime>) -> BackendStatus {
 fn open_pdf(files: State<'_, DesktopFileStore>) -> Result<Option<NativePdfFile>, String> {
     let selected_path = rfd::FileDialog::new()
         .set_title("Ouvrir un PDF")
-        .add_filter("PDF", &["pdf"])
+        .add_filter("PDF", &["pdf", "PDF"])
         .pick_file();
     selected_path
         .map(|path| read_native_pdf(path, &files))
@@ -545,7 +565,7 @@ fn save_pdf_as(
         .to_owned();
     let selected_path = rfd::FileDialog::new()
         .set_title("Enregistrer le PDF sous")
-        .add_filter("PDF", &["pdf"])
+        .add_filter("PDF", &["pdf", "PDF"])
         .set_file_name(&suggested_name)
         .save_file();
     let Some(selected_path) = selected_path else {
@@ -665,7 +685,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_pdf_path, pdf_save_path, write_pdf_atomically};
+    use super::{is_pdf_path, pdf_save_path, port_from_base_url, write_pdf_atomically};
     use std::fs;
     use std::path::PathBuf;
 
@@ -690,6 +710,12 @@ mod tests {
             pdf_save_path(PathBuf::from("contract")),
             PathBuf::from("contract.pdf")
         );
+    }
+
+    #[test]
+    fn extracts_only_a_valid_port_from_a_backend_url() {
+        assert_eq!(port_from_base_url("http://127.0.0.1:43127"), Some(43127));
+        assert_eq!(port_from_base_url("http://127.0.0.1:not-a-port"), None);
     }
 
     #[test]

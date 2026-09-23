@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesktopBackendGate } from "./DesktopBackendGate";
 
@@ -104,5 +104,40 @@ describe("DesktopBackendGate", () => {
       "",
     );
     consoleError.mockRestore();
+  });
+
+  it("returns to a visible restart state when a ready sidecar stops responding", async () => {
+    vi.useFakeTimers();
+    const resolveStatus = vi
+      .fn()
+      .mockResolvedValueOnce({
+        state: "ready",
+        baseUrl: "http://127.0.0.1:43129",
+        logPath: "/logs/pdf-engine.log",
+        message: null,
+      })
+      .mockResolvedValueOnce({
+        state: "error",
+        baseUrl: null,
+        logPath: "/logs/pdf-engine.log",
+        message: "Le moteur PDF local ne répond plus. Relancez-le pour continuer.",
+      });
+    render(
+      <DesktopBackendGate desktop resolveStatus={resolveStatus}>
+        {(url) => <p>API: {url}</p>}
+      </DesktopBackendGate>,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("API: http://127.0.0.1:43129")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Le moteur PDF local ne répond plus. Relancez-le pour continuer.",
+    );
+    vi.useRealTimers();
   });
 });
