@@ -7,7 +7,10 @@ use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 #[cfg(debug_assertions)]
 use std::process::{Child, Command as StdCommand, Stdio};
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Mutex,
+};
 use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, State};
@@ -21,6 +24,155 @@ const BACKEND_HOST: &str = "127.0.0.1";
 const BACKEND_SIDECAR_NAME: &str = "pdf-engine";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(20);
 const HEALTH_RETRY_DELAY: Duration = Duration::from_millis(100);
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NativePdfFile {
+    document_id: String,
+    file_name: String,
+    bytes: Vec<u8>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NativePdfSave {
+    document_id: String,
+    file_name: String,
+}
+
+/// Paths selected by the user or supplied by the operating system stay in the
+/// trusted process. The WebView only gets an opaque identifier, which prevents
+/// its JavaScript context from becoming a general-purpose filesystem API.
+struct DesktopFileStore {
+    paths: Mutex<std::collections::HashMap<String, PathBuf>>,
+    next_id: AtomicU64,
+}
+
+impl DesktopFileStore {
+    fn new() -> Self {
+        Self {
+            paths: Mutex::new(std::collections::HashMap::new()),
+            next_id: AtomicU64::new(1),
+        }
+    }
+
+    fn register(&self, path: PathBuf) -> Result<String, String> {
+        let id = format!(
+            "desktop-pdf-{}-{}",
+            std::process::id(),
+            self.next_id.fetch_add(1, Ordering::Relaxed)
+        );
+        self.paths
+            .lock()
+            .map_err(|_| "Le stockage des fichiers Desktop est indisponible.".to_owned())?
+            .insert(id.clone(), path);
+        Ok(id)
+    }
+
+    fn path_for(&self, document_id: &str) -> Result<PathBuf, String> {
+        self.paths
+            .lock()
+            .map_err(|_| "Le stockage des fichiers Desktop est indisponible.".to_owned())?
+            .get(document_id)
+            .cloned()
+            .ok_or_else(|| "La destination Desktop de ce document n'est plus disponible. Utilisez Enregistrer sous….".to_owned())
+    }
+}
+
+struct StartupPdfPaths(Mutex<Vec<PathBuf>>);
+
+fn is_pdf_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+}
+
+fn validated_pdf_path(path: PathBuf) -> Result<PathBuf, String> {
+    if !is_pdf_path(&path) {
+        return Err("Le fichier choisi n'est pas un PDF.".to_owned());
+    }
+    let metadata = fs::metadata(&path)
+        .map_err(|error| format!("Impossible d'accéder au fichier PDF: {error}"))?;
+    if !metadata.is_file() {
+        return Err("Le chemin choisi ne désigne pas un fichier PDF.".to_owned());
+    }
+    path.canonicalize()
+        .map_err(|error| format!("Impossible de résoudre le fichier PDF: {error}"))
+}
+
+fn read_native_pdf(path: PathBuf, files: &DesktopFileStore) -> Result<NativePdfFile, String> {
+    let path = validated_pdf_path(path)?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "Le fichier PDF doit avoir un nom valide.".to_owned())?
+        .to_owned();
+    let bytes =
+        fs::read(&path).map_err(|error| format!("Impossible de lire le fichier PDF: {error}"))?;
+    if bytes.is_empty() {
+        return Err("Le fichier PDF est vide.".to_owned());
+    }
+    Ok(NativePdfFile {
+        document_id: files.register(path)?,
+        file_name,
+        bytes,
+    })
+}
+
+fn pdf_save_path(path: PathBuf) -> PathBuf {
+    if is_pdf_path(&path) {
+        path
+    } else {
+        path.with_extension("pdf")
+    }
+}
+
+/// Write beside the destination then rename it. On Linux, `rename` replaces
+/// the existing target atomically, so an export failure leaves the old PDF
+/// intact.
+fn write_pdf_atomically(path: &Path, content: &[u8]) -> Result<(), String> {
+    if content.is_empty() {
+        return Err("Le PDF à enregistrer est vide.".to_owned());
+    }
+    let parent = path
+        .parent()
+        .filter(|parent| parent.is_dir())
+        .ok_or_else(|| "Le répertoire de destination n'est pas disponible.".to_owned())?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "Le nom de destination est invalide.".to_owned())?;
+    let temporary = parent.join(format!(
+        ".{file_name}.pdf-studio-{}-{}.tmp",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    let mut temporary_file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary)
+        .map_err(|error| format!("Impossible de préparer l'enregistrement: {error}"))?;
+    let result = (|| {
+        temporary_file
+            .write_all(content)
+            .map_err(|error| format!("Impossible d'écrire le PDF: {error}"))?;
+        temporary_file
+            .sync_all()
+            .map_err(|error| format!("Impossible de finaliser le PDF: {error}"))?;
+        fs::rename(&temporary, path)
+            .map_err(|error| format!("Impossible de remplacer le fichier PDF: {error}"))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -349,6 +501,88 @@ fn get_backend_status(runtime: State<'_, BackendRuntime>) -> BackendStatus {
 }
 
 #[tauri::command]
+fn open_pdf(files: State<'_, DesktopFileStore>) -> Result<Option<NativePdfFile>, String> {
+    let selected_path = rfd::FileDialog::new()
+        .set_title("Ouvrir un PDF")
+        .add_filter("PDF", &["pdf"])
+        .pick_file();
+    selected_path
+        .map(|path| read_native_pdf(path, &files))
+        .transpose()
+}
+
+#[tauri::command]
+fn save_pdf(
+    document_id: String,
+    content: Vec<u8>,
+    files: State<'_, DesktopFileStore>,
+) -> Result<NativePdfSave, String> {
+    let path = files.path_for(&document_id)?;
+    write_pdf_atomically(&path, &content)?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "Le nom de destination est invalide.".to_owned())?
+        .to_owned();
+    Ok(NativePdfSave {
+        document_id,
+        file_name,
+    })
+}
+
+#[tauri::command]
+fn save_pdf_as(
+    suggested_name: String,
+    content: Vec<u8>,
+    files: State<'_, DesktopFileStore>,
+) -> Result<Option<NativePdfSave>, String> {
+    let suggested_name = pdf_save_path(PathBuf::from(suggested_name))
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "Le nom proposé est invalide.".to_owned())?
+        .to_owned();
+    let selected_path = rfd::FileDialog::new()
+        .set_title("Enregistrer le PDF sous")
+        .add_filter("PDF", &["pdf"])
+        .set_file_name(&suggested_name)
+        .save_file();
+    let Some(selected_path) = selected_path else {
+        return Ok(None);
+    };
+    let path = pdf_save_path(selected_path);
+    write_pdf_atomically(&path, &content)?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "Le nom de destination est invalide.".to_owned())?
+        .to_owned();
+    Ok(Some(NativePdfSave {
+        document_id: files.register(path)?,
+        file_name,
+    }))
+}
+
+#[tauri::command]
+fn get_startup_pdfs(
+    startup_paths: State<'_, StartupPdfPaths>,
+    files: State<'_, DesktopFileStore>,
+) -> Result<Vec<NativePdfFile>, String> {
+    let paths = startup_paths
+        .0
+        .lock()
+        .map_err(|_| "Les fichiers de démarrage Desktop sont indisponibles.".to_owned())?
+        .drain(..)
+        .collect::<Vec<_>>();
+    paths
+        .into_iter()
+        .map(|path| read_native_pdf(path, &files))
+        .collect()
+}
+
+#[tauri::command]
 async fn restart_backend(app: AppHandle) -> BackendStatus {
     let fallback_log_path = app
         .path()
@@ -378,7 +612,11 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             get_backend_status,
-            restart_backend
+            restart_backend,
+            open_pdf,
+            save_pdf,
+            save_pdf_as,
+            get_startup_pdfs
         ])
         .on_page_load(|webview, payload| {
             eprintln!(
@@ -391,6 +629,13 @@ pub fn run() {
         .setup(|app| {
             let paths = backend_paths(app.handle()).map_err(std::io::Error::other)?;
             app.manage(BackendRuntime::new(paths));
+            let startup_paths = std::env::args_os()
+                .skip(1)
+                .map(PathBuf::from)
+                .filter(|path| is_pdf_path(path))
+                .collect();
+            app.manage(DesktopFileStore::new());
+            app.manage(StartupPdfPaths(Mutex::new(startup_paths)));
             #[cfg(debug_assertions)]
             if std::env::var_os("PDF_STUDIO_OPEN_DEVTOOLS").is_some() {
                 if let Some(main_window) = app.get_webview_window("main") {
@@ -416,4 +661,51 @@ pub fn run() {
             app_handle.state::<BackendRuntime>().stop();
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_pdf_path, pdf_save_path, write_pdf_atomically};
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn temporary_directory() -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "pdf-studio-local-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        fs::create_dir(&path).expect("temporary directory");
+        path
+    }
+
+    #[test]
+    fn accepts_pdf_extensions_case_insensitively() {
+        assert!(is_pdf_path(PathBuf::from("contract.PDF").as_path()));
+        assert!(!is_pdf_path(PathBuf::from("contract.txt").as_path()));
+        assert_eq!(
+            pdf_save_path(PathBuf::from("contract")),
+            PathBuf::from("contract.pdf")
+        );
+    }
+
+    #[test]
+    fn atomic_write_replaces_only_after_a_complete_new_file_exists() {
+        let directory = temporary_directory();
+        let destination = directory.join("contract.pdf");
+        fs::write(&destination, b"old pdf").expect("initial PDF");
+
+        assert!(write_pdf_atomically(&destination, b"").is_err());
+        assert_eq!(
+            fs::read(&destination).expect("initial PDF remains"),
+            b"old pdf"
+        );
+
+        write_pdf_atomically(&destination, b"new pdf").expect("atomic replacement");
+        assert_eq!(fs::read(&destination).expect("replaced PDF"), b"new pdf");
+        fs::remove_dir_all(directory).expect("temporary directory cleanup");
+    }
 }

@@ -5,6 +5,7 @@ import {
   type ViewerDocumentSnapshot,
 } from "../storage/viewerStorage";
 import type { NativeTextEdit, PdfFormStateEdit } from "../editing/types";
+import type { DocumentSource } from "../desktop/files";
 import { clearNativeTextCache } from "./nativeText";
 
 const DEFAULT_RECOMMENDED_MAX_FILE_SIZE_MB = 50;
@@ -15,6 +16,7 @@ export type OpenPdfDocument = {
   id: string;
   fileName: string;
   workingSaveName: string | null;
+  source: DocumentSource;
   file: File;
   pdfDocument: PDFDocumentProxy;
   loadingTask: PDFDocumentLoadingTask;
@@ -140,6 +142,7 @@ export async function restoreOpenDocument(storedDocument: StoredPdfDocument): Pr
       id: storedDocument.id,
       fileName: storedDocument.fileName,
       workingSaveName: storedDocument.workingSaveName ?? null,
+      source: { type: "web" },
       file,
       pdfDocument,
       loadingTask,

@@ -29,18 +29,27 @@ de l’application.
 Le frontend reste volontairement utilisable dans un navigateur sans accès au
 système de fichiers. Le flux réellement livré est donc actuellement le suivant :
 
-| Action | Web | Desktop actuel |
+| Action | Web | Desktop |
 | --- | --- | --- |
-| Ouvrir depuis l'interface | sélecteur de fichiers du navigateur | même sélecteur WebView |
-| Exporter | téléchargement navigateur | même téléchargement WebView |
-| Enregistrer sous | dialogue applicatif de nom, puis téléchargement | même dialogue applicatif et téléchargement |
-| Enregistrer après un Save As | nouveau téléchargement au même nom proposé | même comportement : aucun chemin natif n'est mémorisé |
+| Ouvrir depuis l'interface | sélecteur de fichiers du navigateur | dialogue système limité aux PDF |
+| Exporter | téléchargement navigateur | dialogue système Save As, puis nouvel onglet lié à la destination choisie |
+| Enregistrer sous | dialogue applicatif de nom, puis téléchargement | dialogue système avec nom PDF proposé |
+| Enregistrer après l'ouverture ou un Save As natif | téléchargement navigateur | écriture atomique directe vers la destination mémorisée |
 
-Il n'existe pas encore de permission filesystem ni de plugin de dialogue dans
-la capability de la WebView. Ce choix limite volontairement la surface IPC : un
-futur adaptateur Desktop devra exposer des commandes Rust minimales et testées
-pour choisir un chemin, écrire le PDF exporté et associer ce chemin au document.
-Il ne devra pas donner un accès générique au système de fichiers au JavaScript.
+Il n'existe toujours aucune permission filesystem dans la capability de la
+WebView. Les commandes Rust `open_pdf`, `save_pdf` et `save_pdf_as` affichent
+les dialogues natifs et conservent le chemin réel dans le processus Rust. React
+ne reçoit que le contenu PDF, son nom et un identifiant de destination opaque :
+il ne peut donc ni lire ni écrire un chemin arbitraire. `save_pdf` écrit dans
+un fichier temporaire du même répertoire, synchronise ce fichier, puis le
+renomme sur la destination ; sous Linux, cette substitution est atomique.
+
+Un document issu d'IndexedDB ou du navigateur reste une source Web et
+`Ctrl+S` ouvre donc Save As en Desktop. Un document ouvert nativement ou déjà
+sauvegardé nativement garde son identifiant de destination pendant la session.
+IndexedDB ne réplique pas les documents Desktop : il reste le mécanisme de
+restauration des documents Web, sans devenir une seconde source de vérité pour
+un fichier Linux.
 
 Le manifeste Tauri déclare désormais `.pdf` / `application/pdf` comme type que
 l'application peut éditer. Cette déclaration prépare les installateurs et
@@ -139,6 +148,37 @@ npm run dev
 
 Il utilise `VITE_PDF_ENGINE_URL` lorsqu’elle est définie, sinon
 `http://localhost:8000`. Il n’importe le pont Tauri qu’en environnement desktop.
+
+### Ubuntu 22.04 LTS validé pour le bootstrap natif
+
+Le bootstrap Tauri a été exécuté sur Ubuntu 22.04.5 LTS avec Node 22.23.2,
+Rust/Cargo 1.98.1, `uv` 0.12.18, WebKitGTK 2.50.4 et les paquets suivants :
+
+```bash
+sudo apt-get update
+sudo apt-get install build-essential curl wget file libssl-dev \
+  libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+  libwebkit2gtk-4.1-dev patchelf \
+  ghostscript libreoffice-writer ocrmypdf qpdf \
+  tesseract-ocr-eng tesseract-ocr-fra
+```
+
+`python3` doit être disponible pour les scripts Desktop. Le projet supporte
+Python 3.11 pour le développement ; la synchronisation du lockfile a aussi été
+vérifiée sur la machine Ubuntu 22.04 avec Python 3.10.12, sans que cela élargisse
+la matrice de support.
+
+Pour ouvrir un PDF fourni par le système après que React et le sidecar sont
+prêts :
+
+```bash
+cd apps/desktop
+npm run desktop:dev -- /chemin/vers/document.pdf
+```
+
+Le mécanisme consomme les arguments PDF au démarrage, après le bootstrap React.
+La stratégie `single-instance` n'est pas encore implémentée : un second
+lancement n'est donc pas routé vers une fenêtre existante.
 
 ### Modes de lecture
 
@@ -330,16 +370,16 @@ native.
 
 | Fonction | Windows | macOS | Linux |
 | --- | --- | --- | --- |
-| Build shell + sidecar | Non testé | Non testé | Non testé |
+| Build shell + sidecar | Non testé | Non testé | Dev et bundle `.deb` OK ; QA fonctionnelle restante |
 | Installation / désinstallation | Non testé | Non testé | Non testé |
 | Icône et métadonnées bundle | Configuré | Configuré | Configuré |
 | Association `.pdf` dans le bundle | Configuré | Configuré | Configuré |
-| Double-clic `.pdf` / argument au lancement | Non supporté : argument non importé par React | Non supporté : argument non importé par React | Non supporté : argument non importé par React |
+| Double-clic `.pdf` / argument au lancement | Non testé | Non testé | Implémenté ; argument de démarrage à requalifier avec installateur |
 | Second lancement avec un PDF | Non supporté : aucune stratégie single-instance | Non supporté : aucune stratégie single-instance | Non supporté : aucune stratégie single-instance |
-| Ouverture depuis l'interface | Non testé : sélecteur WebView | Non testé : sélecteur WebView | Non testé : sélecteur WebView |
-| Save As vers une destination native | Non supporté : téléchargement WebView | Non supporté : téléchargement WebView | Non supporté : téléchargement WebView |
-| Save vers un chemin déjà choisi | Non supporté : chemin non mémorisé | Non supporté : chemin non mémorisé | Non supporté : chemin non mémorisé |
-| Sidecar, port dynamique, health/restart/shutdown | Configuré ; non testé nativement | Configuré ; non testé nativement | Configuré ; non testé nativement |
+| Ouverture depuis l'interface | Non testé | Non testé | Implémenté ; QA dialogue interactive restante |
+| Save As vers une destination native | Non testé | Non testé | Implémenté ; QA dialogue interactive restante |
+| Save vers un chemin déjà choisi | Non testé | Non testé | Implémenté ; test Rust/Frontend OK, QA interactive restante |
+| Sidecar, port dynamique, health/restart/shutdown | Configuré ; non testé nativement | Configuré ; non testé nativement | Dev et `.deb` : WebView, port dynamique, health et arrêt sidecar OK ; restart UI à qualifier |
 | OCR `eng` / `fra` | Configuré comme dépendance système ; non testé | Configuré comme dépendance système ; non testé | Configuré comme dépendance système ; non testé |
 | Conversion | Configuré ; non testé | Configuré ; non testé | Configuré ; non testé |
 | Impression et AcroForms | Non testé | Non testé | Non testé |
@@ -366,11 +406,11 @@ Playwright ne valide pas une WebView Tauri.
    `npm run desktop:build` sur l'OS cible. Le sidecar Python est construit pour
    cet OS : ne pas le cross-compiler depuis un autre système.
 4. Installer l'artefact généré et vérifier : lancement, health backend,
-   ouverture depuis l'interface, édition, Save As WebView, fermeture dirty,
+   ouverture depuis l'interface, édition, Save / Save As natifs, fermeture dirty,
    impression, formulaires, OCR `eng` et `fra`, conversion et arrêt complet.
 5. Vérifier les cas de chemin avec espaces et Unicode. Vérifier l'association
-   `.pdf` dans l'installateur, puis enregistrer séparément que le double-clic
-   reste non supporté tant que le flux d'arguments n'est pas implémenté.
+   `.pdf` dans l'installateur, l'ouverture par double-clic et le comportement
+   d'un second lancement (actuellement hors périmètre faute de single-instance).
 6. Relever la version de chaque dépendance système et le résultat de
    `tesseract --list-langs`; archiver les journaux `pdf-engine.log` si un
    scénario échoue.
@@ -378,3 +418,17 @@ Playwright ne valide pas une WebView Tauri.
 La signature Windows, la signature/notarisation macOS et l'auto-update exigent
 des credentials et une infrastructure de distribution qui ne sont pas présents
 dans ce dépôt. Ils doivent rester `Non supporté` jusqu'à une validation réelle.
+
+### Première matrice QA Linux
+
+| Test | Dev Tauri | Bundle Linux |
+| --- | ---: | ---: |
+| lancement, WebView et backend health | OK | OK — `.deb` extrait depuis `/tmp` |
+| Open / Save / Save As | PARTIEL — pont testé, dialogue non piloté | NT |
+| Ctrl+O / Ctrl+S / Ctrl+Shift+S | PARTIEL — couverture unitaire et route UI | NT |
+| fermeture dirty / restart backend | PARTIEL — fermeture sidecar OK | NT |
+| multi-document, viewer, recherche, impression, formulaires | NT | NT |
+| OCR, conversion, gros PDF, HiDPI | NT | NT |
+
+`NT` signifie non testé. Cette matrice ne doit pas être interprétée comme une
+qualification d'installateur ou une validation WebView complète.

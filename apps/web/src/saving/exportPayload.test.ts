@@ -118,6 +118,26 @@ describe("buildPdfExportPayload", () => {
     });
   });
 
+  it("keeps Save output local to its existing Desktop filename", async () => {
+    const result = await buildPdfExportPayload({
+      documentId: "source",
+      operation: "save",
+      requestedOutputName: "original.pdf",
+      activeDocumentId: "source",
+      outputName: "ignored.pdf",
+      saveToOutputDir: true,
+      documents: [source],
+      organizationPlans: { source: plan },
+      editsByDocument: editingState([]),
+      signatureImages: {},
+    });
+    if (!result.ok) throw new Error(result.message);
+    expect(JSON.parse(String(result.formData.get("plan")))).toMatchObject({
+      outputName: "original.pdf",
+      saveToOutputDir: false,
+    });
+  });
+
   it("includes custom font resources only when exported text uses them", async () => {
     const result = await payloadFor([
       {

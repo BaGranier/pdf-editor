@@ -98,14 +98,17 @@ variables/collections TTC, le subsetting avancé et le regroupement sémantique
 de spans en paragraphes restent des évolutions dédiées. Ils ne doivent pas être
 contournés par rasterisation, faux style CSS ou remplacement visuel opaque.
 
-## DESKTOP-RELEASE-001 — Packaging et validation de release
+## DESKTOP-LINUX-001 — QA native et bundle Linux
 
-Le sidecar FastAPI local est supervisé en développement, mais les installateurs
-autonomes ne sont pas encore validés sous Windows, macOS et Linux. Le manifeste
-déclare désormais l'association `.pdf`, mais l'ouverture d'un argument ou d'un
-double-clic n'est pas encore importée dans React. Les binaires et données OCR
-(OCRmyPDF, Tesseract, Ghostscript, QPDF), Save As natif, la signature Windows,
-la notarisation macOS et la mise à jour applicative restent à traiter.
+Le sidecar FastAPI local est supervisé en développement Linux et le workflow
+Open / Save / Save As est borné par des commandes Rust qui conservent les
+chemins dans le processus natif. Il reste à qualifier ce workflow par dialogue
+interactif et après installation d'un bundle. Le lancement par argument est
+implémenté, mais l'association installée, le double-clic et le second lancement
+nécessitent une QA native ; il n'existe toujours pas de stratégie single-instance.
+Les binaires et données OCR (OCRmyPDF, Tesseract, Ghostscript, QPDF), la QA
+HiDPI, l'impression, les gros PDF, la signature Windows, la notarisation macOS
+et la mise à jour applicative restent à traiter.
 
 Cette dette est durable car elle conditionne une diffusion desktop générale ;
 elle est détaillée dans `DESKTOP.md` et priorisée dans `PROJECT_REVIEW.md`.

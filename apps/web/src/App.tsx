@@ -60,6 +60,13 @@ import {
 } from "./pdf/textLayer";
 import { getWebBackendBaseUrl, isDesktopRuntime } from "./api/backend";
 import {
+  getDesktopStartupPdfs,
+  openDesktopPdf,
+  saveDesktopPdf,
+  saveDesktopPdfAs,
+  type DocumentSource,
+} from "./desktop/files";
+import {
   getAppCommandShortcutLabel,
   getShortcutPlatform,
   isEditableKeyboardTarget,
@@ -2649,6 +2656,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const shapePickerButtonRef = useRef<HTMLButtonElement | null>(null);
   const shapePickerRef = useRef<HTMLDivElement | null>(null);
   const [documents, setDocuments] = useState<OpenPdfDocument[]>([]);
+  const desktopStartupLoadedRef = useRef(false);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("read");
   const [viewerMode, setViewerMode] = useState<ViewerMode>(
@@ -3127,7 +3135,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       theme,
       sidebarVisible: isSidebarVisible,
       activeDocumentId,
-      documentOrder: documents.map((document) => document.id),
+      documentOrder: documents
+        .filter((document) => document.source.type === "web")
+        .map((document) => document.id),
       ...(lastCommentAuthor ? { commentAuthor: lastCommentAuthor } : {}),
       viewerMode: viewerMode === "presentation" ? "single-page" : viewerMode,
     });
@@ -3143,12 +3153,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     }
 
     const saveTimeout = window.setTimeout(() => {
-      if (documents.length === 0) {
+      const restorableDocuments = documents.filter((document) => document.source.type === "web");
+      if (restorableDocuments.length === 0) {
         void clearStoredDocuments();
         return;
       }
 
-      void Promise.all(documents.map((document) => saveStoredDocument(buildViewerSnapshot(
+      void Promise.all(restorableDocuments.map((document) => saveStoredDocument(buildViewerSnapshot(
         document,
         getDocumentEditingState(pdfEditsByDocument, document.id).edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text"),
         getDocumentEditingState(pdfEditsByDocument, document.id).edits.filter((edit): edit is PdfFormStateEdit => edit.type === "form_field" || edit.type === "form_lock"),
@@ -4183,6 +4194,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const loadOpenPdfDocument = useCallback(async (
     file: File,
     workingSaveName: string | null = null,
+    source: DocumentSource = { type: "web" },
   ): Promise<OpenPdfDocument> => {
     const data = new Uint8Array(await file.arrayBuffer());
     const loadingTask = pdfjsLib.getDocument({ data });
@@ -4196,6 +4208,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         id: documentId,
         fileName: file.name,
         workingSaveName,
+        source,
         file,
         pdfDocument,
         loadingTask,
@@ -4212,7 +4225,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, []);
 
   const openGeneratedPdfDocument = useCallback(
-    async (file: File, workingSaveName: string | null = null) => {
+    async (
+      file: File,
+      workingSaveName: string | null = null,
+      source: DocumentSource = { type: "web" },
+    ) => {
       const fileName = getUniqueFileName(
         file.name,
         documents.map((document) => document.fileName),
@@ -4226,6 +4243,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const openedDocument = await loadOpenPdfDocument(
         uniqueFile,
         workingSaveName,
+        source,
       );
       const usageWarnings = getDocumentUsageWarnings(
         uniqueFile,
@@ -4245,6 +4263,81 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     },
     [backendUrl, documents, loadOpenPdfDocument],
   );
+
+  const openPdfFromUser = useCallback(async () => {
+    if (!isDesktopRuntime()) {
+      openFileInputRef.current?.click();
+      return;
+    }
+    if (isRestoringDocuments) {
+      setStatus("Restauration en cours...");
+      return;
+    }
+    setExportFeedback(null);
+    try {
+      const selected = await openDesktopPdf();
+      if (!selected) return;
+      setStatus("Ouverture du PDF...");
+      const openedDocument = await loadOpenPdfDocument(
+        selected.file,
+        null,
+        { type: "desktop", documentId: selected.documentId },
+      );
+      const usageWarnings = getDocumentUsageWarnings(
+        openedDocument.file,
+        openedDocument.pageCount,
+        documents.length + 1,
+      );
+      pendingFocusTargetRef.current = "viewer";
+      setDocuments((currentDocuments) => [...currentDocuments, openedDocument]);
+      setActiveDocumentId(openedDocument.id);
+      setWorkspaceMode("read");
+      if (!import.meta.env.MODE.startsWith("test")) void loadPdfComments(backendUrl, openedDocument.file).then((comments) => {
+        if (comments.length) dispatchPdfEdits({ type: "hydrate", documentId: openedDocument.id, edits: comments });
+      });
+      setStatus(usageWarnings.map((warning) => `Avertissement: ${warning}`).join(" "));
+    } catch (error) {
+      setExportFeedback({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Impossible d'ouvrir le PDF sélectionné.",
+      });
+    }
+  }, [backendUrl, documents.length, isRestoringDocuments, loadOpenPdfDocument]);
+
+  useEffect(() => {
+    if (!isDesktopRuntime() || isRestoringDocuments || desktopStartupLoadedRef.current) {
+      return;
+    }
+    desktopStartupLoadedRef.current = true;
+    void getDesktopStartupPdfs().then(async (startupFiles) => {
+      const openedDocuments: OpenPdfDocument[] = [];
+      for (const startupFile of startupFiles) {
+        try {
+          openedDocuments.push(await loadOpenPdfDocument(
+            startupFile.file,
+            null,
+            { type: "desktop", documentId: startupFile.documentId },
+          ));
+        } catch (error) {
+          setExportFeedback({
+            kind: "error",
+            message: error instanceof Error ? error.message : `Impossible d'ouvrir ${startupFile.file.name}.`,
+          });
+        }
+      }
+      if (openedDocuments.length) {
+        pendingFocusTargetRef.current = "viewer";
+        setDocuments((currentDocuments) => [...currentDocuments, ...openedDocuments]);
+        setActiveDocumentId(openedDocuments[openedDocuments.length - 1].id);
+        setWorkspaceMode("read");
+      }
+    }).catch((error) => {
+      setExportFeedback({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Impossible de recevoir le PDF de démarrage.",
+      });
+    });
+  }, [isRestoringDocuments, loadOpenPdfDocument]);
 
   const addExternalPagesFromOpenDocument = useCallback(
     (sourceDocumentId: string, sourcePageIndexes: number[]) => {
@@ -4280,7 +4373,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
   const generatePdfForDocument = useCallback(async (
     documentId: string,
-    operation: "export" | "save_as" | "print",
+    operation: "export" | "save" | "save_as" | "print",
     requestedOutputName?: string,
   ): Promise<boolean> => {
     setIsExporting(true);
@@ -4333,7 +4426,35 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const textOverflowMessage = textOverflowWarningCount
         ? ` ${textOverflowWarningCount} zone${textOverflowWarningCount > 1 ? "s" : ""} de texte dépassai${textOverflowWarningCount > 1 ? "ent" : "t"} de ${textOverflowWarningCount > 1 ? "leur" : "son"} cadre. ${textOverflowWarningCount > 1 ? "Leur export a" : "Son export a"} été réalisé en mode best effort.`
         : "";
-      const exportedFile = downloadPdfToBrowser(exported.pdfBlob, exported.downloadedName);
+      const document = documents.find((candidate) => candidate.id === documentId);
+      const desktopSource = document?.source.type === "desktop"
+        ? document.source
+        : null;
+      const nativeSave = isDesktopRuntime()
+        ? operation === "save_as" || operation === "export"
+          ? await saveDesktopPdfAs(exported.downloadedName, exported.pdfBlob)
+          : desktopSource
+            ? await saveDesktopPdf(desktopSource.documentId, exported.pdfBlob)
+            : null
+        : null;
+
+      if (isDesktopRuntime() && nativeSave === null) {
+        if (operation === "save_as" || operation === "export") {
+          setExportFeedback({ kind: "warning", message: "Enregistrement annulé." });
+        } else {
+          setExportFeedback({
+            kind: "error",
+            message: "Ce document n'a pas de destination Desktop. Utilisez Enregistrer sous…."
+          });
+        }
+        return false;
+      }
+
+      const exportedFile = isDesktopRuntime()
+        ? new File([exported.pdfBlob], nativeSave?.fileName ?? exported.downloadedName, {
+            type: exported.pdfBlob.type || "application/pdf",
+          })
+        : downloadPdfToBrowser(exported.pdfBlob, exported.downloadedName);
       const operationLabel = operation === "export" ? "exporté" : "sauvegardé";
       const exportMessage = exported.outputWarning
         ? `PDF ${operationLabel} avec succès : ${exported.downloadedName}. ${exported.outputWarning}`
@@ -4342,11 +4463,32 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           : `PDF ${operationLabel} avec succès : ${exported.downloadedName}.`;
 
       try {
-        const { usageWarnings: exportUsageWarnings } =
-          await openGeneratedPdfDocument(
-            exportedFile,
-            operation === "export" ? null : exported.downloadedName,
-          );
+        if (isDesktopRuntime() && operation !== "export") {
+          if (operation === "save_as" && nativeSave) {
+            setDocuments((currentDocuments) => currentDocuments.map((candidate) =>
+              candidate.id === documentId
+                ? {
+                    ...candidate,
+                    fileName: nativeSave.fileName,
+                    workingSaveName: nativeSave.fileName,
+                    source: { type: "desktop", documentId: nativeSave.documentId },
+                  }
+                : candidate,
+            ));
+          }
+          setExportFeedback({
+            kind: exported.outputWarning || textOverflowWarningCount > 0 ? "warning" : "success",
+            message: `${exportMessage}${textOverflowMessage}`,
+          });
+        } else {
+          const { usageWarnings: exportUsageWarnings } =
+            await openGeneratedPdfDocument(
+              exportedFile,
+              operation === "export" ? null : exported.downloadedName,
+              isDesktopRuntime() && nativeSave
+                ? { type: "desktop", documentId: nativeSave.documentId }
+                : { type: "web" },
+            );
         setExportFeedback({
           kind:
             exported.outputWarning ||
@@ -4358,13 +4500,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             .map((warning) => ` Avertissement: ${warning}`)
             .join("")}`,
         });
+        }
       } catch {
         setExportFeedback({
           kind: "warning",
           message: `${exportMessage}${textOverflowMessage} Le téléchargement est disponible, mais l'ouverture dans l'application a échoué.`,
         });
       }
-      if (operation === "save_as") {
+      if (operation === "save" || operation === "save_as" || (isDesktopRuntime() && desktopSource)) {
         dispatchPdfEdits({ type: "mark_saved", documentId });
       }
       return true;
@@ -4441,8 +4584,32 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       return;
     }
 
+    if (isDesktopRuntime()) {
+      void generatePdfForDocument(
+        activeDocument.id,
+        "save_as",
+        getSuggestedPdfSaveName(activeDocument.fileName, activeDocument.workingSaveName),
+      );
+      return;
+    }
+
     openSaveAsDialog(activeDocument.id);
-  }, [activeDocument, isActiveDocumentDirty, isExporting, openSaveAsDialog]);
+  }, [activeDocument, generatePdfForDocument, isActiveDocumentDirty, isExporting, openSaveAsDialog]);
+
+  const saveActiveDocument = useCallback(() => {
+    if (!activeDocument || !isActiveDocumentDirty || isExporting) {
+      return;
+    }
+    if (isDesktopRuntime() && activeDocument.source.type === "desktop") {
+      void generatePdfForDocument(
+        activeDocument.id,
+        "save",
+        activeDocument.fileName,
+      );
+      return;
+    }
+    openActiveSaveAsDialog();
+  }, [activeDocument, generatePdfForDocument, isActiveDocumentDirty, isExporting, openActiveSaveAsDialog]);
 
   const saveDocumentAs = useCallback(
     async (fileName: string) => {
@@ -4470,10 +4637,20 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     }
 
     const documentId = pendingCloseDocumentId;
+    const document = documents.find((candidate) => candidate.id === documentId);
     setPendingCloseDocumentId(null);
     setCloseAfterSaveDocumentId(documentId);
+    if (isDesktopRuntime() && document?.source.type === "desktop") {
+      void generatePdfForDocument(documentId, "save", document.fileName).then((didSave) => {
+        if (!didSave) {
+          setCloseAfterSaveDocumentId(null);
+          setPendingCloseDocumentId(documentId);
+        }
+      });
+      return;
+    }
     openSaveAsDialog(documentId);
-  }, [isExporting, openSaveAsDialog, pendingCloseDocumentId]);
+  }, [documents, generatePdfForDocument, isExporting, openSaveAsDialog, pendingCloseDocumentId]);
 
   const cancelSaveAsDialog = useCallback(() => {
     const documentId = saveAsDocumentId;
@@ -4519,11 +4696,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         ? getDocumentEditingState(pdfEditsByDocument, activeDocument.id)
         : null;
       const commands: Record<AppCommandId, (() => void) | null> = {
-        "file.open": saveAsDocumentId || pendingCloseDocumentId ? null : () => openFileInputRef.current?.click(),
+        "file.open": saveAsDocumentId || pendingCloseDocumentId ? null : openPdfFromUser,
         "file.close": activeDocument ? closeActiveDocumentByKeyboard : null,
-        // The current local-first save workflow always opens the Save As dialog:
-        // no destination path is persisted in a browser document.
-        "file.save": activeDocument && isActiveDocumentDirty && !isExporting ? openActiveSaveAsDialog : null,
+        "file.save": activeDocument && isActiveDocumentDirty && !isExporting ? saveActiveDocument : null,
         "file.saveAs": activeDocument && isActiveDocumentDirty && !isExporting ? openActiveSaveAsDialog : null,
         "print.document": activeDocument && !isExporting ? printActiveDocument : null,
         "history.undo": workspaceMode === "read" && editingState?.canUndo ? undoPdfEdit : null,
@@ -4594,6 +4769,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     pendingCloseDocumentId,
     pdfEditsByDocument,
     redoPdfEdit,
+    saveActiveDocument,
     selectedPdfEdit,
     saveAsDocumentId,
     selectDocumentByKeyboard,
@@ -4912,8 +5088,17 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
         <div className="toolbar-actions" aria-label="Actions PDF">
           <div className="toolbar-action-group toolbar-actions__primary" aria-label="Actions principales">
-            <button type="button" className="toolbar-icon-button" aria-label="Ouvrir un PDF" title={`Ouvrir un PDF (${getAppCommandShortcutLabel("file.open")})`} onClick={() => openFileInputRef.current?.click()}><ToolbarIcon name="open" /></button>
-            <button type="button" className="toolbar-icon-button" aria-label="Enregistrer sous…" title={`Enregistrer sous… (${getAppCommandShortcutLabel("file.saveAs")})`} onClick={openActiveSaveAsDialog} disabled={!activeDocument || !isActiveDocumentDirty || isExporting}><ToolbarIcon name="save-as" /></button>
+            <button type="button" className="toolbar-icon-button" aria-label="Ouvrir un PDF" title={`Ouvrir un PDF (${getAppCommandShortcutLabel("file.open")})`} onClick={() => void openPdfFromUser()}><ToolbarIcon name="open" /></button>
+            <button
+              type="button"
+              className="toolbar-icon-button"
+              aria-label={isDesktopRuntime() ? "Enregistrer" : "Enregistrer sous…"}
+              title={isDesktopRuntime()
+                ? `Enregistrer (${getAppCommandShortcutLabel("file.save")})`
+                : `Enregistrer sous… (${getAppCommandShortcutLabel("file.saveAs")})`}
+              onClick={isDesktopRuntime() ? saveActiveDocument : openActiveSaveAsDialog}
+              disabled={!activeDocument || !isActiveDocumentDirty || isExporting}
+            ><ToolbarIcon name="save-as" /></button>
             <button type="button" className="toolbar-icon-button toolbar-icon-button--danger" aria-label="Réinitialiser les données locales" title="Réinitialiser les données locales" onClick={clearLocalData}><ResetIcon /></button>
           </div>
           <span className="toolbar-actions__spacer" aria-hidden="true" />
@@ -4931,6 +5116,16 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               </button>
               {isFileMenuOpen && activeDocument ? (
                 <div className="insert-menu__items file-menu__items" role="menu" aria-label="Fichier">
+                  {isDesktopRuntime() ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={saveActiveDocument}
+                      disabled={!isActiveDocumentDirty || isExporting}
+                    >
+                      Enregistrer <span aria-hidden="true">{getAppCommandShortcutLabel("file.save")}</span>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     role="menuitem"

@@ -23,7 +23,7 @@ import {
 import { getCustomFont } from "../fonts/fontRegistry";
 import { getSuggestedPdfSaveName } from "./fileName";
 
-export type PdfExportOperation = "export" | "save_as" | "print";
+export type PdfExportOperation = "export" | "save" | "save_as" | "print";
 
 export type PdfExportSourceDocument = {
   id: string;
@@ -103,7 +103,7 @@ export function buildPdfExportPayload(
     };
   }
 
-  const outputName = input.operation === "save_as" && input.requestedOutputName
+  const outputName = (input.operation === "save" || input.operation === "save_as") && input.requestedOutputName
     ? input.requestedOutputName
     : input.operation === "export" && sourceDocument.id === input.activeDocumentId
       ? input.outputName.trim() || getSuggestedPdfSaveName(sourceDocument.fileName, sourceDocument.workingSaveName)

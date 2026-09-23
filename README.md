@@ -16,6 +16,11 @@ uniquement avec le moteur FastAPI local.
 Le développement et le packaging natifs sont documentés dans
 [DESKTOP.md](DESKTOP.md).
 
+Le shell de développement Linux a été démarré avec WebView et sidecar sur Ubuntu
+22.04.5 LTS. Le bundle, les dialogues interactifs de fichiers et l'association
+système `.pdf` restent explicitement à qualifier avant de présenter Linux comme
+supporté en production.
+
 ## Fonctionnalités
 
 - ouverture, affichage, miniatures et navigation multi-document ;
