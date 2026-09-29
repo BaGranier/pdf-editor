@@ -1,5 +1,10 @@
 # DESKTOP-RELEASE-001 — shell Tauri et préparation de release
 
+L’audit natif Windows 11 et ses limites sont détaillés dans
+[WINDOWS_STABILIZATION_AUDIT_001.md](WINDOWS_STABILIZATION_AUDIT_001.md).
+Build MSVC, bundles MSI/NSIS et parcours depuis une installation NSIS ont été
+exécutés ; la qualification des autres DPI et du multi-écran reste ouverte.
+
 ## Architecture retenue
 
 L’intégration native vit dans `apps/desktop`, tandis que `apps/web` reste le
@@ -49,14 +54,14 @@ Un document issu d'IndexedDB ou du navigateur reste une source Web et
 sauvegardé nativement garde son identifiant de destination pendant la session.
 IndexedDB ne réplique pas les documents Desktop : il reste le mécanisme de
 restauration des documents Web, sans devenir une seconde source de vérité pour
-un fichier Linux.
+un fichier natif.
 
 Le manifeste Tauri déclare désormais `.pdf` / `application/pdf` comme type que
 l'application peut éditer. Cette déclaration prépare les installateurs et
-« Ouvrir avec » ; elle ne suffit pas à elle seule à importer les arguments de
-lancement dans React. L'ouverture par double-clic, les arguments de démarrage et
-le second lancement restent donc non pris en charge tant qu'un flux de chemins
-borné et un test natif n'ont pas été livrés.
+« Ouvrir avec ». Les arguments PDF de démarrage sont consommés par Rust puis
+transmis à React après disponibilité du backend ; ce parcours a été testé sous
+Windows depuis l’installation. Le double-clic reste à qualifier et un second
+lancement n’est pas routé vers la fenêtre existante.
 
 ## Prérequis de développement et de compilation
 
@@ -97,6 +102,54 @@ cd apps/web && npm ci
 cd ../desktop && npm ci
 cd ../../services/pdf-engine && uv sync --locked
 ```
+
+### Windows 11
+
+Installer Visual Studio Build Tools 2022 avec « Desktop development with C++ »
+(MSVC x64/x86 et Windows SDK), Rust stable MSVC >= 1.88, Node 22, Python 3.11 et
+uv. `link.exe` peut être hors PATH d’un PowerShell ordinaire : le build Rust de
+l’audit l’a trouvé via l’installation Visual Studio. Pour un diagnostic explicite,
+utiliser le Developer PowerShell de Visual Studio et `where.exe link`.
+
+```powershell
+node --version
+npm.cmd --version
+py -3.11 --version
+uv --version
+rustc -vV
+cargo -V
+rustup show
+where.exe link
+
+cd apps/web
+npm.cmd ci
+cd ../desktop
+npm.cmd ci
+cd ../../services/pdf-engine
+uv sync --locked
+uv run python -m pytest
+uv run python -m ruff check .
+cd ../../apps/desktop
+npm.cmd run desktop:check
+npm.cmd run desktop:dev
+npm.cmd run desktop:build
+```
+
+`npm.cmd` évite le script `npm.ps1` lorsque la politique PowerShell le bloque,
+sans modifier cette politique. Les scripts Python du projet sont lancés par uv
+en mode module ; aucun alias `python3` Windows n’est nécessaire.
+
+L’OCR utilise les outils système sur PATH : Tesseract, OCRmyPDF, Ghostscript
+(`gswin64c`) et QPDF. Vérifier les versions et `tesseract --list-langs`.
+`TESSDATA_PREFIX`, s’il est utilisé, doit désigner un dossier contenant les
+langues **et** les configurations Tesseract (`configs`, `tessconfigs`). L’audit
+a d’abord reproduit l’erreur explicite de langue `fra` absente, puis exécuté
+l’OCR `eng`/`fra` avec un dossier QA complet. LibreOffice reste réservé à la QA.
+
+Les bundles se trouvent dans `src-tauri/target/release/bundle/msi` et `nsis`.
+WebView2 installé a été testé ; le bundle conserve le bootstrapper Tauri par
+défaut pour le runtime manquant. Ce cas et l’installation hors ligne restent
+à qualifier. Les outils OCR ne sont pas inclus dans ces installateurs.
 
 ## Développement
 
@@ -163,7 +216,7 @@ sudo apt-get install build-essential curl wget file libssl-dev \
   tesseract-ocr-eng tesseract-ocr-fra
 ```
 
-`python3` doit être disponible pour les scripts Desktop. Le projet supporte
+`uv` doit être disponible pour les scripts Desktop. Le projet supporte
 Python 3.11 pour le développement ; la synchronisation du lockfile a aussi été
 vérifiée sur la machine Ubuntu 22.04 avec Python 3.10.12, sans que cela élargisse
 la matrice de support.
@@ -249,7 +302,7 @@ Le viewer, l'édition et l'ouverture de PDF continuent de fonctionner.
 | `tessdata` `eng`, `fra` | langues proposées par l'interface | dépendance système | dépendance système | dépendance système | Ne pas présumer de la disponibilité : vérifier `tesseract --list-langs` lors de la QA native. |
 | OCRmyPDF | commande OCR appelée par `app/ocr.py` | dépendance système | dépendance système | dépendance système | Pas de bundle ; revue des dépendances transitives et de sa licence MPL-2.0 requise avant redistribution. |
 | Ghostscript | dépendance d'OCRmyPDF | dépendance système | dépendance système | dépendance système | Pas de bundle ; décision juridique préalable obligatoire (AGPL ou licence commerciale selon le mode de redistribution). |
-| QPDF | dépendance d'OCRmyPDF et des environnements de conversion | dépendance système | dépendance système | dépendance système | Pas de bundle ; vérifier la version, les notices et la licence Apache-2.0 de l'artefact retenu. |
+| QPDF CLI | contrôle PDF de QA ; aucun appel CLI direct dans le moteur applicatif | outil système QA | outil système QA | outil système QA | Pas de bundle ; distinguer ce CLI des bibliothèques PDF utilisées par les dépendances OCR. |
 | LibreOffice | validation visuelle DOCX, pas la conversion applicative courante | non requis au runtime | non requis au runtime | non requis au runtime | Réservé à la QA, non distribué avec l'application. |
 
 Ce tableau décrit une stratégie technique, non une autorisation de
@@ -262,7 +315,7 @@ générés sont ignorés par Git. On peut préparer manuellement un binaire déj
 construit :
 
 ```bash
-python3 scripts/prepare-tauri-sidecars.py \
+uv run --project services/pdf-engine python -m scripts.prepare-tauri-sidecars \
   --source /chemin/vers/pdf-engine \
   --target-triple x86_64-unknown-linux-gnu
 ```
@@ -285,6 +338,22 @@ Le processus Rust possède le handle du backend. Il capture stdout/stderr dans
 `pdf-engine.log`, impose un timeout de démarrage de 20 secondes, expose
 `get_backend_status` et `restart_backend`, puis tue le processus et nettoie le
 répertoire temporaire à la fermeture de l’application.
+
+Sous Windows, l’arrêt normal ou la relance termine l’arbre enfant : uv et
+PyInstaller onefile peuvent chacun posséder un second processus Python.
+Cet arrêt forcé de l’arbre n’est pas un SIGTERM gracieux. Le crash brutal du
+processus Rust lui-même n’est pas couvert par un mécanisme Windows Job Object.
+L’éditeur conserve sa session en mémoire pendant une panne du backend ; la
+surveillance continue après Réessayer. Les erreurs de démarrage sont aussi
+écrites dans le journal avec `BACKEND_START_ERROR`.
+
+La géométrie est calculée avant d’afficher la fenêtre, à partir de la work area
+physique du moniteur, des décorations et de son facteur DPI. Les tailles cible
+et minimale logiques sont limitées à l’espace disponible. Le déplacement vers
+un autre moniteur ou un changement de DPI déclenche un clamp, sans interdire
+le resize manuel ni imposer le fullscreen. Aucune persistance de géométrie
+n’a été ajoutée. Les matrices natives et mathématiques sont distinguées dans
+le rapport Windows.
 
 Les chemins viennent du résolveur Tauri et sont transmis explicitement au
 lanceur Python :
@@ -342,8 +411,8 @@ Validations complètes complémentaires :
 
 ```bash
 cd services/pdf-engine
-UV_CACHE_DIR=/tmp/pdf-engine-uv-cache uv run pytest
-UV_CACHE_DIR=/tmp/pdf-engine-uv-cache uv run ruff check .
+uv run python -m pytest
+uv run python -m ruff check .
 UV_CACHE_DIR=/tmp/pdf-engine-uv-cache uv lock --check
 
 cd ../../apps/web
@@ -370,19 +439,19 @@ native.
 
 | Fonction | Windows | macOS | Linux |
 | --- | --- | --- | --- |
-| Build shell + sidecar | Non testé | Non testé | Dev et bundle `.deb` OK ; QA fonctionnelle restante |
-| Installation / désinstallation | Non testé | Non testé | Non testé |
+| Build shell + sidecar | OK MSVC, MSI/NSIS générés | Non testé | Dev et bundle `.deb` OK ; QA fonctionnelle restante |
+| Installation / désinstallation | NSIS installé, lancé et désinstallé, codes retour 0 | Non testé | Non testé |
 | Icône et métadonnées bundle | Configuré | Configuré | Configuré |
 | Association `.pdf` dans le bundle | Configuré | Configuré | Configuré |
-| Double-clic `.pdf` / argument au lancement | Non testé | Non testé | Implémenté ; argument de démarrage à requalifier avec installateur |
+| Double-clic `.pdf` / argument au lancement | Argument OK ; double-clic Non testé | Non testé | Implémenté ; argument de démarrage à requalifier avec installateur |
 | Second lancement avec un PDF | Non supporté : aucune stratégie single-instance | Non supporté : aucune stratégie single-instance | Non supporté : aucune stratégie single-instance |
-| Ouverture depuis l'interface | Non testé | Non testé | Implémenté ; QA dialogue interactive restante |
-| Save As vers une destination native | Non testé | Non testé | Implémenté ; QA dialogue interactive restante |
-| Save vers un chemin déjà choisi | Non testé | Non testé | Implémenté ; test Rust/Frontend OK, QA interactive restante |
-| Sidecar, port dynamique, health/restart/shutdown | Configuré ; non testé nativement | Configuré ; non testé nativement | Dev et `.deb` : WebView, port dynamique, health et arrêt sidecar OK ; crash détecté, restart UI manuel à qualifier |
-| OCR `eng` / `fra` | Configuré comme dépendance système ; non testé | Configuré comme dépendance système ; non testé | Configuré comme dépendance système ; non testé |
-| Conversion | Configuré ; non testé | Configuré ; non testé | Configuré ; non testé |
-| Impression et AcroForms | Non testé | Non testé | Non testé |
+| Ouverture depuis l'interface | OK natif, chemins espaces/accents | Non testé | Implémenté ; QA dialogue interactive restante |
+| Save As vers une destination native | OK, annulation et overwrite | Non testé | Implémenté ; QA dialogue interactive restante |
+| Save vers un chemin déjà choisi | OK, destination après Save As | Non testé | Implémenté ; test Rust/Frontend OK, QA interactive restante |
+| Sidecar, port dynamique, health/restart/shutdown | Dev/release OK ; crash/retry testé, voir rapport | Configuré ; non testé nativement | Dev et `.deb` : WebView, port dynamique, health et arrêt sidecar OK ; crash détecté, restart UI manuel à qualifier |
+| OCR `eng` / `fra` | OK natif avec outils système et tessdata QA | Configuré comme dépendance système ; non testé | Configuré comme dépendance système ; non testé |
+| Conversion | TXT/DOCX/PNG OK via sidecar installé | Configuré ; non testé | Configuré ; non testé |
+| Impression et AcroForms | Aperçu/demande d’impression seulement ; champs/verrou local OK | Non testé | Non testé |
 | Signature Windows | Non supporté | Non supporté | Non supporté |
 | Signature / notarisation macOS | Non supporté | Non supporté | Non supporté |
 
