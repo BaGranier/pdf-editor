@@ -17,12 +17,13 @@ TAURI_ROOT = DESKTOP_ROOT / "src-tauri"
 
 
 def run(command: list[str], cwd: Path) -> None:
+    command[0] = shutil.which(command[0]) or command[0]
     print(f"+ {' '.join(command)}", flush=True)
     subprocess.run(command, cwd=cwd, check=True)
 
 
 def validate_configuration() -> None:
-    configuration = json.loads((TAURI_ROOT / "tauri.conf.json").read_text())
+    configuration = json.loads((TAURI_ROOT / "tauri.conf.json").read_text(encoding="utf-8"))
     assert configuration["identifier"] == "com.local.pdfstudio"
     assert configuration["build"]["frontendDist"] == "../../web/dist"
     assert configuration["build"]["devUrl"] == "http://127.0.0.1:5173"
@@ -37,14 +38,14 @@ def validate_configuration() -> None:
         }
     ]
 
-    package = json.loads((DESKTOP_ROOT / "package.json").read_text())
+    package = json.loads((DESKTOP_ROOT / "package.json").read_text(encoding="utf-8"))
     web_dev_command = package["scripts"]["web:dev"]
     assert "--host 127.0.0.1" in web_dev_command
     assert "--port 5173" in web_dev_command
     assert "--strictPort" in web_dev_command
 
     capability = json.loads(
-        (TAURI_ROOT / "capabilities" / "default.json").read_text()
+        (TAURI_ROOT / "capabilities" / "default.json").read_text(encoding="utf-8")
     )
     permissions = capability["permissions"]
     assert permissions == ["core:default"]
@@ -92,6 +93,8 @@ def main(arguments: list[str] | None = None) -> int:
         backend_tests = [
             "uv",
             "run",
+            "python",
+            "-m",
             "pytest",
             "tests/test_desktop_server.py",
             "-q",

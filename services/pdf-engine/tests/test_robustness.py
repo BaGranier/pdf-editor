@@ -272,8 +272,12 @@ def test_cancelling_a_subprocess_capture_terminates_its_process_group(
             await task
 
     monkeypatch.setattr(ocr.subprocess, "Popen", create_process)
-    monkeypatch.setattr(ocr.os, "killpg", kill_group)
+    monkeypatch.setattr(ocr.os, "killpg", kill_group, raising=False)
     run(cancel_capture())
 
-    assert killed_groups == [(process.pid, ocr.signal.SIGKILL)]
-    assert process.returncode == -ocr.signal.SIGKILL
+    if ocr.os.name == "posix":
+        assert killed_groups == [(process.pid, ocr.signal.SIGKILL)]
+        assert process.returncode == -ocr.signal.SIGKILL
+    else:
+        assert killed_groups == []
+        assert process.returncode == -9

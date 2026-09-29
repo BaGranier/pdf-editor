@@ -3295,17 +3295,17 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
   useEffect(() => {
     function handleViewerNavigation(event: globalThis.KeyboardEvent) {
+      // The now-hidden mode selector can keep focus when presentation starts.
+      if (event.key === "Escape" && viewerMode === "presentation") {
+        event.preventDefault();
+        exitPresentation();
+        return;
+      }
       if (
         viewerMode === "continuous" ||
         !activeDocument ||
         isEditableKeyboardTarget(event.target)
       ) {
-        return;
-      }
-
-      if (event.key === "Escape" && viewerMode === "presentation") {
-        event.preventDefault();
-        exitPresentation();
         return;
       }
 
@@ -4330,6 +4330,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         setDocuments((currentDocuments) => [...currentDocuments, ...openedDocuments]);
         setActiveDocumentId(openedDocuments[openedDocuments.length - 1].id);
         setWorkspaceMode("read");
+        setStatus("");
       }
     }).catch((error) => {
       setExportFeedback({
@@ -4450,17 +4451,18 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         return false;
       }
 
+      const savedFileName = nativeSave?.fileName ?? exported.downloadedName;
       const exportedFile = isDesktopRuntime()
-        ? new File([exported.pdfBlob], nativeSave?.fileName ?? exported.downloadedName, {
+        ? new File([exported.pdfBlob], savedFileName, {
             type: exported.pdfBlob.type || "application/pdf",
           })
         : downloadPdfToBrowser(exported.pdfBlob, exported.downloadedName);
       const operationLabel = operation === "export" ? "exporté" : "sauvegardé";
       const exportMessage = exported.outputWarning
-        ? `PDF ${operationLabel} avec succès : ${exported.downloadedName}. ${exported.outputWarning}`
+        ? `PDF ${operationLabel} avec succès : ${savedFileName}. ${exported.outputWarning}`
         : exported.outputStatus === "saved"
-          ? `PDF ${operationLabel} avec succès : ${exported.downloadedName}. Copie enregistrée dans data/output.`
-          : `PDF ${operationLabel} avec succès : ${exported.downloadedName}.`;
+          ? `PDF ${operationLabel} avec succès : ${savedFileName}. Copie enregistrée dans data/output.`
+          : `PDF ${operationLabel} avec succès : ${savedFileName}.`;
 
       try {
         if (isDesktopRuntime() && operation !== "export") {

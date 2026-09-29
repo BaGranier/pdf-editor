@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -306,10 +307,10 @@ def build_ocr_command(
 
 
 def _safe_diagnostic(output: bytes, temporary_directory: Path) -> str:
-    diagnostic = decode_process_output(output).replace(
-        str(temporary_directory),
-        "<temporary-directory>",
-    )
+    diagnostic = decode_process_output(output)
+    path = str(temporary_directory)
+    for representation in (json.dumps(path)[1:-1], path, temporary_directory.as_posix()):
+        diagnostic = diagnostic.replace(representation, "<temporary-directory>")
     return diagnostic[-DIAGNOSTIC_STREAM_LOG_LIMIT_CHARS:]
 
 

@@ -55,7 +55,7 @@ export default defineConfig({
     ? [
         {
           command:
-            "uv run --directory ../../services/pdf-engine uvicorn app.main:app --host 127.0.0.1 --port 8000",
+            "uv run --directory ../../services/pdf-engine python -m uvicorn app.main:app --host 127.0.0.1 --port 8000",
           url: `${backendUrl}/health`,
           timeout: 120_000,
           reuseExistingServer: !process.env.CI,

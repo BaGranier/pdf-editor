@@ -25,7 +25,9 @@ def build() -> Path:
         "run",
         "--with",
         "pyinstaller==6.16.0",
-        "pyinstaller",
+        "python",
+        "-m",
+        "PyInstaller",
         "--noconfirm",
         "--clean",
         "--onefile",
@@ -102,7 +104,15 @@ def verify_health(executable: Path) -> None:
             raise RuntimeError("Le sidecar n'a pas répondu à /health sous 30 secondes.")
         finally:
             if process.poll() is None:
-                process.terminate()
+                if os.name == "nt":
+                    subprocess.run(
+                        ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                        check=False,
+                        capture_output=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                    )
+                else:
+                    process.terminate()
             try:
                 process.communicate(timeout=10)
             except subprocess.TimeoutExpired:
@@ -120,7 +130,8 @@ def main() -> int:
         subprocess.run(
             [
                 sys.executable,
-                str(REPOSITORY_ROOT / "scripts" / "prepare-tauri-sidecars.py"),
+                "-m",
+                "scripts.prepare-tauri-sidecars",
                 "--source",
                 str(executable),
             ],

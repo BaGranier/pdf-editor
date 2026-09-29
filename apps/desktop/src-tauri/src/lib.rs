@@ -1,12 +1,17 @@
 use serde::Serialize;
+mod window_geometry;
 #[cfg(debug_assertions)]
 use std::fs::File;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
+#[cfg(any(debug_assertions, windows))]
+use std::process::Command as StdCommand;
 #[cfg(debug_assertions)]
-use std::process::{Child, Command as StdCommand, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Mutex,
@@ -261,6 +266,29 @@ enum ManagedBackendChild {
 
 impl ManagedBackendChild {
     fn kill(self) {
+        #[cfg(windows)]
+        {
+            let pid = match &self {
+                #[cfg(not(debug_assertions))]
+                Self::Sidecar(child) => child.pid(),
+                #[cfg(debug_assertions)]
+                Self::Development(child) => child.id(),
+            };
+            // uv and PyInstaller onefile own another Python process.
+            // Terminate the tree before deleting temporary files.
+            match StdCommand::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                .output()
+            {
+                Ok(output) if !output.status.success() => eprintln!(
+                    "BACKEND_STOP_ERROR pid={pid} {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ),
+                Err(error) => eprintln!("BACKEND_STOP_ERROR pid={pid} {error}"),
+                _ => {}
+            }
+        }
         match self {
             #[cfg(not(debug_assertions))]
             Self::Sidecar(child) => {
@@ -292,6 +320,15 @@ impl BackendRuntime {
     }
 
     fn set_status(&self, status: BackendStatus) {
+        if status.state == "error" {
+            append_log(
+                &self.paths.log_file(),
+                &format!(
+                    "BACKEND_START_ERROR {}",
+                    status.message.as_deref().unwrap_or("unknown")
+                ),
+            );
+        }
         if let Ok(mut current) = self.status.lock() {
             *current = status;
         }
@@ -434,7 +471,10 @@ fn spawn_development_backend(
     let stderr_log = stdout_log
         .try_clone()
         .map_err(|error| format!("Impossible de dupliquer le journal backend: {error}"))?;
-    let child = StdCommand::new("uv")
+    let mut command = StdCommand::new("uv");
+    #[cfg(windows)]
+    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    let child = command
         .arg("run")
         .arg("python")
         .arg("-m")
@@ -647,6 +687,48 @@ pub fn run() {
             );
         })
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                window_geometry::fit_window(&window, true)?;
+                window.show()?;
+                let observed_window = window.clone();
+                let previous_monitor =
+                    std::sync::Arc::new(Mutex::new(window_geometry::monitor_key(&window)));
+                let pending = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                window.on_window_event(move |event| {
+                    if matches!(
+                        event,
+                        tauri::WindowEvent::Moved(_)
+                            | tauri::WindowEvent::ScaleFactorChanged { .. }
+                    ) {
+                        if pending.swap(true, Ordering::Relaxed) {
+                            return;
+                        }
+                        let window = observed_window.clone();
+                        let previous_monitor = previous_monitor.clone();
+                        let pending = pending.clone();
+                        // Queries dispatch to the event loop. Never block it
+                        // from inside a native window event callback.
+                        thread::spawn(move || {
+                            thread::sleep(Duration::from_millis(120));
+                            let key = window_geometry::monitor_key(&window);
+                            let changed = previous_monitor
+                                .lock()
+                                .map(|mut previous| {
+                                    let changed = *previous != key;
+                                    *previous = key;
+                                    changed
+                                })
+                                .unwrap_or(false);
+                            if changed {
+                                if let Err(error) = window_geometry::fit_window(&window, false) {
+                                    eprintln!("TAURI_WINDOW_GEOMETRY_ERROR {error}");
+                                }
+                            }
+                            pending.store(false, Ordering::Relaxed);
+                        });
+                    }
+                });
+            }
             let paths = backend_paths(app.handle()).map_err(std::io::Error::other)?;
             app.manage(BackendRuntime::new(paths));
             let startup_paths = std::env::args_os()
@@ -733,5 +815,33 @@ mod tests {
         write_pdf_atomically(&destination, b"new pdf").expect("atomic replacement");
         assert_eq!(fs::read(&destination).expect("replaced PDF"), b"new pdf");
         fs::remove_dir_all(directory).expect("temporary directory cleanup");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_save_preserves_readonly_and_locked_unicode_pdf() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let directory = temporary_directory();
+        let destination = directory.join("contrat été avec espaces.pdf");
+        fs::write(&destination, b"original pdf").unwrap();
+        let mut permissions = fs::metadata(&destination).unwrap().permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&destination, permissions.clone()).unwrap();
+        assert!(write_pdf_atomically(&destination, b"replacement").is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"original pdf");
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+        permissions.set_readonly(false);
+        fs::set_permissions(&destination, permissions).unwrap();
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&destination)
+            .unwrap();
+        assert!(write_pdf_atomically(&destination, b"replacement").is_err());
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+        drop(lock);
+        write_pdf_atomically(&destination, b"replacement").unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"replacement");
+        fs::remove_dir_all(directory).unwrap();
     }
 }

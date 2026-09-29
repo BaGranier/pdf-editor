@@ -14,10 +14,9 @@
       {
         "label": "main",
         "title": "PDF Studio Local",
+        "visible": false,
         "width": 1280,
         "height": 820,
-        "minWidth": 960,
-        "minHeight": 640,
         "resizable": true,
         "devtools": true
       }

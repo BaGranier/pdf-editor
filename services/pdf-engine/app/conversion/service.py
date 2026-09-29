@@ -188,10 +188,13 @@ async def execute_conversion_worker(
     ocr_used: bool = False,
 ) -> ConversionArtifact:
     manifest_path = output_directory / "conversion-manifest.json"
+    launcher = (
+        [sys.executable, "--conversion-worker"]
+        if getattr(sys, "frozen", False)
+        else [sys.executable, "-m", "app.conversion.worker"]
+    )
     command = [
-        sys.executable,
-        "-m",
-        "app.conversion.worker",
+        *launcher,
         "--input",
         str(input_pdf),
         "--output-directory",
@@ -228,10 +231,7 @@ async def execute_conversion_worker(
         ) from error
 
     if return_code != 0 or not manifest_path.is_file():
-        diagnostic = ocr.decode_process_output(stderr)[-4000:].replace(
-            str(output_directory),
-            "<temporary-directory>",
-        )
+        diagnostic = ocr._safe_diagnostic(stderr, output_directory)
         raise ConversionError(
             502,
             "CONVERSION_FAILED",

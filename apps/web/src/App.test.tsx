@@ -261,7 +261,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(document.querySelector(".viewer--presentation .pdf-page")).toHaveAttribute("data-page-number", "2");
     });
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(screen.getByLabelText("Mode d'affichage"), { key: "Escape" });
 
     await waitFor(() => {
       expect(screen.getByRole("main")).not.toHaveClass("app-shell--presentation");

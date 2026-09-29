@@ -72,9 +72,12 @@ def generate_fixtures(playwright_args: list[str]) -> None:
         "uv",
         "run",
         "--directory",
+        str(PROJECT_ROOT),
+        "--project",
         str(BACKEND_DIR),
         "python",
-        str(GENERATE_SCRIPT),
+        "-m",
+        "scripts.generate-qa-pdfs",
     ]
     if not quick_campaign and os.environ.get("QA_SKIP_LARGE") != "1":
         command.append("--include-large")
@@ -90,9 +93,12 @@ def validate_docx_quality(environment: dict[str, str]) -> int:
         "uv",
         "run",
         "--directory",
+        str(PROJECT_ROOT),
+        "--project",
         str(BACKEND_DIR),
         "python",
-        str(DOCX_QUALITY_SCRIPT),
+        "-m",
+        "scripts.validate-docx-visual-quality",
     ]
     if environment.get("QA_REQUIRE_DOCX_VISUAL") == "1":
         command.append("--required")
@@ -125,14 +131,14 @@ def main() -> int:
     )
 
     test_status = subprocess.run(
-        ["npx", "playwright", "test", *playwright_args],
+        [shutil.which("npx") or "npx", "playwright", "test", *playwright_args],
         cwd=WEB_DIR,
         env=environment,
         check=False,
     ).returncode
     report_status = subprocess.run(
-        [sys.executable, str(REPORT_SCRIPT)],
-        cwd=WEB_DIR,
+        [sys.executable, "-m", "scripts.generate-qa-report"],
+        cwd=PROJECT_ROOT,
         env=environment,
         check=False,
     ).returncode

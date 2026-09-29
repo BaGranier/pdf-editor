@@ -832,6 +832,7 @@ def test_single_image_is_returned_without_zip(tmp_path: Path) -> None:
         (make_scan_pdf(), TargetFormat.DOCX, "SCANNED", "scanned"),
         (make_mixed_pdf(), TargetFormat.TXT, "DIGITAL", "mixed"),
     ],
+    ids=["scan-docx", "mixed-txt"],
 )
 def test_auto_ocr_converts_a_scan_and_mixed_pdf(
     source_bytes: bytes,
@@ -1058,6 +1059,27 @@ def test_worker_failure_is_sanitized(
     assert error.value.code == "CONVERSION_FAILED"
     assert error.value.stage == "txt_generation"
     assert "pdf-engine-conversion-" not in (error.value.diagnostic or "")
+
+
+def test_frozen_conversion_uses_explicit_sidecar_worker_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from app.conversion import service
+
+    monkeypatch.setattr(service.sys, "frozen", True, raising=False)
+
+    async def capture(command: list[str], **_options: object) -> tuple[int, bytes, bytes]:
+        assert command[:2] == [service.sys.executable, "--conversion-worker"]
+        assert "-m" not in command
+        raise FileNotFoundError
+
+    monkeypatch.setattr(ocr, "capture_process", capture)
+    with pytest.raises(ConversionError) as error:
+        asyncio.run(service.execute_conversion_worker(
+            tmp_path / "input.pdf", tmp_path,
+            ConversionOptions(target_format=TargetFormat.TXT),
+        ))
+    assert error.value.code == "DEPENDENCY_UNAVAILABLE"
 
 
 def test_unexpected_conversion_failure_reports_exact_stage_and_cleans_up(

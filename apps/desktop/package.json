@@ -7,9 +7,9 @@
     "web:build": "npm --prefix ../web run build",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
-    "desktop:build": "python3 ../../scripts/build-backend-sidecar.py && tauri build",
-    "desktop:check": "python3 ../../scripts/desktop-check.py",
-    "desktop:check:static": "python3 ../../scripts/desktop-check.py --skip-cargo"
+    "desktop:build": "uv run --directory ../.. --project services/pdf-engine python -m scripts.build-backend-sidecar && tauri build",
+    "desktop:check": "uv run --directory ../.. --project services/pdf-engine python -m scripts.desktop-check",
+    "desktop:check:static": "uv run --directory ../.. --project services/pdf-engine python -m scripts.desktop-check --skip-cargo"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.11.4"

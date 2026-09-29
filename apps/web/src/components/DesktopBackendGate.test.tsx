@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DesktopBackendGate } from "./DesktopBackendGate";
 
@@ -139,5 +140,42 @@ describe("DesktopBackendGate", () => {
       "Le moteur PDF local ne répond plus. Relancez-le pour continuer.",
     );
     vi.useRealTimers();
+  });
+
+  it("preserves unsaved session state and detects another crash after retry", async () => {
+    vi.useFakeTimers();
+    const ready = { state: "ready" as const, baseUrl: "http://127.0.0.1:43129", logPath: "/logs/pdf-engine.log", message: null };
+    const failure = { state: "error" as const, baseUrl: null, logPath: ready.logPath, message: "Backend stopped" };
+    let currentStatus = ready as typeof ready | typeof failure;
+    const resolveStatus = vi.fn(async () => currentStatus);
+    const restart = vi.fn(async () => {
+      currentStatus = { ...ready, baseUrl: "http://127.0.0.1:43130" };
+      return currentStatus;
+    });
+    function Session({ url }: { url: string | null }) {
+      const [draft, setDraft] = useState("");
+      return <><input aria-label="Unsaved draft" value={draft} onChange={(event) => setDraft(event.target.value)} /><p>{url}</p></>;
+    }
+    try {
+      render(<DesktopBackendGate desktop resolveStatus={resolveStatus} restart={restart}>{(url) => <Session url={url} />}</DesktopBackendGate>);
+      await act(async () => { await Promise.resolve(); });
+      const draft = screen.getByRole("textbox", { name: "Unsaved draft" });
+      fireEvent.change(draft, { target: { value: "Keep Windows edits" } });
+      currentStatus = failure;
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+      expect(screen.getByRole("alert")).toHaveTextContent("Backend stopped");
+      expect(draft).not.toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: "Réessayer" }));
+      await act(async () => { await Promise.resolve(); });
+      expect(draft).toBeVisible();
+      expect(draft).toHaveValue("Keep Windows edits");
+      expect(screen.getByText("http://127.0.0.1:43130")).toBeVisible();
+      currentStatus = failure;
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+      expect(screen.getByRole("alert")).toHaveTextContent("Backend stopped");
+      expect(draft).toHaveValue("Keep Windows edits");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

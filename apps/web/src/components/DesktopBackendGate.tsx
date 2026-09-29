@@ -47,6 +47,7 @@ export function DesktopBackendGate({
   restart = restartDesktopBackend,
 }: DesktopBackendGateProps) {
   const [state, setState] = useState<GateState>({ kind: "starting" });
+  const [sessionBackendUrl, setSessionBackendUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (desktop) {
@@ -65,10 +66,8 @@ export function DesktopBackendGate({
         while (active) {
           const status = await resolveStatus();
           const nextState = stateFromStatus(status);
+          if (status.state === "ready") setSessionBackendUrl(status.baseUrl);
           setState(nextState);
-          if (nextState.kind === "error") {
-            return;
-          }
           await new Promise((resolve) => window.setTimeout(
             resolve,
             status.state === "starting" ? 150 : READY_POLL_DELAY_MS,
@@ -91,28 +90,29 @@ export function DesktopBackendGate({
     return children(null);
   }
 
+  let screen: ReactNode = null;
   if (state.kind === "starting") {
-    return (
+    screen = (
       <AppStateScreen
         state="loading"
         title="Démarrage en cours"
         description="Démarrage du moteur PDF local…"
       />
     );
-  }
-
-  if (state.kind === "error") {
+  } else if (state.kind === "error") {
     const retry = async () => {
       setState({ kind: "starting" });
       try {
-        setState(stateFromStatus(await restart()));
+        const status = await restart();
+        if (status.state === "ready") setSessionBackendUrl(status.baseUrl);
+        setState(stateFromStatus(status));
       } catch (error) {
         logDesktopStartupError("backend-restart", error);
         setState({ kind: "error", status: UNKNOWN_ERROR });
       }
     };
 
-    return (
+    screen = (
       <AppStateScreen
         state="error"
         title="Impossible de démarrer"
@@ -123,8 +123,12 @@ export function DesktopBackendGate({
     );
   }
 
-  // A healthy local backend is not a persistent workspace status. Keeping the
-  // application as the direct root also lets its height chain match the Tauri
-  // window exactly; startup and failure states above remain explicit.
-  return children(state.status.baseUrl);
+  // Keep the editor mounted while the backend recovers: native destinations
+  // and unsaved edits belong to this session, not to the sidecar process.
+  return <>
+    <div hidden={state.kind !== "ready"} style={{ height: "100%" }}>
+      {sessionBackendUrl ? children(sessionBackendUrl) : null}
+    </div>
+    {screen}
+  </>;
 }

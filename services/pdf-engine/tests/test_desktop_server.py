@@ -116,5 +116,8 @@ def test_desktop_server_uses_configured_port_and_stops_cleanly(
         process.terminate()
         stdout, stderr = process.communicate(timeout=10)
 
-    assert process.returncode == 0, f"stdout={stdout}\nstderr={stderr}"
+    # Windows terminate() calls TerminateProcess, not a catchable SIGTERM.
+    assert process.returncode == (1 if os.name == "nt" else 0), f"stdout={stdout}\nstderr={stderr}"
+    with socket.socket() as probe:
+        assert probe.connect_ex((desktop_server.DESKTOP_HOST, port)) != 0
     assert f"http://127.0.0.1:{port}/health" in stdout

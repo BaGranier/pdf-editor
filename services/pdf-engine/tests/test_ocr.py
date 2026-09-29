@@ -346,7 +346,7 @@ def test_process_is_started_without_a_shell(monkeypatch: pytest.MonkeyPatch) -> 
     assert result[0] == 0
     assert captured["arguments"] == ["ocrmypdf", "--version"]
     assert captured["options"]["shell"] is False
-    assert captured["options"]["start_new_session"] is True
+    assert captured["options"]["start_new_session"] is (ocr.os.name == "posix")
 
 
 def test_process_diagnostics_are_bounded(
@@ -480,7 +480,7 @@ def test_ocr_timeout_kills_process_and_is_reported(
         process.returncode = -kill_signal
 
     monkeypatch.setattr(ocr.subprocess, "Popen", create_process)
-    monkeypatch.setattr(ocr.os, "killpg", kill_group)
+    monkeypatch.setattr(ocr.os, "killpg", kill_group, raising=False)
     monkeypatch.setattr(ocr, "OCR_TIMEOUT_SECONDS", 0)
 
     with pytest.raises(ocr.OcrError) as error:
@@ -493,7 +493,10 @@ def test_ocr_timeout_kills_process_and_is_reported(
 
     assert_ocr_error(error, "OCR_TIMEOUT")
     assert process.killed
-    assert killed_groups == [(process.pid, ocr.signal.SIGKILL)]
+    if ocr.os.name == "posix":
+        assert killed_groups == [(process.pid, ocr.signal.SIGKILL)]
+    else:
+        assert killed_groups == []
 
 
 def test_absent_ocr_output_is_rejected(tmp_path: Path) -> None:
@@ -739,7 +742,7 @@ def test_ocr_errors_have_a_stable_json_shape() -> None:
     }
 
 
-OCR_BINARIES = ("ocrmypdf", "tesseract", "gs", "qpdf")
+OCR_BINARIES = ("ocrmypdf", "tesseract", "gswin64c" if ocr.os.name == "nt" else "gs", "qpdf")
 OCR_BINARIES_AVAILABLE = all(shutil.which(binary) for binary in OCR_BINARIES)
 
 

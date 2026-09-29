@@ -46,7 +46,7 @@ def target_triple() -> str:
 
 
 def validate_external_bin() -> None:
-    configuration = json.loads((TAURI_ROOT / "tauri.conf.json").read_text())
+    configuration = json.loads((TAURI_ROOT / "tauri.conf.json").read_text(encoding="utf-8"))
     external_bins = configuration.get("bundle", {}).get("externalBin", [])
     if SIDECAR_CONFIG_PATH not in external_bins:
         raise RuntimeError(
