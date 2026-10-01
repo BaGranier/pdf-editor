@@ -1,5 +1,7 @@
 use serde::Serialize;
 mod window_geometry;
+#[cfg(windows)]
+mod windows_job;
 #[cfg(debug_assertions)]
 use std::fs::File;
 use std::fs::{self, OpenOptions};
@@ -305,6 +307,8 @@ impl ManagedBackendChild {
 
 struct BackendRuntime {
     child: Mutex<Option<ManagedBackendChild>>,
+    #[cfg(windows)]
+    job: Mutex<Option<windows_job::BackendJob>>,
     status: Mutex<BackendStatus>,
     paths: BackendPaths,
 }
@@ -314,6 +318,8 @@ impl BackendRuntime {
         let log_path = paths.log_file();
         Self {
             child: Mutex::new(None),
+            #[cfg(windows)]
+            job: Mutex::new(None),
             status: Mutex::new(BackendStatus::starting(&log_path)),
             paths,
         }
@@ -365,6 +371,11 @@ impl BackendRuntime {
             if let Some(child) = child_slot.take() {
                 child.kill();
             }
+        }
+        #[cfg(windows)]
+        if let Ok(mut job) = self.job.lock() {
+            // Closing the job also covers descendants left by an exited parent.
+            job.take();
         }
         let _ = fs::remove_dir_all(&self.paths.temp);
     }
@@ -512,6 +523,36 @@ fn launch_backend(_app: &AppHandle, runtime: &BackendRuntime) -> BackendStatus {
         Ok(child) => child,
         Err(error) => return BackendStatus::error(error, &log_path),
     };
+
+    #[cfg(windows)]
+    {
+        let pid = match &child {
+            #[cfg(not(debug_assertions))]
+            ManagedBackendChild::Sidecar(child) => child.pid(),
+            #[cfg(debug_assertions)]
+            ManagedBackendChild::Development(child) => child.id(),
+        };
+        match windows_job::BackendJob::attach(pid) {
+            Ok(job) => {
+                if let Ok(mut slot) = runtime.job.lock() {
+                    *slot = Some(job);
+                } else {
+                    child.kill();
+                    return BackendStatus::error(
+                        "Impossible de protéger le processus backend.",
+                        &log_path,
+                    );
+                }
+            }
+            Err(error) => {
+                child.kill();
+                return BackendStatus::error(
+                    format!("Impossible de protéger le processus backend Windows: {error}"),
+                    &log_path,
+                );
+            }
+        }
+    }
     if let Ok(mut child_slot) = runtime.child.lock() {
         *child_slot = Some(child);
     } else {
@@ -843,5 +884,30 @@ mod tests {
         write_pdf_atomically(&destination, b"replacement").unwrap();
         assert_eq!(fs::read(&destination).unwrap(), b"replacement");
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_long_unicode_path_and_disappearing_destination() {
+        let root = temporary_directory();
+        let mut directory = root.canonicalize().unwrap();
+        for _ in 0..9 {
+            directory = directory.join("synthetic-long-directory-with-spaces");
+        }
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("contrat été.multiple.points.PDF");
+        assert!(path.as_os_str().len() > 260);
+        write_pdf_atomically(&path, b"synthetic pdf").unwrap();
+        let files = super::DesktopFileStore::new();
+        let opened = super::read_native_pdf(path.clone(), &files).unwrap();
+        assert_eq!(opened.file_name, "contrat été.multiple.points.PDF");
+        fs::remove_file(&path).unwrap();
+        // A missing file in an existing directory is recreated by Save.
+        write_pdf_atomically(&path, b"recreated pdf").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"recreated pdf");
+        fs::remove_file(&path).unwrap();
+        fs::remove_dir(&directory).unwrap();
+        assert!(write_pdf_atomically(&path, b"missing directory").is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 }
