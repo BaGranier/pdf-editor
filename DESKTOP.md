@@ -1,5 +1,13 @@
 # DESKTOP-RELEASE-001 — shell Tauri et préparation de release
 
+La campagne complémentaire est dans
+[WINDOWS_NATIVE_QUALIFICATION_002.md](WINDOWS_NATIVE_QUALIFICATION_002.md).
+Le backend Windows utilise maintenant un Job Object : la disparition forcée
+du shell termine aussi ses descendants PyInstaller. Un dossier temporaire peut
+subsister après crash brutal. Le MSI est construit, mais son installation sur
+le poste QA est empêchée par les privilèges administrateur. DPI/multi-écran,
+impression produite et autonomie OCR restent à qualifier.
+
 L’audit natif Windows 11 et ses limites sont détaillés dans
 [WINDOWS_STABILIZATION_AUDIT_001.md](WINDOWS_STABILIZATION_AUDIT_001.md).
 Build MSVC, bundles MSI/NSIS et parcours depuis une installation NSIS ont été

@@ -98,6 +98,19 @@ variables/collections TTC, le subsetting avancé et le regroupement sémantique
 de spans en paragraphes restent des évolutions dédiées. Ils ne doivent pas être
 contournés par rasterisation, faux style CSS ou remplacement visuel opaque.
 
+## WINDOWS-NATIVE-QUALIFICATION-002 — Release Windows encore incomplète
+
+La campagne native est détaillée dans
+[WINDOWS_NATIVE_QUALIFICATION_002.md](WINDOWS_NATIVE_QUALIFICATION_002.md).
+Le crash forcé du shell termine désormais les descendants backend par Job Object,
+mais son dossier temporaire peut subsister. Restent : DPI natifs variés et
+multi-écran, installation MSI avec droits administrateur, WebView2 absent/offline,
+impression produite, chemins réseau/OneDrive, association par double-clic et
+validation visuelle LibreOffice. Une VM sans outils dev est nécessaire pour
+qualifier l'autonomie utilisateur. L'OCR dépend encore d'outils système ; un
+bundle OCR offline est recommandé après audit de redistribution, sans nouvelle
+stratégie lourde implémentée ici. La baseline actuelle n'est pas un seuil de release.
+
 ## DESKTOP-LINUX-001 — QA native et bundle Linux
 
 Le sidecar FastAPI local est supervisé en développement Linux et le workflow

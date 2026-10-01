@@ -263,6 +263,116 @@ Mettre à jour volontairement les références après revue :
 npm run qa:e2e:update-snapshots -- --grep @visual
 ```
 
+## Qualification native Windows 002
+
+Résultats et limites :
+[WINDOWS_NATIVE_QUALIFICATION_002.md](WINDOWS_NATIVE_QUALIFICATION_002.md).
+Les scripts suivants utilisent l'application installée et la WebView2 réelle,
+sans émuler un DPR navigateur. Exécuter depuis la racine du dépôt sous Windows.
+WMI peut nécessiter une exécution hors bac à sable ; installer le MSI par machine
+nécessite des privilèges administrateur. Ne pas confondre ces deux conditions.
+
+```powershell
+# Sélectionner le Node 22 QA existant, puis vérifier les exécutables résolus.
+$env:PATH = (Join-Path $PWD 'data/output/windows-toolchain/node_modules/node-win-x64/bin') + ';' + $env:PATH
+node --version
+npm.cmd --version
+where.exe node
+where.exe npm
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-qa-environment.ps1
+
+# Nouvelle fixture raster française seulement, sans régénérer les autres PDF.
+uv run --locked --project services/pdf-engine python -m scripts.generate-qa-pdfs --french-only
+```
+
+Installer le NSIS généré dans `data/output/windows-qa-002/installers/NSIS`,
+avec `/S` et `/D=<chemin absolu>` en dernier argument. Ne pas remplacer une
+installation utilisateur pour la QA. Le helper de processus refuse une application
+hors dépôt et exige exactement une instance. Il ne cible aucun processus par
+nom seul pour les actions destructives.
+
+```powershell
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222'
+$env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $PWD 'data/output/windows-qa-002/manual-profile'
+$fixture = Join-Path $PWD 'data/output/windows-qa-002/contrat été.PDF'
+Copy-Item -LiteralPath apps/web/e2e/fixtures/conversion-simple-text.pdf -Destination $fixture
+Start-Process -FilePath data/output/windows-qa-002/installers/NSIS/pdf-studio-local.exe -ArgumentList ('"' + $fixture + '"') -WindowStyle Hidden
+node scripts/windows-qa-cdp.cjs metrics
+node scripts/windows-qa-cdp.cjs files
+node scripts/windows-qa-cdp.cjs smoke
+node scripts/windows-qa-cdp.cjs conversion
+node scripts/windows-qa-cdp.cjs stress
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-native-qa.ps1 -Action Close
+```
+
+`files` crée du texte et ouvre les vrais dialogues Windows : annulation Save As,
+destination Unicode, Save suivant, overwrite Oui. Utiliser une session fraîche
+pour `retry` (ajout d'un autre témoin texte), qui tue deux workers puis vérifie
+session/dirty/ports. Une session interrompue peut conserver des objets : la fermer
+avant de relancer le même scénario. Les libellés du helper natif sont ceux de
+Windows français. `print` valide seulement aperçu et demande d'impression ;
+il ne produit pas un PDF imprimé et ne qualifie pas le dialogue OS.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-qa-processes.ps1 -Action Snapshot
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-qa-processes.ps1 -Action KillWorker
+# KillSidecar est disponible, mais son scénario complet reste NT dans le rapport.
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-qa-processes.ps1 -Action CrashShell
+
+# Fermer toutes les instances avant ces cinq répétitions.
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-qa-performance.ps1
+```
+
+`Snapshot` conserve RAM, private bytes, CPU cumulé, handles et arbre de processus.
+`CrashShell` conserve aussi les ports avant/après et l'existence du temporaire
+applicatif. Le collecteur filtre les dates de création pour éviter les faux liens
+dus aux PID recyclés. La performance utilise un profil WebView2 QA isolé :
+HWND observé, backend ready observé par CDP, canvas du **PDF cible**, et zéro
+descendant après fermeture normale. Ces temps incluent l'observateur Node/CDP ;
+ils ne sont pas une mesure de pixels peints ou de latence interactive complète.
+
+OCR nominal : lancer une session avec `conversion-scan.pdf` puis `ocr-eng`, ou
+`conversion-scan-french.pdf` puis `ocr-fra`. Pour fra, utiliser un dossier QA
+tessdata complet avec eng/fra/osd, configs et tessconfigs. Ce ticket réutilise le
+dossier ignoré de la campagne 001, sans le redistribuer.
+
+```powershell
+node scripts/windows-qa-cdp.cjs ocr-eng
+node scripts/windows-qa-cdp.cjs ocr-fra
+qpdf --check data/output/windows-qa-002/ocr/fra.pdf
+gswin64c -q -dNOPAUSE -dBATCH -sDEVICE=nullpage data/output/windows-qa-002/ocr/fra.pdf
+uv run --locked --project services/pdf-engine python -m scripts.windows-qa-validate
+```
+
+Pour les absences, isoler **l'environnement du nouveau processus QA** et fermer
+l'instance précédente. Ne pas supprimer ni renommer les outils système.
+
+| Environnement au lancement | Scénario CDP | Code attendu |
+| --- | --- | --- |
+| PATH Windows/System32 uniquement, Node invoqué par chemin absolu | `ocr-missing-tesseract eng OCR_TOOL_UNAVAILABLE` | 503 |
+| PATH Windows + Tesseract + Ghostscript, sans OCRmyPDF | `ocr-missing-ocrmypdf eng OCR_TOOL_UNAVAILABLE` | 503 |
+| tessdata système eng/osd | `ocr-missing-fra fra OCR_LANGUAGE_UNAVAILABLE` | 422 |
+| dossier QA contenant seulement fra.traineddata | `ocr-missing-eng eng OCR_LANGUAGE_UNAVAILABLE` | 422 |
+| TESSDATA_PREFIX vers un dossier inexistant | `ocr-invalid-prefix` | OCR eng réussi par fallback Tesseract constaté |
+
+La découverte Windows d'OCRmyPDF peut trouver Ghostscript hors PATH : cela
+n'est pas une preuve de dépendance absente. QPDF CLI est un validateur QA.
+La décision de distribution et les sources de licence sont dans le rapport.
+
+Upgrade local : conserver les installateurs baseline dans le dossier ignoré,
+créer un JSON QA `{"version":"0.1.1"}`, puis exécuter `tauri build --bundles nsis
+--config <chemin QA>` depuis `apps/desktop`. Installer 0.1.0 puis 0.1.1, relever
+ProductVersion, lancement et persistance avant désinstallation. Cette configuration
+ne modifie pas les versions du dépôt. Le build QA 0.1.1 peut rester dans les
+artefacts ignorés ; il n'est pas une release publiée.
+
+Artefacts : `data/output/windows-qa-002/{environment,window-metrics,screenshots,
+ocr,installers,performance,reports}`. Les JSON contiennent des résultats par
+scénario ; le rapport versionné qualifie leur portée. Ne jamais convertir le
+succès API de conversion, l'aide d'un compilateur ou la présence d'un iframe
+en validation native exhaustive. LibreOffice absent : le validateur `--required`
+doit échouer, même si le mode optionnel retournerait 0 avec `unavailable`.
+
 ## Contrôles manuels restants
 
 Ces contrôles sont documentés dans le résumé, mais ne bloquent pas la campagne :
