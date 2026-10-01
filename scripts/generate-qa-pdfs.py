@@ -67,6 +67,25 @@ def create_scan_image(text: str) -> bytes:
     return image
 
 
+def create_french_scan_fixture() -> Path:
+    """Image-only French witness; no invisible source text can satisfy OCR QA."""
+    source = fitz.open()
+    page = source.new_page(width=612, height=792)
+    page.insert_text(
+        (40, 200),
+        "Évaluation de la reconnaissance optique française.\n"
+        "Les caractères accentués doivent être correctement détectés.",
+        fontsize=18,
+        fontname="helv",
+    )
+    image = page.get_pixmap(dpi=200, alpha=False).tobytes("png")
+    source.close()
+    scan = fitz.open()
+    page = scan.new_page(width=612, height=792)
+    page.insert_image(page.rect, stream=image)
+    return save_fitz_fixture("conversion-scan-french.pdf", scan)
+
+
 def create_transparent_logo() -> bytes:
     width = 240
     height = 72
@@ -322,6 +341,7 @@ def generate_conversion_fixtures() -> list[Path]:
     page = scan.new_page(width=612, height=792)
     page.insert_image(page.rect, stream=create_scan_image("SCANNED OCR WITNESS"))
     generated.append(save_fitz_fixture("conversion-scan.pdf", scan))
+    generated.append(create_french_scan_fixture())
 
     mixed = fitz.open()
     page = mixed.new_page(width=612, height=792)
@@ -374,13 +394,19 @@ def generate(include_large: bool) -> list[Path]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--french-only", action="store_true")
     parser.add_argument(
         "--include-large",
         action="store_true",
         help="Génère aussi le PDF de robustesse de plus de 50 Mo et 250 pages.",
     )
     args = parser.parse_args()
-    for fixture in generate(args.include_large):
+    fixtures = (
+        [create_french_scan_fixture()]
+        if args.french_only
+        else generate(args.include_large)
+    )
+    for fixture in fixtures:
         print(f"{fixture.relative_to(PROJECT_ROOT)} ({fixture.stat().st_size} octets)")
 
 
