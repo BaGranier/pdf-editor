@@ -140,18 +140,13 @@ async def prepare_searchable_pdf(
     needs_ocr: bool,
     temporary_directory: Path,
 ) -> tuple[Path, bool]:
-    should_run_ocr = (
-        options.ocr_mode == OcrMode.ALWAYS
-        or (options.ocr_mode == OcrMode.AUTO and needs_ocr)
+    should_run_ocr = options.ocr_mode == OcrMode.ALWAYS or (
+        options.ocr_mode == OcrMode.AUTO and needs_ocr
     )
     if not should_run_ocr:
         return source_pdf, False
 
-    mode = (
-        "force-ocr"
-        if options.ocr_mode == OcrMode.ALWAYS
-        else "skip-text"
-    )
+    mode = "force-ocr" if options.ocr_mode == OcrMode.ALWAYS else "skip-text"
     try:
         requested_languages = ocr.parse_languages(options.languages)
         installed_languages = await ocr.get_installed_languages()
@@ -164,7 +159,7 @@ async def prepare_searchable_pdf(
             output_pdf,
             languages=options.languages,
             mode=mode,
-            deskew=True,
+            deskew=ocr.bundled_runtime() is None,
             jobs=ocr.calculate_ocr_jobs(page_count),
         )
         await ocr.execute_ocr(
@@ -324,10 +319,7 @@ async def prepare_conversion(
         )
         stage = "response_preparation"
         warnings = list(artifact.warnings)
-        if (
-            options.ocr_mode == OcrMode.NEVER
-            and text_layer.image_only_pages
-        ):
+        if options.ocr_mode == OcrMode.NEVER and text_layer.image_only_pages:
             warnings.append(
                 "Certaines pages semblent numérisées et ont été converties sans OCR."
             )

@@ -2,6 +2,8 @@ use serde::Serialize;
 mod window_geometry;
 #[cfg(windows)]
 mod windows_job;
+#[cfg(windows)]
+mod windows_temp;
 #[cfg(debug_assertions)]
 use std::fs::File;
 use std::fs::{self, OpenOptions};
@@ -229,6 +231,10 @@ struct BackendPaths {
 
 impl BackendPaths {
     fn create(&self) -> Result<(), String> {
+        #[cfg(windows)]
+        if let Some(root) = self.temp.parent() {
+            windows_temp::cleanup(root);
+        }
         for path in [&self.data, &self.logs, &self.temp, &self.cache] {
             fs::create_dir_all(path).map_err(|error| {
                 format!("Impossible de créer un répertoire applicatif: {error}")

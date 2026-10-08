@@ -159,7 +159,7 @@ class NativeTextFontValidationPlan(BaseModel):
 class SignatureImagePayload(BaseModel):
     id: str = Field(min_length=1, max_length=200)
     mime_type: Literal["image/png", "image/jpeg"] = Field(alias="mimeType")
-    data_url: str = Field(alias="dataUrl", min_length=1, max_length=7_100_000)
+    data_url: str = Field(default="", alias="dataUrl", max_length=45_000_000)
     width: int = Field(gt=0, le=20_000)
     height: int = Field(gt=0, le=20_000)
 
@@ -177,8 +177,23 @@ class SignatureEdit(BaseModel):
     order: int = Field(default=0, ge=0)
 
 
+class ImageCrop(BaseModel):
+    x: float = Field(ge=0, le=1, allow_inf_nan=False)
+    y: float = Field(ge=0, le=1, allow_inf_nan=False)
+    width: float = Field(gt=0, le=1, allow_inf_nan=False)
+    height: float = Field(gt=0, le=1, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def within_source(self) -> "ImageCrop":
+        if self.x + self.width > 1 + 1e-8 or self.y + self.height > 1 + 1e-8:
+            raise ValueError("Crop exceeds source image")
+        return self
+
+
 class ImageEdit(SignatureEdit):
     type: Literal["image"]
+    crop: ImageCrop | None = None
+    aspect_locked: bool | None = Field(default=None, alias="aspectLocked")
 
 
 class ShapeStyle(BaseModel):
@@ -281,6 +296,7 @@ class PdfAnnotationResponse(BaseModel):
     type: str
     rect: PdfEditRect
     content: str = ""
+    appearance_hidden: bool = Field(default=False, alias="appearanceHidden")
     author: str | None = None
     created_at: str | None = Field(default=None, alias="createdAt")
     modified_at: str | None = Field(default=None, alias="modifiedAt")
@@ -290,7 +306,9 @@ class PdfFormFieldResponse(BaseModel):
     id: str
     page_index: int = Field(alias="pageIndex")
     name: str
-    field_type: Literal["text", "checkbox", "radio", "combo", "list", "unsupported"] = Field(alias="fieldType")
+    field_type: Literal["text", "checkbox", "radio", "combo", "list", "unsupported"] = (
+        Field(alias="fieldType")
+    )
     value: str | list[str] = ""
     rect: PdfEditRect
     read_only: bool = Field(alias="readOnly")
@@ -340,6 +358,7 @@ class OrganizeExportPlan(BaseModel):
     signature_images: list[SignatureImagePayload] = Field(
         default_factory=list,
         alias="signatureImages",
+        max_length=128,
     )
     save_to_output_dir: bool = Field(default=False, alias="saveToOutputDir")
 
@@ -765,23 +784,31 @@ async def extract_native_text(
         ) from error
 
 
-MAX_SIGNATURE_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_SIGNATURE_IMAGE_BYTES = 32 * 1024 * 1024  # 128 MiB encoded buffers / 4
+MAX_IMAGE_SESSION_BYTES = 192 * 1024 * 1024
+MAX_IMAGE_SESSION_RGBA_BYTES = 512 * 1024 * 1024
 TEXTBOX_LINE_HEIGHT = 1.2
 TEXTBOX_HEIGHT_MARGIN = 0.5
 
 
-def _decode_signature_image(image: SignatureImagePayload) -> bytes:
+def _decode_signature_image(
+    image: SignatureImagePayload, binary: bytes | None = None
+) -> bytes:
     expected_prefix = f"data:{image.mime_type};base64,"
-    if not image.data_url.startswith(expected_prefix):
+    if binary is None and not image.data_url.startswith(expected_prefix):
         raise HTTPException(
             status_code=422,
             detail=f"Les données de l'image de signature {image.id!r} sont invalides.",
         )
 
     try:
-        decoded = base64.b64decode(
-            image.data_url[len(expected_prefix) :],
-            validate=True,
+        decoded = (
+            binary
+            if binary is not None
+            else base64.b64decode(
+                image.data_url[len(expected_prefix) :],
+                validate=True,
+            )
         )
     except (binascii.Error, ValueError) as error:
         raise HTTPException(
@@ -809,8 +836,16 @@ def _decode_signature_image(image: SignatureImagePayload) -> bytes:
         )
     try:
         width, height = raster_dimensions(decoded)
-        if width <= 0 or height <= 0 or width * height > 40_000_000 or width > 20_000 or height > 20_000:
+        if (
+            width <= 0
+            or height <= 0
+            or width * height > 40_000_000
+            or width > 20_000
+            or height > 20_000
+        ):
             raise ValueError("image dimensions")
+        if (width, height) != (image.width, image.height):
+            raise ValueError("Image metadata does not match raster dimensions")
     except (RuntimeError, ValueError) as error:
         raise HTTPException(
             status_code=422, detail="Dimensions ou contenu de l’image invalides."
@@ -1230,12 +1265,19 @@ def apply_visual_edits(
                             overlay=True,
                         )
                 visual_edits: list[
-                    AddTextEdit | SignatureEdit | ShapeEdit | FreehandEdit
+                    AddTextEdit
+                    | SignatureEdit
+                    | ShapeEdit
+                    | FreehandEdit
+                    | TextMarkupEdit
+                    | PdfCommentEdit
                 ] = [
                     *text_edits_by_output_page.get(output_page_index, []),
                     *signature_edits_by_output_page.get(output_page_index, []),
                     *shape_edits_by_output_page.get(output_page_index, []),
                     *freehand_edits_by_output_page.get(output_page_index, []),
+                    *text_markup_edits_by_output_page.get(output_page_index, []),
+                    *comment_edits_by_output_page.get(output_page_index, []),
                 ]
                 for edit in sorted(visual_edits, key=lambda item: item.order):
                     pdf_rect = fitz.Rect(
@@ -1269,12 +1311,119 @@ def apply_visual_edits(
                                 rendering,
                             )
                     elif isinstance(edit, SignatureEdit):
+                        stream = signature_images[edit.image_id]
+                        if isinstance(edit, ImageEdit) and edit.crop is not None:
+                            source_pixmap = fitz.Pixmap(stream)
+                            crop = edit.crop
+                            left = min(
+                                source_pixmap.width - 1,
+                                int(crop.x * source_pixmap.width),
+                            )
+                            top = min(
+                                source_pixmap.height - 1,
+                                int(crop.y * source_pixmap.height),
+                            )
+                            clip = fitz.IRect(
+                                left,
+                                top,
+                                min(
+                                    source_pixmap.width,
+                                    max(
+                                        left + 1,
+                                        math.ceil(
+                                            (crop.x + crop.width) * source_pixmap.width
+                                        ),
+                                    ),
+                                ),
+                                min(
+                                    source_pixmap.height,
+                                    max(
+                                        top + 1,
+                                        math.ceil(
+                                            (crop.y + crop.height)
+                                            * source_pixmap.height
+                                        ),
+                                    ),
+                                ),
+                            )
+                            cropped = fitz.Pixmap(
+                                source_pixmap.colorspace, clip, source_pixmap.alpha
+                            )
+                            cropped.copy(source_pixmap, clip)
+                            stream = cropped.tobytes("png")
                         page.insert_image(
                             page_rect,
-                            stream=signature_images[edit.image_id],
-                            keep_proportion=True,
+                            stream=stream,
+                            keep_proportion=not isinstance(edit, ImageEdit),
                             overlay=True,
                         )
+                    elif isinstance(edit, TextMarkupEdit):
+                        # PDF annotations always paint above page content. Local
+                        # markups are vectors in the same ordered stream as edits.
+                        color = _parse_hex_color(edit.color)
+                        for rect in edit.rects:
+                            markup_rect = (
+                                fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y1)
+                                * page.transformation_matrix
+                            )
+                            if edit.kind == "highlight":
+                                page.draw_rect(
+                                    markup_rect,
+                                    color=None,
+                                    fill=color,
+                                    fill_opacity=0.32,
+                                    overlay=True,
+                                )
+                            else:
+                                y = (
+                                    markup_rect.y1 - 1
+                                    if edit.kind == "underline"
+                                    else (markup_rect.y0 + markup_rect.y1) / 2
+                                )
+                                page.draw_line(
+                                    (markup_rect.x0, y),
+                                    (markup_rect.x1, y),
+                                    color=color,
+                                    width=2,
+                                    overlay=True,
+                                )
+                    elif isinstance(edit, PdfCommentEdit):
+                        # Ordered vector marker; retain comment metadata without a
+                        # second annotation appearance above all page content.
+                        page.draw_rect(
+                            page_rect,
+                            color=None,
+                            fill=(0.145, 0.388, 0.922),
+                            overlay=True,
+                        )
+                        w, h = page_rect.width, page_rect.height
+                        marker = page.new_shape()
+                        marker.draw_polyline(
+                            [
+                                fitz.Point(page_rect.x0 + x * w, page_rect.y0 + y * h)
+                                for x, y in [
+                                    (0.15, 0.15),
+                                    (0.85, 0.15),
+                                    (0.85, 0.65),
+                                    (0.4, 0.65),
+                                    (0.2, 0.85),
+                                    (0.2, 0.15),
+                                ]
+                            ]
+                        )
+                        marker.finish(color=(1, 1, 1), fill=(1, 1, 1), closePath=True)
+                        marker.commit(overlay=True)
+                        annotation = page.add_text_annot(page_rect.tl, edit.content)
+                        annotation.set_info(
+                            title=edit.author or "",
+                            content=edit.content,
+                            creationDate=edit.created_at,
+                            modDate=edit.modified_at,
+                        )
+                        annotation.set_flags(
+                            fitz.PDF_ANNOT_IS_HIDDEN | fitz.PDF_ANNOT_IS_NO_VIEW
+                        )
+                        annotation.update()
                     elif isinstance(edit, ShapeEdit):
                         stroke = _parse_hex_color(edit.style.stroke_color)
                         fill = (
@@ -1361,40 +1510,6 @@ def apply_visual_edits(
                             stroke_opacity=edit.style.opacity,
                             overlay=True,
                         )
-                for markup in sorted(
-                    text_markup_edits_by_output_page.get(output_page_index, []),
-                    key=lambda item: item.order,
-                ):
-                    color = _parse_hex_color(markup.color)
-                    for rect in markup.rects:
-                        page_rect = (
-                            fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y1)
-                            * page.transformation_matrix
-                        )
-                        if markup.kind == "highlight":
-                            annotation = page.add_highlight_annot(page_rect)
-                        elif markup.kind == "underline":
-                            annotation = page.add_underline_annot(page_rect)
-                        else:
-                            annotation = page.add_strikeout_annot(page_rect)
-                        annotation.set_colors(stroke=color)
-                        annotation.update()
-                for comment in sorted(
-                    comment_edits_by_output_page.get(output_page_index, []),
-                    key=lambda item: item.order,
-                ):
-                    point = (
-                        fitz.Point(comment.rect.x0, comment.rect.y0)
-                        * page.transformation_matrix
-                    )
-                    annotation = page.add_text_annot(point, comment.content)
-                    annotation.set_info(
-                        title=comment.author or "",
-                        content=comment.content,
-                        creationDate=comment.created_at,
-                        modDate=comment.modified_at,
-                    )
-                    annotation.update()
             return document.tobytes(garbage=4, deflate=True)
     except HTTPException:
         raise
@@ -1494,9 +1609,13 @@ def _reader_has_acroform(reader: PdfReader) -> bool:
     return "/AcroForm" in reader.trailer.get("/Root", {})
 
 
-def _can_preserve_acroform(plan: OrganizeExportPlan, readers: dict[str, PdfReader]) -> bool:
+def _can_preserve_acroform(
+    plan: OrganizeExportPlan, readers: dict[str, PdfReader]
+) -> bool:
     """pypdf can clone an AcroForm safely only for an unchanged source order."""
-    if len(readers) != 1 or not any(_reader_has_acroform(reader) for reader in readers.values()):
+    if len(readers) != 1 or not any(
+        _reader_has_acroform(reader) for reader in readers.values()
+    ):
         return False
     document_id, reader = next(iter(readers.items()))
     return len(plan.pages) == len(reader.pages) and all(
@@ -1622,7 +1741,9 @@ def _apply_button_value(page: object, field_name: str, value: str | list[str]) -
     without relying on NeedAppearances.
     """
     if isinstance(value, list):
-        raise HTTPException(status_code=422, detail=f"La valeur du bouton {field_name!r} est invalide.")
+        raise HTTPException(
+            status_code=422, detail=f"La valeur du bouton {field_name!r} est invalide."
+        )
     widgets = _button_widgets_for_page(page, field_name)
     if not widgets:
         return False
@@ -1648,7 +1769,10 @@ def _apply_form_values_to_writer(
 ) -> None:
     for page_index, values in form_values_by_page.items():
         if page_index < 0 or page_index >= len(writer.pages):
-            raise HTTPException(status_code=422, detail="La page ciblée par un champ AcroForm est invalide.")
+            raise HTTPException(
+                status_code=422,
+                detail="La page ciblée par un champ AcroForm est invalide.",
+            )
         page = writer.pages[page_index]
         text_and_choice_values: dict[str, str | list[str]] = {}
         for field_name, value in values.items():
@@ -1661,7 +1785,10 @@ def _apply_form_values_to_writer(
                 page, text_and_choice_values, auto_regenerate=True
             )
         except (KeyError, ValueError, TypeError) as error:
-            raise HTTPException(status_code=422, detail="Une valeur de formulaire AcroForm est invalide.") from error
+            raise HTTPException(
+                status_code=422,
+                detail="Une valeur de formulaire AcroForm est invalide.",
+            ) from error
 
 
 def _iter_acroform_field_dictionaries(writer: PdfWriter):
@@ -1712,6 +1839,7 @@ def export_organized_pdf(
     sources: dict[str, bytes],
     plan: OrganizeExportPlan,
     export_warnings: list[ExportWarning] | None = None,
+    image_binaries: dict[str, bytes] | None = None,
 ) -> bytes:
     if not plan.pages:
         raise HTTPException(
@@ -1729,10 +1857,17 @@ def export_organized_pdf(
 
     form_values_by_source_page: dict[tuple[str, int], dict[str, str | list[str]]] = {}
     for form_value in plan.form_values:
-        source_document_id = _resolve_source_document_id(form_value.source_document_id, readers)
+        source_document_id = _resolve_source_document_id(
+            form_value.source_document_id, readers
+        )
         if form_value.page > len(readers[source_document_id].pages):
-            raise HTTPException(status_code=422, detail=f"La page {form_value.page} du champ {form_value.field_name!r} est invalide.")
-        form_values_by_source_page.setdefault((source_document_id, form_value.page - 1), {})[form_value.field_name] = form_value.value
+            raise HTTPException(
+                status_code=422,
+                detail=f"La page {form_value.page} du champ {form_value.field_name!r} est invalide.",
+            )
+        form_values_by_source_page.setdefault(
+            (source_document_id, form_value.page - 1), {}
+        )[form_value.field_name] = form_value.value
     if form_values_by_source_page and not preserve_acroform:
         raise HTTPException(
             status_code=422,
@@ -1791,7 +1926,18 @@ def export_organized_pdf(
                 status_code=422,
                 detail=f"L'identifiant d'image de signature {image.id!r} est dupliqué.",
             )
-        signature_images[image.id] = _decode_signature_image(image)
+        signature_images[image.id] = _decode_signature_image(
+            image, (image_binaries or {}).get(image.id)
+        )
+    if (
+        sum(map(len, signature_images.values())) > MAX_IMAGE_SESSION_BYTES
+        or sum(image.width * image.height * 4 for image in plan.signature_images)
+        > MAX_IMAGE_SESSION_RGBA_BYTES
+    ):
+        raise HTTPException(
+            status_code=413,
+            detail="Le budget d’images du document est dépassé (192 Mio compressés / 512 Mio RGBA).",
+        )
 
     signatures_by_source_page: dict[tuple[str, int], list[SignatureEdit]] = {}
     for signature in [*plan.signatures, *plan.images]:
@@ -1994,7 +2140,9 @@ def _annotation_type_name(annotation: fitz.Annot) -> str:
     }.get(name, "other")
 
 
-def _form_field_type(widget: fitz.Widget) -> Literal["text", "checkbox", "radio", "combo", "list", "unsupported"]:
+def _form_field_type(
+    widget: fitz.Widget,
+) -> Literal["text", "checkbox", "radio", "combo", "list", "unsupported"]:
     return {
         "Text": "text",
         "CheckBox": "checkbox",
@@ -2017,14 +2165,23 @@ async def extract_pdf_form_fields(
         _validate_acroform_structure(source)
         with fitz.open(stream=source, filetype="pdf") as document:
             if page_index >= document.page_count:
-                raise HTTPException(status_code=422, detail="La page de formulaire demandée est invalide.")
+                raise HTTPException(
+                    status_code=422,
+                    detail="La page de formulaire demandée est invalide.",
+                )
             page = document[page_index]
             inverse = ~page.transformation_matrix
             fields: list[PdfFormFieldResponse] = []
             for widget in page.widgets() or []:
                 flags = widget.field_flags
-                button_states = widget.button_states().get("normal", []) if widget.field_type_string in {"CheckBox", "RadioButton"} else []
-                button_value = next((state for state in button_states if state != "Off"), None)
+                button_states = (
+                    widget.button_states().get("normal", [])
+                    if widget.field_type_string in {"CheckBox", "RadioButton"}
+                    else []
+                )
+                button_value = next(
+                    (state for state in button_states if state != "Off"), None
+                )
                 value = widget.field_value or ""
                 fields.append(
                     PdfFormFieldResponse(
@@ -2051,7 +2208,9 @@ async def extract_pdf_form_fields(
     except HTTPException:
         raise
     except (fitz.FileDataError, RuntimeError, ValueError) as error:
-        raise HTTPException(status_code=422, detail="Les champs AcroForm du PDF sont illisibles.") from error
+        raise HTTPException(
+            status_code=422, detail="Les champs AcroForm du PDF sont illisibles."
+        ) from error
 
 
 @app.post("/pdf/annotations", response_model=dict[str, list[PdfAnnotationResponse]])
@@ -2079,6 +2238,10 @@ async def extract_pdf_annotations(
                                 x0=rect.x0, y0=rect.y0, x1=rect.x1, y1=rect.y1
                             ),
                             content=str(info.get("content") or ""),
+                            appearanceHidden=bool(
+                                annotation.flags
+                                & (fitz.PDF_ANNOT_IS_HIDDEN | fitz.PDF_ANNOT_IS_NO_VIEW)
+                            ),
                             author=(
                                 str(info.get("title")) if info.get("title") else None
                             ),
@@ -2110,6 +2273,8 @@ async def export_organize_pdf(
     ] = None,
     document_ids: Annotated[str | None, Form(alias="documentIds")] = None,
     file: Annotated[UploadFile | None, File(description="PDF source legacy")] = None,
+    image_files: Annotated[list[UploadFile] | None, File(alias="imageFiles")] = None,
+    image_ids: Annotated[str | None, Form(alias="imageIds")] = None,
 ) -> Response:
     source_files = files or ([] if file is None else [file])
     if not source_files:
@@ -2126,6 +2291,38 @@ async def export_organize_pdf(
             )
 
     organize_plan = parse_organize_plan(plan)
+    image_binaries: dict[str, bytes] = {}
+    if image_files:
+        try:
+            ids = json.loads(image_ids or "[]")
+            expected = {image.id for image in organize_plan.signature_images}
+            if (
+                not isinstance(ids, list)
+                or len(ids) != len(image_files)
+                or len(ids) > 128
+                or any(not isinstance(id_, str) for id_ in ids)
+                or len(set(ids)) != len(ids)
+                or set(ids) != expected
+            ):
+                raise ValueError("Image IDs do not match assets")
+        except (ValueError, TypeError) as error:
+            raise HTTPException(
+                status_code=422,
+                detail="Les ressources image ne correspondent pas au plan.",
+            ) from error
+        total = 0
+        for image_id, upload in zip(ids, image_files, strict=True):
+            binary = await upload.read(MAX_SIGNATURE_IMAGE_BYTES + 1)
+            total += len(binary)
+            if (
+                len(binary) > MAX_SIGNATURE_IMAGE_BYTES
+                or total > MAX_IMAGE_SESSION_BYTES
+            ):
+                raise HTTPException(
+                    status_code=413,
+                    detail="Le budget de lecture des images est dépassé.",
+                )
+            image_binaries[image_id] = binary
     source_document_ids = parse_document_ids(document_ids, len(source_files))
     sources = {
         document_id: await source_file.read()
@@ -2139,7 +2336,9 @@ async def export_organize_pdf(
 
     output_name = build_output_name(source_files[0].filename, organize_plan.output_name)
     export_warnings: list[ExportWarning] = []
-    result = export_organized_pdf(sources, organize_plan, export_warnings)
+    result = export_organized_pdf(
+        sources, organize_plan, export_warnings, image_binaries
+    )
 
     output_headers: dict[str, str] = {}
     if export_warnings:

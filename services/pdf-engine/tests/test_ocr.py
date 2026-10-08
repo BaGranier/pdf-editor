@@ -375,8 +375,7 @@ def test_process_diagnostics_are_bounded(
 
 def test_safe_diagnostic_is_redacted_and_bounded(tmp_path: Path) -> None:
     diagnostic = (
-        "x" * ocr.DIAGNOSTIC_STREAM_LOG_LIMIT_CHARS
-        + f" {tmp_path}/input.pdf"
+        "x" * ocr.DIAGNOSTIC_STREAM_LOG_LIMIT_CHARS + f" {tmp_path}/input.pdf"
     ).encode()
 
     sanitized = ocr._safe_diagnostic(diagnostic, tmp_path)
@@ -481,6 +480,10 @@ def test_ocr_timeout_kills_process_and_is_reported(
 
     monkeypatch.setattr(ocr.subprocess, "Popen", create_process)
     monkeypatch.setattr(ocr.os, "killpg", kill_group, raising=False)
+    killed_trees: list[list[str]] = []
+    monkeypatch.setattr(
+        ocr.subprocess, "run", lambda command, **options: killed_trees.append(command)
+    )
     monkeypatch.setattr(ocr, "OCR_TIMEOUT_SECONDS", 0)
 
     with pytest.raises(ocr.OcrError) as error:
@@ -497,6 +500,7 @@ def test_ocr_timeout_kills_process_and_is_reported(
         assert killed_groups == [(process.pid, ocr.signal.SIGKILL)]
     else:
         assert killed_groups == []
+        assert killed_trees == [["taskkill", "/PID", str(process.pid), "/T", "/F"]]
 
 
 def test_absent_ocr_output_is_rejected(tmp_path: Path) -> None:
@@ -566,9 +570,7 @@ def test_successful_response_has_pdf_type_name_and_deferred_cleanup(
     )
 
     assert response.media_type == "application/pdf"
-    assert "rapport%20scann%C3%A9_OCR.pdf" in response.headers[
-        "content-disposition"
-    ]
+    assert "rapport%20scann%C3%A9_OCR.pdf" in response.headers["content-disposition"]
     assert Path(response.path).read_bytes().startswith(b"%PDF-")
     assert temporary_directory.exists()
     assert commands[0][commands[0].index("--language") + 1] == "fra+eng"
@@ -681,9 +683,7 @@ def test_failure_log_is_bounded_and_does_not_expose_temporary_paths(
             "OCR_FAILED",
             "failure",
             return_code=2,
-            diagnostic=(
-                f"{temporary_directory}/input.pdf " + "x" * 10_000
-            ),
+            diagnostic=(f"{temporary_directory}/input.pdf " + "x" * 10_000),
         )
 
     monkeypatch.setattr(ocr, "execute_ocr", fail_ocr)
@@ -742,7 +742,12 @@ def test_ocr_errors_have_a_stable_json_shape() -> None:
     }
 
 
-OCR_BINARIES = ("ocrmypdf", "tesseract", "gswin64c" if ocr.os.name == "nt" else "gs", "qpdf")
+OCR_BINARIES = (
+    "ocrmypdf",
+    "tesseract",
+    "gswin64c" if ocr.os.name == "nt" else "gs",
+    "qpdf",
+)
 OCR_BINARIES_AVAILABLE = all(shutil.which(binary) for binary in OCR_BINARIES)
 
 

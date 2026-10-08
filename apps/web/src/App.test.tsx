@@ -1435,11 +1435,11 @@ describe("App", () => {
       expect.objectContaining({
         id: plan.signatures[0].imageId,
         mimeType: "image/png",
-        dataUrl: "data:image/png;base64,c2lnbmF0dXJl",
         width: 900,
         height: 300,
       }),
     ]);
+    expect(request.body.getAll("imageFiles")).toHaveLength(1);
 
     getContext.mockRestore();
     toDataUrl.mockRestore();

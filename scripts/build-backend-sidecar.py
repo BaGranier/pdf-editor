@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import ctypes
 import os
 import shutil
 import socket
@@ -20,6 +21,10 @@ EXECUTABLE_NAME = "pdf-engine.exe" if os.name == "nt" else "pdf-engine"
 
 
 def build() -> Path:
+    import importlib
+
+    resources = importlib.import_module("scripts.prepare-ocr-resources").prepare()
+    importlib.import_module("scripts.audit-ocr-licenses").main()
     command = [
         "uv",
         "run",
@@ -37,6 +42,8 @@ def build() -> Path:
         str(BACKEND_ROOT),
         "--collect-submodules",
         "app",
+        "--add-data",
+        f"{resources}{os.pathsep}ocr",
         "--distpath",
         str(BUILD_ROOT / "dist"),
         "--workpath",
@@ -103,6 +110,27 @@ def verify_health(executable: Path) -> None:
                     time.sleep(0.1)
             raise RuntimeError("Le sidecar n'a pas répondu à /health sous 30 secondes.")
         finally:
+            worker_handle = None
+            if os.name == "nt":
+                try:
+                    worker_pid = int((root_path / "temp/.backend-lease").read_text())
+                    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+                    kernel.OpenProcess.argtypes = [
+                        ctypes.c_uint,
+                        ctypes.c_int,
+                        ctypes.c_uint,
+                    ]
+                    kernel.OpenProcess.restype = ctypes.c_void_p
+                    kernel.WaitForSingleObject.argtypes = [
+                        ctypes.c_void_p,
+                        ctypes.c_uint,
+                    ]
+                    kernel.TerminateProcess.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+                    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+                    if worker_pid > 0 and worker_pid != process.pid:
+                        worker_handle = kernel.OpenProcess(0x100001, False, worker_pid)
+                except (OSError, ValueError):
+                    pass
             if process.poll() is None:
                 if os.name == "nt":
                     subprocess.run(
@@ -113,11 +141,34 @@ def verify_health(executable: Path) -> None:
                     )
                 else:
                     process.terminate()
+            if worker_handle:
+                # PyInstaller's bootloader can finish before its worker releases
+                # Windows file handles. Holding its handle prevents PID reuse
+                # from redirecting this QA cleanup to another process.
+                try:
+                    if kernel.WaitForSingleObject(worker_handle, 1000) == 258:
+                        kernel.TerminateProcess(worker_handle, 1)
+                        if kernel.WaitForSingleObject(worker_handle, 10000) == 258:
+                            raise RuntimeError(
+                                "Le worker de vérification sidecar reste actif."
+                            )
+                finally:
+                    kernel.CloseHandle(worker_handle)
             try:
                 process.communicate(timeout=10)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.communicate()
+            for attempt in range(50):
+                try:
+                    shutil.rmtree(root_path)
+                    break
+                except FileNotFoundError:
+                    break
+                except PermissionError:
+                    if attempt == 49:
+                        raise
+                    time.sleep(0.1)
 
 
 def main() -> int:

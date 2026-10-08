@@ -167,6 +167,13 @@ export function buildPdfExportPayload(
   const createPayload = (fontResources: ExportedFontResource[]): BuildPdfExportPayloadResult => {
     const formData = new FormData();
     availableDocuments.forEach((document) => formData.append("files", document.file, document.fileName));
+    // File parts are spooled by FastAPI; base64 in JSON would hit the 1 MiB field limit.
+    signatureImages.forEach((image) => {
+      const binary = atob(image.dataUrl.slice(image.dataUrl.indexOf(",") + 1));
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      formData.append("imageFiles", new Blob([bytes], { type: image.mimeType }), image.id);
+    });
+    if (signatureImages.length) formData.append("imageIds", JSON.stringify(signatureImages.map((image) => image.id)));
     formData.append("documentIds", JSON.stringify(requiredDocumentIds));
     formData.append("plan", JSON.stringify({
       schemaVersion: 2,
@@ -183,7 +190,7 @@ export function buildPdfExportPayload(
       ...(fontResources.length > 0 ? { fontResources } : {}),
       ...(signatureEdits.length > 0 ? { signatures: signatureEdits } : {}),
       ...(imageEdits.length > 0 ? { images: imageEdits } : {}),
-      ...(signatureImages.length > 0 ? { signatureImages } : {}),
+      ...(signatureImages.length > 0 ? { signatureImages: signatureImages.map(({ dataUrl: _dataUrl, ...metadata }) => metadata) } : {}),
       ...(shapeEdits.length > 0 ? { shapes: shapeEdits } : {}),
       ...(freehandEdits.length > 0 ? { freehands: freehandEdits } : {}),
       ...(textMarkupEdits.length > 0 ? { textMarkups: textMarkupEdits } : {}),

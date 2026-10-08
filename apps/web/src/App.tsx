@@ -54,6 +54,7 @@ import {
   type OrganizedPage,
 } from "./organize/pagePlan";
 import { OcrDialog } from "./components/OcrDialog";
+import { validateImageSession } from "./images/imagePolicy";
 import { ConversionDialog } from "./components/ConversionDialog";
 import {
   downloadConversionFile,
@@ -3808,7 +3809,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       if (documentsRef.current.every((candidate) => candidate.id !== document.id)) return;
       const pdfPage = await document.pdfDocument.getPage(page.sourcePageIndex + 1);
       const image: SignatureImage = { ...draft, id: `image-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}` };
-      const edit: ImageEdit = { id: `image-edit-${crypto.randomUUID()}`, type: "image", page: page.sourcePageIndex + 1, imageId: image.id, rect: initialImageRect(pdfPage.view, image.width, image.height) };
+      validateImageSession(Object.values(signatureImages), image);
+      const edit: ImageEdit = { id: `image-edit-${crypto.randomUUID()}`, type: "image", page: page.sourcePageIndex + 1, imageId: image.id, aspectLocked: false, rect: initialImageRect(pdfPage.view, image.width, image.height) };
       setSignatureImages((images) => images[image.id] ? images : { ...images, [image.id]: image });
       dispatchPdfEdits({ type: "add", documentId: document.id, edit });
       setSelectedEditId(edit.id);
@@ -4564,7 +4566,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           }
           setExportFeedback({
             kind: exported.outputWarning || textOverflowWarningCount > 0 ? "warning" : "success",
-            message: `${exportMessage}${sizeReport}${textOverflowMessage}`,
+            message: `${exportMessage}${sizeReport}${textOverflowMessage}${exportOptions?.openPassword || exportOptions?.ownerPassword ? " PDF chiffré : la sortie n’est pas rouverte automatiquement dans l’application." : ""}`,
           });
         } else {
           const { usageWarnings: exportUsageWarnings } =
@@ -5402,6 +5404,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
       {isOcrDialogOpen && activeDocument ? (
         <OcrDialog
+          supportsDeskew={!isDesktopRuntime()}
           sourceFileName={activeDocument.fileName}
           hasPendingOrganizationChanges={hasPendingOrganizationChanges}
           isProcessing={isOcrProcessing}
@@ -5796,7 +5799,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           ) : (selectedPdfEdit?.type === "signature" || selectedPdfEdit?.type === "image") ? (
             <section className="properties-panel__empty">
               <strong>{selectedPdfEdit.type === "image" ? "Image" : "Signature graphique"}</strong>
-              <p>Déplacez ou redimensionnez l’image directement sur la page. Son ratio est conservé.</p>
+              <p>Déplacez ou redimensionnez l’image directement sur la page. Shift conserve le ratio.</p>
+              {selectedPdfEdit.type === "image" ? <label><input type="checkbox" checked={selectedPdfEdit.aspectLocked ?? true} onChange={(event) => updatePdfEdit({ ...selectedPdfEdit, aspectLocked: event.target.checked })} />Conserver les proportions</label> : null}
               <button type="button" onClick={() => deletePdfEdit(selectedPdfEdit.id)}>
                 Supprimer {selectedPdfEdit.type === "image" ? "l’image" : "la signature"}
               </button>

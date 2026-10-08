@@ -75,9 +75,7 @@ MALFORMED_PDF_SOURCES = {
 
 
 def make_plan() -> main.OrganizeExportPlan:
-    return main.OrganizeExportPlan.model_validate(
-        {"pages": [{"sourcePageIndex": 0}]}
-    )
+    return main.OrganizeExportPlan.model_validate({"pages": [{"sourcePageIndex": 0}]})
 
 
 def temporary_directory_factory(
@@ -108,9 +106,7 @@ def test_malformed_pdf_corpus_is_rejected_and_temporary_directories_are_cleaned(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    create_ocr_directory, ocr_directories = temporary_directory_factory(
-        tmp_path, "ocr"
-    )
+    create_ocr_directory, ocr_directories = temporary_directory_factory(tmp_path, "ocr")
     create_conversion_directory, conversion_directories = temporary_directory_factory(
         tmp_path, "conversion"
     )
@@ -203,16 +199,16 @@ def test_ocr_and_conversion_recover_after_a_rejected_pdf(
         run(
             prepare_conversion(
                 make_upload(MALFORMED_PDF_SOURCES["truncated"]),
-                ConversionOptions(target_format=TargetFormat.TXT, ocr_mode=OcrMode.NEVER),
+                ConversionOptions(
+                    target_format=TargetFormat.TXT, ocr_mode=OcrMode.NEVER
+                ),
             )
         )
 
     async def installed_languages() -> set[str]:
         return {"eng"}
 
-    async def successful_ocr(
-        command: list[str], *, temporary_directory: Path
-    ) -> None:
+    async def successful_ocr(command: list[str], *, temporary_directory: Path) -> None:
         assert temporary_directory == Path(command[-1]).parent
         Path(command[-1]).write_bytes(make_pdf())
 
@@ -273,6 +269,10 @@ def test_cancelling_a_subprocess_capture_terminates_its_process_group(
 
     monkeypatch.setattr(ocr.subprocess, "Popen", create_process)
     monkeypatch.setattr(ocr.os, "killpg", kill_group, raising=False)
+    killed_trees: list[list[str]] = []
+    monkeypatch.setattr(
+        ocr.subprocess, "run", lambda command, **options: killed_trees.append(command)
+    )
     run(cancel_capture())
 
     if ocr.os.name == "posix":
@@ -281,3 +281,4 @@ def test_cancelling_a_subprocess_capture_terminates_its_process_group(
     else:
         assert killed_groups == []
         assert process.returncode == -9
+        assert killed_trees == [["taskkill", "/PID", "42", "/T", "/F"]]

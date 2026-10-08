@@ -8,6 +8,7 @@ export function CommentEditMarker({ edit, viewport, selected, onSelect }: {
   selected: boolean;
   onSelect: () => void;
 }) {
+  if (edit.appearanceHidden && !selected) return null;
   return <button
     type="button"
     className={selected ? "pdf-comment-marker is-selected" : "pdf-comment-marker"}

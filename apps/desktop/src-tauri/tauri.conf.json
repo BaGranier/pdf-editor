@@ -38,6 +38,10 @@
     "externalBin": [
       "binaries/pdf-engine"
     ],
+    "resources": {
+      "../../../services/pdf-engine/build/ocr/notices/": "licenses/ocr/",
+      "../../../services/pdf-engine/build/ocr/tessdata/LICENSE": "licenses/ocr/tessdata-LICENSE.txt"
+    },
     "fileAssociations": [
       {
         "ext": [

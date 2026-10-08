@@ -106,9 +106,14 @@ export type SignatureEdit = BasePdfEdit & {
   imageId: string;
 };
 
+/** Fraction of the source bitmap, with a top-left origin; absent means full image. */
+export type ImageCrop = { x: number; y: number; width: number; height: number };
+
 export type ImageEdit = BasePdfEdit & {
   type: "image";
   imageId: string;
+  crop?: ImageCrop;
+  aspectLocked?: boolean;
 };
 
 export type LineGeometry = {
@@ -149,6 +154,8 @@ export type PdfCommentEdit = BasePdfEdit & {
   modifiedAt?: string;
   /** Source comments are readable and preserved by page copying, local notes are exported. */
   source: "pdf" | "local";
+  /** Retain metadata in the sidebar without repainting hidden PDF appearances. */
+  appearanceHidden?: boolean;
 };
 
 /** A lightweight value delta for an interactive AcroForm field. */

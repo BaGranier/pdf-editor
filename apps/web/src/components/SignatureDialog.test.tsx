@@ -1,6 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SignatureDialog } from "./SignatureDialog";
+import { MAX_IMAGE_BYTES } from "../images/imagePolicy";
+
+function pngHeader(width: number, height: number) {
+  const bytes = new Uint8Array(24);
+  bytes.set([137,80,78,71,13,10,26,10]); bytes.set([73,72,68,82],12);
+  new DataView(bytes.buffer).setUint32(16,width); new DataView(bytes.buffer).setUint32(20,height);
+  return bytes;
+}
 
 describe("SignatureDialog", () => {
   afterEach(() => {
@@ -83,7 +91,7 @@ describe("SignatureDialog", () => {
     render(<SignatureDialog onCancel={vi.fn()} onConfirm={confirm} />);
 
     fireEvent.click(screen.getByRole("tab", { name: "Importer" }));
-    const file = new File(["fake-png"], "signature.png", {
+    const file = new File([pngHeader(420,140)], "signature.png", {
       type: "image/png",
     });
     fireEvent.change(screen.getByLabelText("Importer une image de signature"), {
@@ -136,16 +144,16 @@ describe("SignatureDialog", () => {
     fireEvent.change(picker, {
       target: {
         files: [
-          new File([new Uint8Array(5 * 1024 * 1024 + 1)], "large.png", {
+          new File([new Uint8Array(MAX_IMAGE_BYTES + 1)], "large.png", {
             type: "image/png",
           }),
         ],
       },
     });
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("5 Mo"));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("32 Mio"));
 
     fireEvent.change(picker, {
-      target: { files: [new File(["jpeg"], "signature.jpg", { type: "image/jpeg" })] },
+      target: { files: [new File([new Uint8Array([255,216,255,192,0,7,8,0,100,1,44])], "signature.jpg", { type: "image/jpeg" })] },
     });
     await screen.findByAltText("Aperçu de la signature importée");
     fireEvent.click(screen.getByRole("button", { name: "Valider la signature" }));

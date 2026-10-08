@@ -302,10 +302,10 @@ export function PdfEditLayer({
           return <div key={edit.id} className="pdf-edit-object" style={{ zIndex: order }}><FreehandEditBlock key={edit.id} edit={edit} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} onMove={onUpdate} /></div>;
         }
 
-        if (edit.type === "text_markup") return <TextMarkupLayer key={edit.id} edit={edit} viewport={viewport} />;
+        if (edit.type === "text_markup") return <div key={edit.id} className="pdf-edit-object" style={{ zIndex: order }}><TextMarkupLayer edit={edit} viewport={viewport} /></div>;
 
         if (edit.type === "comment") {
-          return <CommentEditMarker key={edit.id} edit={edit} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} />;
+          return <div key={edit.id} className="pdf-edit-object" style={{ zIndex: order }}><CommentEditMarker edit={edit} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} /></div>;
         }
 
         if (edit.type === "native_text") return null;
@@ -323,6 +323,7 @@ export function PdfEditLayer({
             selected={edit.id === selectedEditId}
             onSelect={() => onSelect(edit.id)}
             onMove={(rect) => onUpdate({ ...edit, rect })}
+            onCrop={edit.type === "image" ? (crop, rect) => onUpdate({ ...edit, crop, rect }) : undefined}
             onDelete={() => onDelete(edit.id)}
           />
           </div>

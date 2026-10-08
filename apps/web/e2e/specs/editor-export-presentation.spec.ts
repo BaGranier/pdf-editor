@@ -44,9 +44,11 @@ test("EXPORT-PRESENTATION-003-2 images plans transparence historique persistance
   const image = page.locator("[data-image-edit-id]"); await expect(image).toHaveCount(1);
   const imageBox = await image.boundingBox(); if (!imageBox) throw new Error("No image");
   expect(imageBox.width / imageBox.height).toBeCloseTo(2, 1);
-  await page.mouse.move(imageBox.x + 20, imageBox.y + 20); await page.mouse.down(); await page.mouse.move(imageBox.x + 40, imageBox.y + 35); await page.mouse.up();
+  await page.mouse.move(imageBox.x + imageBox.width / 2, imageBox.y + imageBox.height * .7); await page.mouse.down(); await page.mouse.move(imageBox.x + imageBox.width / 2 + 20, imageBox.y + imageBox.height * .7 + 15); await page.mouse.up();
   const resize = page.getByLabel("Redimensionner l’image page 1"); const handle = await resize.boundingBox(); if (!handle) throw new Error("No resize handle");
+  await page.keyboard.down("Shift");
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2); await page.mouse.down(); await page.mouse.move(handle.x + 40, handle.y + 25); await page.mouse.up();
+  await page.keyboard.up("Shift");
   const resized = await image.boundingBox(); if (!resized) throw new Error("No resized image"); expect(resized.width / resized.height).toBeCloseTo(2, 1);
   await shape(page, "Rectangle", { x: 40, y: 240 }, { x: 200, y: 360 });
   await page.getByLabel("Remplissage transparent").uncheck(); await page.getByLabel("Opacité de la forme", { exact: true }).fill("50");
@@ -58,6 +60,7 @@ test("EXPORT-PRESENTATION-003-2 images plans transparence historique persistance
   await expect(page.locator(".pdf-edit-object").first().locator("[data-shape-edit-id]")).toHaveCount(1);
   await expect.poll(() => page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve) => { const req = indexedDB.open("pdf-editor-mvp-db"); req.onsuccess = () => resolve(req.result); });
+    if (!db.objectStoreNames.contains("documents")) { db.close(); return false; }
     const docs = await new Promise<Array<{ edits?: Array<{ type: string }> }>>((resolve) => { const req = db.transaction("documents").objectStore("documents").getAll(); req.onsuccess = () => resolve(req.result); }); db.close();
     return docs.some((doc) => doc.edits?.length === 2 && doc.edits[0].type === "shape" && doc.edits[1].type === "image");
   })).toBe(true);
@@ -128,6 +131,7 @@ test("EXPORT-PRESENTATION-003-5 dix images partagent un blob, plans répétés e
   });
   await expect.poll(() => page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve) => { const req = indexedDB.open("pdf-editor-mvp-db"); req.onsuccess = () => resolve(req.result); });
+    if (!db.objectStoreNames.contains("images")) { db.close(); return 0; }
     const count = await new Promise<number>((resolve) => { const req = db.transaction("images").objectStore("images").count(); req.onsuccess = () => resolve(req.result); }); db.close(); return count;
   })).toBe(1);
   await info.attach("image-memory-indicative", { body: JSON.stringify({ before, afterTen: await memory(), sharedAssets: 1 }), contentType: "application/json" });

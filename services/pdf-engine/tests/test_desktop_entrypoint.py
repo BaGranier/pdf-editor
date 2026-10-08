@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app import desktop_server
+from app import desktop_server, ocr_worker
 from app.conversion import worker
 
 
@@ -36,3 +36,17 @@ def test_packaged_entrypoint_routes_only_explicit_worker_mode(
         if conversion
         else ("server", ["--port", "0"])
     ]
+
+
+def test_packaged_entrypoint_routes_ocr_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys, "argv", ["pdf-engine.exe", "--ocr-worker", "--language", "fra"]
+    )
+    observed = []
+    monkeypatch.setattr(ocr_worker, "main", lambda: observed.append(sys.argv[1:]))
+    with pytest.raises(SystemExit):
+        runpy.run_path(
+            str(Path(__file__).resolve().parents[1] / "desktop_entrypoint.py"),
+            run_name="__main__",
+        )
+    assert observed == [["--language", "fra"]]

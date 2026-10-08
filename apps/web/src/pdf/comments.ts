@@ -6,6 +6,7 @@ type AnnotationPayload = {
   type: PdfCommentType;
   rect: PdfRect;
   content: string;
+  appearanceHidden?: boolean;
   author?: string;
   createdAt?: string;
   modifiedAt?: string;
@@ -32,6 +33,7 @@ export async function loadPdfComments(backendUrl: string, file: File): Promise<P
       createdAt: annotation.createdAt,
       modifiedAt: annotation.modifiedAt,
       source: "pdf" as const,
+      ...(annotation.appearanceHidden ? { appearanceHidden: true } : {}),
       }));
   } catch {
     return [];

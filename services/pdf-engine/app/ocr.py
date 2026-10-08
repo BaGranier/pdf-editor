@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import sys
 from pathlib import Path
 from typing import Annotated, BinaryIO, Final
 
@@ -17,6 +18,7 @@ from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import FileResponse
 from pypdf import PdfReader
 from starlette.background import BackgroundTask
+from app.ocr_runtime import bundled_runtime, validate_runtime
 
 MAX_PDF_SIZE_BYTES: Final = 100 * 1024 * 1024
 MAX_PDF_PAGES: Final = 500
@@ -31,9 +33,7 @@ DIAGNOSTIC_STREAM_LOG_LIMIT_CHARS: Final = 4000
 DIAGNOSTIC_LOG_LIMIT_CHARS: Final = 2 * DIAGNOSTIC_STREAM_LOG_LIMIT_CHARS + 32
 SUPPORTED_OCR_MODES: Final = frozenset({"skip-text", "force-ocr"})
 DEFAULT_OCR_MODE: Final = "force-ocr"
-LANGUAGE_PATTERN: Final = re.compile(
-    r"[A-Za-z0-9_]{2,32}(?:\+[A-Za-z0-9_]{2,32})*"
-)
+LANGUAGE_PATTERN: Final = re.compile(r"[A-Za-z0-9_]{2,32}(?:\+[A-Za-z0-9_]{2,32})*")
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -57,7 +57,9 @@ class OcrError(Exception):
         self.diagnostic = diagnostic
 
 
-def invalid_pdf(message: str = "Le fichier fourni n'est pas un PDF valide.") -> OcrError:
+def invalid_pdf(
+    message: str = "Le fichier fourni n'est pas un PDF valide.",
+) -> OcrError:
     return OcrError(status_code=400, code="INVALID_PDF", message=message)
 
 
@@ -94,13 +96,17 @@ async def capture_process(
     *,
     timeout_seconds: int,
 ) -> tuple[int, bytes, bytes]:
-    with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+    with (
+        tempfile.TemporaryFile() as stdout_file,
+        tempfile.TemporaryFile() as stderr_file,
+    ):
         process = subprocess.Popen(
             command,
             stdout=stdout_file,
             stderr=stderr_file,
             shell=False,
             start_new_session=os.name == "posix",
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         deadline = time.monotonic() + timeout_seconds
         try:
@@ -135,7 +141,15 @@ def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
         except (AttributeError, OSError):
             pass
 
-    process.kill()
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    if process.poll() is None:
+        process.kill()
 
 
 def _read_process_output_tail(stream: BinaryIO) -> bytes:
@@ -150,6 +164,12 @@ def decode_process_output(output: bytes) -> str:
 
 
 async def get_installed_languages() -> set[str]:
+    runtime = bundled_runtime()
+    if runtime is not None:
+        try:
+            return validate_runtime(runtime)
+        except RuntimeError as error:
+            raise OcrError(503, "OCR_TOOL_UNAVAILABLE", str(error)) from error
     try:
         return_code, stdout, stderr = await capture_process(
             ["tesseract", "--list-langs"],
@@ -175,9 +195,7 @@ async def get_installed_languages() -> set[str]:
             message="Tesseract n'est pas disponible.",
         )
 
-    output = "\n".join(
-        (decode_process_output(stdout), decode_process_output(stderr))
-    )
+    output = "\n".join((decode_process_output(stdout), decode_process_output(stderr)))
     installed = {
         line.strip()
         for line in output.splitlines()
@@ -206,9 +224,7 @@ def validate_languages_available(
             status_code=422,
             code="OCR_LANGUAGE_UNAVAILABLE",
             message=(
-                "Langue OCR non installée : "
-                + ", ".join(sorted(unavailable))
-                + "."
+                "Langue OCR non installée : " + ", ".join(sorted(unavailable)) + "."
             ),
         )
 
@@ -286,6 +302,30 @@ def build_ocr_command(
     deskew: bool,
     jobs: int,
 ) -> list[str]:
+    runtime = bundled_runtime()
+    if runtime is not None:
+        if deskew:
+            raise OcrError(
+                422,
+                "OCR_DESKEW_UNAVAILABLE",
+                "Le redressement automatique n’est pas disponible dans l’OCR embarqué. Désactivez cette option.",
+            )
+        prefix = (
+            [sys.executable, "--ocr-worker"]
+            if getattr(sys, "frozen", False)
+            else [sys.executable, "-m", "app.ocr_worker"]
+        )
+        return [
+            *prefix,
+            "--runtime",
+            str(runtime),
+            "--language",
+            languages,
+            "--mode",
+            mode,
+            str(input_path),
+            str(output_path),
+        ]
     command = [
         "ocrmypdf",
         "--output-type",
@@ -309,7 +349,11 @@ def build_ocr_command(
 def _safe_diagnostic(output: bytes, temporary_directory: Path) -> str:
     diagnostic = decode_process_output(output)
     path = str(temporary_directory)
-    for representation in (json.dumps(path)[1:-1], path, temporary_directory.as_posix()):
+    for representation in (
+        json.dumps(path)[1:-1],
+        path,
+        temporary_directory.as_posix(),
+    ):
         diagnostic = diagnostic.replace(representation, "<temporary-directory>")
     return diagnostic[-DIAGNOSTIC_STREAM_LOG_LIMIT_CHARS:]
 
@@ -334,13 +378,13 @@ async def execute_ocr(
         raise OcrError(
             status_code=503,
             code="OCR_TOOL_UNAVAILABLE",
-            message="OCRmyPDF n'est pas disponible.",
+            message="Le moteur OCR n'est pas disponible.",
         ) from error
     except OSError as error:
         raise OcrError(
             status_code=503,
             code="OCR_TOOL_UNAVAILABLE",
-            message="OCRmyPDF n'a pas pu être démarré.",
+            message="Le moteur OCR n'a pas pu être démarré.",
         ) from error
 
     if return_code != 0:
@@ -349,11 +393,9 @@ async def execute_ocr(
         raise OcrError(
             status_code=502,
             code="OCR_FAILED",
-            message="OCRmyPDF n'a pas pu traiter le document.",
+            message="Le moteur OCR n'a pas pu traiter le document.",
             return_code=return_code,
-            diagnostic=(
-                f"stdout={stdout_diagnostic} stderr={stderr_diagnostic}"
-            ),
+            diagnostic=(f"stdout={stdout_diagnostic} stderr={stderr_diagnostic}"),
         )
 
 
@@ -367,14 +409,14 @@ def validate_output_pdf(
             raise OcrError(
                 status_code=502,
                 code="OCR_OUTPUT_INVALID",
-                message="OCRmyPDF n'a produit aucun PDF exploitable.",
+                message="Le moteur OCR n'a produit aucun PDF exploitable.",
             )
         with path.open("rb") as pdf_file:
             if pdf_file.read(5) != b"%PDF-":
                 raise OcrError(
                     status_code=502,
                     code="OCR_OUTPUT_INVALID",
-                    message="Le fichier produit par OCRmyPDF n'est pas un PDF.",
+                    message="Le fichier produit par le moteur OCR n'est pas un PDF.",
                 )
             pdf_file.seek(0)
             reader = PdfReader(pdf_file, strict=True)
@@ -382,18 +424,15 @@ def validate_output_pdf(
                 raise OcrError(
                     status_code=502,
                     code="OCR_OUTPUT_INVALID",
-                    message="Le PDF produit par OCRmyPDF ne contient aucune page.",
+                    message="Le PDF produit par le moteur OCR ne contient aucune page.",
                 )
             page_count = len(reader.pages)
-            if (
-                expected_page_count is not None
-                and page_count != expected_page_count
-            ):
+            if expected_page_count is not None and page_count != expected_page_count:
                 raise OcrError(
                     status_code=502,
                     code="OCR_OUTPUT_INVALID",
                     message=(
-                        "Le PDF produit par OCRmyPDF ne conserve pas toutes les pages."
+                        "Le PDF produit par le moteur OCR ne conserve pas toutes les pages."
                     ),
                 )
             return page_count
@@ -403,7 +442,7 @@ def validate_output_pdf(
         raise OcrError(
             status_code=502,
             code="OCR_OUTPUT_INVALID",
-            message="Le PDF produit par OCRmyPDF est invalide.",
+            message="Le PDF produit par le moteur OCR est invalide.",
         ) from error
 
 
@@ -434,7 +473,9 @@ async def ocr_pdf(
     languages: Annotated[str, Form(description="Langues Tesseract")] = "fra",
     mode: Annotated[
         str,
-        Form(description="Mode OCR (force-ocr par défaut ; skip-text accepté explicitement)"),
+        Form(
+            description="Mode OCR (force-ocr par défaut ; skip-text accepté explicitement)"
+        ),
     ] = DEFAULT_OCR_MODE,
     deskew: Annotated[bool, Form(description="Redresser les pages")] = True,
 ) -> FileResponse:
@@ -458,9 +499,7 @@ async def ocr_pdf(
             await copy_uploaded_pdf(file, input_path)
             page_count = validate_source_pdf(input_path)
         finally:
-            source_validation_seconds = (
-                time.perf_counter() - source_validation_started
-            )
+            source_validation_seconds = time.perf_counter() - source_validation_started
 
         jobs = calculate_ocr_jobs(page_count)
         installed_languages = await get_installed_languages()
@@ -487,9 +526,7 @@ async def ocr_pdf(
                 expected_page_count=page_count,
             )
         finally:
-            output_validation_seconds = (
-                time.perf_counter() - output_validation_started
-            )
+            output_validation_seconds = time.perf_counter() - output_validation_started
 
         response = FileResponse(
             output_path,

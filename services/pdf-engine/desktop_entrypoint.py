@@ -6,6 +6,10 @@ if __name__ == "__main__":
         from app.conversion.worker import main
 
         del sys.argv[1]
+    elif sys.argv[1:2] == ["--ocr-worker"]:
+        from app.ocr_worker import main
+
+        del sys.argv[1]
     else:
         from app.desktop_server import main
 

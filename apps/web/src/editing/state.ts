@@ -75,7 +75,8 @@ function editsAreEqual(left: PdfEdit, right: PdfEdit) {
   }
 
   if ((left.type === "signature" || left.type === "image") && right.type === left.type) {
-    return left.imageId === right.imageId;
+    return left.imageId === right.imageId && (left.type !== "image" || right.type !== "image" ||
+      (JSON.stringify(left.crop) === JSON.stringify(right.crop) && left.aspectLocked === right.aspectLocked));
   }
 
   if (left.type === "add_text" && right.type === "add_text") {

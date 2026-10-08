@@ -52,9 +52,7 @@ class DesktopUvicornServer(uvicorn.Server):
         await super().startup(sockets=sockets)
         if self.started:
             print(f"PDF_ENGINE_READY {self.readiness_url}", flush=True)
-            logging.getLogger(__name__).info(
-                "Desktop PDF engine health endpoint ready"
-            )
+            logging.getLogger(__name__).info("Desktop PDF engine health endpoint ready")
 
     def handle_exit(self, sig: int, frame: FrameType | None) -> None:
         super().handle_exit(sig, frame)
@@ -191,7 +189,11 @@ def run_server(options: DesktopServerOptions) -> int:
         log_path.name,
     )
     try:
-        server.run(sockets=[listener])
+        # Windows cleanup can only acquire this lease when the sidecar has exited.
+        with (options.paths.temp_dir / ".backend-lease").open("wb") as lease:
+            lease.write(str(os.getpid()).encode())
+            lease.flush()
+            server.run(sockets=[listener])
     finally:
         listener.close()
         _clean_temporary_contents(options.paths.temp_dir)

@@ -7,6 +7,7 @@ type OcrDialogProps = {
   isProcessing: boolean;
   onCancel: () => void;
   onSubmit: (options: OcrOptions) => void;
+  supportsDeskew?: boolean;
 };
 
 export function OcrDialog({
@@ -15,12 +16,13 @@ export function OcrDialog({
   isProcessing,
   onCancel,
   onSubmit,
+  supportsDeskew = true,
 }: OcrDialogProps) {
   const titleId = useId();
   const descriptionId = useId();
   const firstControlRef = useRef<HTMLSelectElement | null>(null);
   const [languages, setLanguages] = useState<OcrLanguages>("fra");
-  const [deskew, setDeskew] = useState(true);
+  const [deskew, setDeskew] = useState(supportsDeskew);
 
   useEffect(() => {
     firstControlRef.current?.focus();
@@ -86,11 +88,12 @@ export function OcrDialog({
             <input
               type="checkbox"
               checked={deskew}
-              disabled={isProcessing}
+              disabled={isProcessing || !supportsDeskew}
               onChange={(event) => setDeskew(event.target.checked)}
             />
             <span>Redresser automatiquement les pages inclinées</span>
           </label>
+          {!supportsDeskew ? <p role="note">Le redressement automatique des pages inclinées n’est pas disponible dans cette version desktop.</p> : null}
 
           {hasPendingOrganizationChanges ? (
             <p className="ocr-dialog__warning" role="note">
