@@ -874,3 +874,28 @@ def test_returns_the_pdf_when_the_development_copy_cannot_be_written(
     assert response.headers["x-pdf-output-status"] == "warning"
     assert "téléchargé" in response.headers["x-pdf-output-warning"]
     assert page_widths(read_exported_pdf(response.body)) == [100]
+
+
+def test_failed_atomic_copy_cleans_temporary_and_preserves_existing(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(main, "OUTPUT_DIR", tmp_path)
+    existing = tmp_path / "organise.pdf"
+    existing.write_bytes(b"existing")
+
+    def fail_link(*args: object) -> None:
+        raise OSError("simulated destination unavailable")
+
+    monkeypatch.setattr(main.os, "link", fail_link)
+    response = export_pdf(
+        {
+            "outputName": "organise.pdf",
+            "saveToOutputDir": True,
+            "pages": [{"sourceDocumentId": "doc-a", "sourcePageIndex": 0}],
+        },
+        {"doc-a": [100]},
+    )
+    assert response.headers["x-pdf-output-status"] == "warning"
+    assert existing.read_bytes() == b"existing"
+    assert list(tmp_path.iterdir()) == [existing]
+    assert page_widths(read_exported_pdf(response.body)) == [100]

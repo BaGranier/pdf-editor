@@ -8,6 +8,8 @@ import json
 import logging
 import math
 import re
+import os
+import tempfile
 from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import quote
@@ -27,6 +29,8 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
 from pypdf.generic import NameObject, NumberObject
 
+from app.image_dimensions import raster_dimensions
+from app.export_options import ExportOptions, finalize_export
 from app.conversion import router as conversion_router
 from app.conversion.errors import ConversionError
 from app.ocr import OcrError, router as ocr_router
@@ -173,6 +177,10 @@ class SignatureEdit(BaseModel):
     order: int = Field(default=0, ge=0)
 
 
+class ImageEdit(SignatureEdit):
+    type: Literal["image"]
+
+
 class ShapeStyle(BaseModel):
     stroke_color: str = Field(alias="strokeColor", pattern=r"^#[0-9A-Fa-f]{6}$")
     stroke_width: float = Field(
@@ -192,7 +200,12 @@ class ShapeStyle(BaseModel):
 class ShapeEdit(BaseModel):
     id: str = Field(min_length=1, max_length=200)
     type: Literal["shape"]
-    shape_type: Literal["rectangle", "ellipse", "line"] = Field(alias="shapeType")
+    line_style: Literal["line", "arrow"] = Field(default="line", alias="lineStyle")
+    start: PdfEditPoint | None = None
+    end: PdfEditPoint | None = None
+    shape_type: Literal["rectangle", "square", "ellipse", "circle", "line"] = Field(
+        alias="shapeType"
+    )
     source_document_id: str | None = Field(
         default=None,
         alias="sourceDocumentId",
@@ -201,6 +214,16 @@ class ShapeEdit(BaseModel):
     rect: PdfEditRect
     style: ShapeStyle
     order: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def validate_geometry(self) -> "ShapeEdit":
+        if self.shape_type in {"square", "circle"} and not math.isclose(
+            self.rect.x1 - self.rect.x0, self.rect.y1 - self.rect.y0, abs_tol=0.01
+        ):
+            raise ValueError("La forme doit conserver un ratio 1:1.")
+        if (self.start is None) != (self.end is None):
+            raise ValueError("Les deux extrémités du trait sont requises.")
+        return self
 
 
 class FreehandPoint(BaseModel):
@@ -293,6 +316,8 @@ class PdfFormLock(BaseModel):
 
 
 class OrganizeExportPlan(BaseModel):
+    schema_version: Literal[1, 2] = Field(default=1, alias="schemaVersion")
+    export_options: ExportOptions | None = Field(default=None, alias="exportOptions")
     output_name: str | None = Field(default=None, alias="outputName")
     pages: list[OrganizeExportPage]
     edits: list[AddTextEdit] = Field(default_factory=list)
@@ -303,6 +328,7 @@ class OrganizeExportPlan(BaseModel):
         default_factory=list, alias="fontResources"
     )
     signatures: list[SignatureEdit] = Field(default_factory=list)
+    images: list[ImageEdit] = Field(default_factory=list)
     shapes: list[ShapeEdit] = Field(default_factory=list)
     freehands: list[FreehandEdit] = Field(default_factory=list)
     text_markups: list[TextMarkupEdit] = Field(
@@ -781,6 +807,14 @@ def _decode_signature_image(image: SignatureImagePayload) -> bytes:
             status_code=422,
             detail=f"Le format de l'image de signature {image.id!r} est invalide.",
         )
+    try:
+        width, height = raster_dimensions(decoded)
+        if width <= 0 or height <= 0 or width * height > 40_000_000 or width > 20_000 or height > 20_000:
+            raise ValueError("image dimensions")
+    except (RuntimeError, ValueError) as error:
+        raise HTTPException(
+            status_code=422, detail="Dimensions ou contenu de l’image invalides."
+        ) from error
     return decoded
 
 
@@ -1249,7 +1283,7 @@ def apply_visual_edits(
                             or edit.style.fill_color is None
                             else _parse_hex_color(edit.style.fill_color)
                         )
-                        if edit.shape_type == "rectangle":
+                        if edit.shape_type in {"rectangle", "square"}:
                             page.draw_rect(
                                 page_rect,
                                 color=stroke,
@@ -1259,7 +1293,7 @@ def apply_visual_edits(
                                 fill_opacity=edit.style.opacity,
                                 overlay=True,
                             )
-                        elif edit.shape_type == "ellipse":
+                        elif edit.shape_type in {"ellipse", "circle"}:
                             page.draw_oval(
                                 page_rect,
                                 color=stroke,
@@ -1270,14 +1304,51 @@ def apply_visual_edits(
                                 overlay=True,
                             )
                         else:
-                            page.draw_line(
-                                page_rect.tl,
-                                page_rect.br,
+                            start = (
+                                fitz.Point(edit.start.x, edit.start.y)
+                                * page.transformation_matrix
+                                if edit.start
+                                else page_rect.tl
+                            )
+                            end = (
+                                fitz.Point(edit.end.x, edit.end.y)
+                                * page.transformation_matrix
+                                if edit.end
+                                else page_rect.br
+                            )
+                            line_shape = page.new_shape()
+                            line_shape.draw_line(start, end)
+                            if edit.line_style == "arrow":
+                                length = abs(end - start)
+                                if length > 0.001:
+                                    size = min(
+                                        length * 0.65,
+                                        max(6, edit.style.stroke_width * 4),
+                                    )
+                                    ux, uy = (
+                                        (end.x - start.x) / length,
+                                        (end.y - start.y) / length,
+                                    )
+                                    line_shape.draw_polyline(
+                                        [
+                                            fitz.Point(
+                                                end.x - ux * size - uy * size * 0.5,
+                                                end.y - uy * size + ux * size * 0.5,
+                                            ),
+                                            end,
+                                            fitz.Point(
+                                                end.x - ux * size + uy * size * 0.5,
+                                                end.y - uy * size - ux * size * 0.5,
+                                            ),
+                                        ],
+                                    )
+                            line_shape.finish(
                                 color=stroke,
                                 width=edit.style.stroke_width,
                                 stroke_opacity=edit.style.opacity,
-                                overlay=True,
+                                closePath=False,
                             )
+                            line_shape.commit(overlay=True)
                     else:
                         points = [
                             fitz.Point(point.x, point.y) * page.transformation_matrix
@@ -1723,7 +1794,7 @@ def export_organized_pdf(
         signature_images[image.id] = _decode_signature_image(image)
 
     signatures_by_source_page: dict[tuple[str, int], list[SignatureEdit]] = {}
-    for signature in plan.signatures:
+    for signature in [*plan.signatures, *plan.images]:
         source_document_id = _resolve_source_document_id(
             signature.source_document_id,
             readers,
@@ -1883,7 +1954,7 @@ def export_organized_pdf(
         _apply_acroform_read_only_lock(writer)
     output = io.BytesIO()
     writer.write(output)
-    return apply_visual_edits(
+    composed = apply_visual_edits(
         output.getvalue(),
         edits_by_output_page,
         signatures_by_output_page,
@@ -1896,6 +1967,7 @@ def export_organized_pdf(
         native_text_edits_by_output_page=native_text_edits_by_output_page,
         font_resources=font_resources,
     )
+    return finalize_export(composed, plan.export_options)
 
 
 def get_output_path(output_name: str) -> Path:
@@ -2079,7 +2151,22 @@ async def export_organize_pdf(
     if organize_plan.save_to_output_dir:
         try:
             output_path = get_output_path(output_name)
-            output_path.write_bytes(result)
+            # Write/flush/close first, then create the destination atomically.
+            descriptor, temporary_name = tempfile.mkstemp(dir=OUTPUT_DIR, suffix=".tmp")
+            temporary_path = Path(temporary_name)
+            try:
+                with os.fdopen(descriptor, "wb") as temporary:
+                    temporary.write(result)
+                    temporary.flush()
+                    os.fsync(temporary.fileno())
+                while True:
+                    try:
+                        os.link(temporary_path, output_path)
+                        break
+                    except FileExistsError:
+                        output_path = get_output_path(output_name)
+            finally:
+                temporary_path.unlink(missing_ok=True)
             output_name = output_path.name
             output_headers["X-Pdf-Output-Status"] = "saved"
         except OSError as error:
