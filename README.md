@@ -27,7 +27,11 @@ supporté en production.
 - persistance locale des documents et préférences avec IndexedDB ;
 - rotation, suppression, duplication et réorganisation des pages ;
 - composition et export PDF mono-document ou multi-document ;
-- ajout, déplacement et redimensionnement de textes et signatures ;
+- ajout, déplacement et redimensionnement de textes, signatures graphiques et images PNG/JPEG ;
+- rectangle, carré, ellipse, cercle, trait et flèche vectorielle ;
+- plans des objets ajoutés, transparence et historique undo/redo ;
+- Save As initial préservant la source, export avec compression/finalisation/chiffrement ;
+- présentation conservant la slide visible pendant le rendu de la suivante ;
 - OCR local en français, anglais ou mode mixte ;
 - conversion en DOCX éditable ou visuel, TXT, HTML, PNG et JPEG ;
 - exécution web ou desktop avec cycle de vie du backend géré par Tauri.
@@ -244,11 +248,60 @@ plan d'export. Le frontend conserve un historique local pour les interactions
 d'édition prises en charge, et le backend signale les éventuels débordements de
 texte sans altérer les PDF sources.
 
-En web pur, le téléchargement navigateur est le comportement standard. Le shell
-Tauri actuel conserve ce flux WebView : la destination native, l'ouverture par
-double-clic et la réception des arguments de lancement ne sont pas encore
-implémentées. Leur statut de release est détaillé dans [DESKTOP.md](DESKTOP.md).
-`/workspace/data/output` est une sortie de développement.
+### Sauvegarder, exporter et finaliser
+
+Le premier **Enregistrer / Ctrl+S** d'un document ouvert lance **Enregistrer
+sous…** en Desktop. Après réussite, les prochains Ctrl+S écrivent atomiquement
+vers cette copie pendant la session. La destination d'ouverture n'est jamais
+choisie implicitement ; les destinations natives ne sont pas restaurées depuis
+IndexedDB. **Ctrl+Shift+S** permet de choisir une autre destination, même sans
+modification. Annulation et erreur conservent l'état modifié.
+
+En web, ces actions proposent un nom puis téléchargent une copie. Le navigateur
+ne permet pas de réécrire directement une destination déjà choisie.
+`data/output` reste une sortie de développement facultative. Le shell Tauri
+possède ses dialogues natifs et identifiants de fichiers opaques ; leur statut
+par plateforme est détaillé dans [DESKTOP.md](DESKTOP.md).
+
+**Image** insère un PNG ou JPEG local (5 Mio maximum, 40 millions de pixels,
+20 000 pixels par axe). L'image est centrée, agrandie si minuscule, bornée à 60 % de la page et conserve
+son ratio lors du resize. Le panneau **Plans des objets ajoutés** permet de
+sélectionner un objet couvert et de le placer devant/derrière les autres edits.
+Le contenu PDF original reste la base. Carré et cercle gardent une géométrie 1:1 ;
+les extrémités du trait/flèche sont déplaçables. Les images n'ont pas d'outil de
+rotation dédié ; SVG et WebP ne sont pas acceptés.
+
+**Exporter / Finaliser…** propose :
+
+| Profil | Politique |
+| --- | --- |
+| Qualité maximale | optimisation des flux/objets sans recompression destructive des images |
+| Équilibré | images à haute résolution : cible 180 DPI, seuil 225 DPI, qualité 85 |
+| Taille réduite | images à haute résolution : cible 100 DPI, seuil 125 DPI, qualité 65 |
+
+Les images source et ajoutées peuvent être recompressées ; MuPDF choisit le
+sous-échantillonnage effectif. Le texte reste sélectionnable et les vecteurs
+restent vectoriels. Aucune réduction de taille universelle n'est garantie.
+Le rapport affiche les tailles source/export et le profil sans promettre un gain.
+
+Les edits ajoutés sont déjà intégrés au PDF. L'aplatissement des **formulaires**
+et celui des **annotations** sont deux options explicites : ils conservent leur
+apparence et suppriment leur interactivité ; celui des annotations peut perdre
+commentaires et pièces jointes. Les annotations sont conservées par défaut.
+La protection utilise AES-256, un mot de passe d'ouverture facultatif et des
+permissions d'impression/modification avec mot de passe propriétaire distinct.
+Ces permissions peuvent être ignorées par d'autres logiciels. Les secrets ne
+sont ni persistés ni journalisés. Une sortie chiffrée est enregistrée/téléchargée
+sans réouverture automatique : l'éditeur n'offre pas encore le dialogue de
+mot de passe à l'ouverture d'un PDF protégé.
+
+Une signature graphique est une image manuscrite. **La signature numérique avec
+certificat n'est pas livrée** : audit et critères sont dans
+[SIGNATURE_NUMERIQUE_004.md](SIGNATURE_NUMERIQUE_004.md).
+
+Validation WSL : voir [le rapport du ticket 003](QA_EDITOR_EXPORT_PRESENTATION_003.md).
+**Validation Windows native : NON RÉALISÉE / À REQUALIFIER** pour ces évolutions.
+Les rapports Windows existants restent des photographies historiques.
 
 ### Limites d'usage recommandées
 

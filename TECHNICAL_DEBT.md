@@ -125,3 +125,12 @@ et la mise à jour applicative restent à traiter.
 
 Cette dette est durable car elle conditionne une diffusion desktop générale ;
 elle est détaillée dans `DESKTOP.md` et priorisée dans `PROJECT_REVIEW.md`.
+
+## Signature cryptographique après le ticket export 003
+
+Les images manuscrites restent des signatures graphiques. L'export AES-256 et
+l'aplatissement n'ajoutent pas de signature numérique. Le sous-ticket
+[SIGNATURE_NUMERIQUE_004.md](SIGNATURE_NUMERIQUE_004.md) consigne l'audit initial,
+la dépendance majeure à autoriser et les preuves de vérification/packaging encore
+requises. Les changements partagés du ticket 003 nécessitent une requalification
+Windows ; les rapports natifs existants conservent leur portée historique.

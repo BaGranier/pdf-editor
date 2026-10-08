@@ -387,3 +387,40 @@ Ces contrôles sont documentés dans le résumé, mais ne bloquent pas la campag
 - netteté HiDPI du texte fin et des lignes après un changement de fit ;
 - comportement avec des PDF confidentiels ou non reproductibles ;
 - validation finale du niveau de gravité des anomalies.
+
+
+## Régression EDITOR-FEATURES-EXPORT-PRESENTATION-003
+
+Les fixtures PNG/JPEG, JPEG EXIF et vingt slides sont synthétiques, générées par
+`scripts/generate-qa-pdfs.py`. Aucun document personnel n'est utilisé.
+
+```bash
+cd apps/web
+PLAYWRIGHT_BROWSERS_PATH=/workspace/.playwright-browsers npx playwright test \
+  e2e/specs/editor-export-presentation.spec.ts e2e/specs/storage-upgrade.spec.ts \
+  e2e/specs/save-editing.spec.ts e2e/specs/shape-editing.spec.ts \
+  e2e/specs/signature-editing.spec.ts e2e/specs/pdf-forms.spec.ts \
+  e2e/specs/text-markup.spec.ts --project=chromium --project=firefox
+```
+
+Les sept nouveaux scénarios couvrent sauvegarde web/source intacte, images/plans/
+persistance, carré/cercle/flèche, vingt slides et navigation rapide, dix images
+partageant un asset et exports successifs, DPR 2/zooms 50–200 %/thèmes/modes et upgrade IndexedDB v1 non destructif.
+La logique Save As native est testée par IPC simulé dans Vitest ; elle ne
+constitue aucune preuve d'un dialogue Windows réel.
+
+```bash
+# Depuis la racine, mesure de quatre fixtures sans versionner les sorties :
+services/pdf-engine/.venv/bin/python scripts/measure-editor-export.py
+```
+
+Ce script consigne tailles, durées, dimensions d'images et pic RSS sous
+`data/output/editor-export-003`. Le sampling RAF des slides contrôle le canvas
+visible, la géométrie et les swaps ; le compteur de canvases et le heap JS donnent
+une indication de mémoire, sans prouver l'absence de fuite de mémoire GPU.
+Le résultat daté est conservé dans
+[QA_EDITOR_EXPORT_PRESENTATION_003.md](QA_EDITOR_EXPORT_PRESENTATION_003.md).
+Les artefacts Playwright et les PDF de mesure restent ignorés.
+
+Validation Windows native : **NON RÉALISÉE / À REQUALIFIER** ; utiliser le plan
+de requalification du rapport, sans remplacer les rapports Windows historiques.

@@ -47,7 +47,8 @@ système de fichiers. Le flux réellement livré est donc actuellement le suivan
 | Ouvrir depuis l'interface | sélecteur de fichiers du navigateur | dialogue système limité aux PDF |
 | Exporter | téléchargement navigateur | dialogue système Save As, puis nouvel onglet lié à la destination choisie |
 | Enregistrer sous | dialogue applicatif de nom, puis téléchargement | dialogue système avec nom PDF proposé |
-| Enregistrer après l'ouverture ou un Save As natif | téléchargement navigateur | écriture atomique directe vers la destination mémorisée |
+| Premier Enregistrer après ouverture | dialogue de nom puis téléchargement | Save As, source préservée |
+| Enregistrer après un Save As réussi | téléchargement navigateur | écriture atomique vers la copie choisie pendant la session |
 
 Il n'existe toujours aucune permission filesystem dans la capability de la
 WebView. Les commandes Rust `open_pdf`, `save_pdf` et `save_pdf_as` affichent
@@ -57,9 +58,11 @@ il ne peut donc ni lire ni écrire un chemin arbitraire. `save_pdf` écrit dans
 un fichier temporaire du même répertoire, synchronise ce fichier, puis le
 renomme sur la destination ; sous Linux, cette substitution est atomique.
 
-Un document issu d'IndexedDB ou du navigateur reste une source Web et
-`Ctrl+S` ouvre donc Save As en Desktop. Un document ouvert nativement ou déjà
-sauvegardé nativement garde son identifiant de destination pendant la session.
+Le premier `Ctrl+S` ouvre Save As pour tout document ouvert, y compris une
+source native. Seul un Save As réussi établit la destination de sauvegarde de
+la session. Annulation et erreur laissent le document modifié ; Save As explicite
+reste disponible pour une autre copie. L'identifiant de la source et celui de
+la copie ont des rôles distincts, et aucun chemin de sauvegarde n'est persisté.
 IndexedDB ne réplique pas les documents Desktop : il reste le mécanisme de
 restauration des documents Web, sans devenir une seconde source de vérité pour
 un fichier natif.
@@ -70,6 +73,21 @@ l'application peut éditer. Cette déclaration prépare les installateurs et
 transmis à React après disponibilité du backend ; ce parcours a été testé sous
 Windows depuis l’installation. Le double-clic reste à qualifier et un second
 lancement n’est pas routé vers la fenêtre existante.
+
+## Requalification après EDITOR-FEATURES-EXPORT-PRESENTATION-003
+
+Validation WSL : logique frontend/backend et contrôles statiques portables ;
+voir [QA_EDITOR_EXPORT_PRESENTATION_003.md](QA_EDITOR_EXPORT_PRESENTATION_003.md).
+**Validation Windows native : NON RÉALISÉE / À REQUALIFIER.**
+
+Le frontend partagé et le moteur PDF ont changé. Les résultats Windows précédents
+ne qualifient pas ces nouveaux comportements. Revalider Save As initial/suivant,
+annulation/erreur, Unicode/chemins longs/lecture seule, insertion PNG/JPEG,
+plans/transparence sous WebView2 réelle et HiDPI, profils/flatten/chiffrement,
+présentation fullscreen/navigation rapide/DPI/multi-écran, puis NSIS sur VM propre,
+upgrade/désinstallation, sidecar packagé et WebView2. Les rapports historiques
+Windows ne sont pas modifiés par ce ticket. Aucune release Windows qualifiée
+n'est déclarée.
 
 ## Prérequis de développement et de compilation
 
