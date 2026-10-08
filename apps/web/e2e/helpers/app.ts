@@ -33,7 +33,7 @@ export async function openApp(page: Page): Promise<void> {
 
 export async function getLocalState(page: Page) {
   return page.evaluate(async () => {
-    const request = indexedDB.open("pdf-editor-mvp-db", 1);
+    const request = indexedDB.open("pdf-editor-mvp-db");
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -58,7 +58,7 @@ export async function getLocalState(page: Page) {
 
 export async function getStoredDocuments(page: Page) {
   return page.evaluate(async () => {
-    const request = indexedDB.open("pdf-editor-mvp-db", 1);
+    const request = indexedDB.open("pdf-editor-mvp-db");
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
@@ -78,7 +78,7 @@ export async function getStoredDocuments(page: Page) {
 
 export async function getStoredDocumentUploadDiagnostics(page: Page) {
   return page.evaluate(async () => {
-    const request = indexedDB.open("pdf-editor-mvp-db", 1);
+    const request = indexedDB.open("pdf-editor-mvp-db");
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);

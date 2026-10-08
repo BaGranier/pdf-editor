@@ -1,3 +1,4 @@
+import { importLocalImage } from "../images/importImage";
 import {
   useRef,
   useState,
@@ -19,27 +20,6 @@ type SignatureDialogProps = {
 
 const DRAWING_WIDTH = 900;
 const DRAWING_HEIGHT = 300;
-const MAX_SIGNATURE_BYTES = 5 * 1024 * 1024;
-
-function normalizedImageType(file: File): "image/png" | "image/jpeg" | null {
-  if (file.type === "image/png") {
-    return "image/png";
-  }
-  if (file.type === "image/jpeg") {
-    return "image/jpeg";
-  }
-  if (file.type) {
-    return null;
-  }
-  if (/\.png$/i.test(file.name)) {
-    return "image/png";
-  }
-  if (/\.(?:jpe?g)$/i.test(file.name)) {
-    return "image/jpeg";
-  }
-  return null;
-}
-
 export function SignatureDialog({ onCancel, onConfirm }: SignatureDialogProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
@@ -121,42 +101,10 @@ export function SignatureDialog({ onCancel, onConfirm }: SignatureDialogProps) {
     if (!file) {
       return;
     }
-    const mimeType = normalizedImageType(file);
-    if (!mimeType) {
-      setError("Choisissez une image PNG ou JPEG.");
-      return;
-    }
-    if (file.size > MAX_SIGNATURE_BYTES) {
-      setError("L'image de signature ne doit pas dépasser 5 Mo.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onerror = () => setError("L'image de signature n'a pas pu être lue.");
-    reader.onload = () => {
-      if (typeof reader.result !== "string") {
-        setError("L'image de signature n'a pas pu être lue.");
-        return;
-      }
-      const dataUrl = reader.result;
-      const image = new Image();
-      image.onerror = () => setError("Le fichier image est invalide.");
-      image.onload = () => {
-        if (image.naturalWidth <= 0 || image.naturalHeight <= 0) {
-          setError("Le fichier image est invalide.");
-          return;
-        }
-        setImportedImage({
-          mimeType,
-          dataUrl,
-          width: image.naturalWidth,
-          height: image.naturalHeight,
-        });
-        setError(null);
-      };
-      image.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
+    void importLocalImage(file).then((image) => {
+      setImportedImage(image);
+      setError(null);
+    }).catch((error: unknown) => setError(error instanceof Error ? error.message : "Image invalide."));
   };
 
   const confirm = () => {

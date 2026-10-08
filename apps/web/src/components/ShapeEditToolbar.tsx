@@ -1,3 +1,4 @@
+import { constrainSquare } from "../editing/objectGeometry";
 import { useRef } from "react";
 import { SHAPE_TYPES, type ShapeEdit, type ShapeType } from "../editing/types";
 import { ColorPicker } from "./ColorPicker";
@@ -15,6 +16,8 @@ type ShapeEditToolbarProps = {
 const SHAPE_LABELS: Record<ShapeType, string> = {
   rectangle: "Rectangle",
   ellipse: "Ellipse",
+  square: "Carré",
+  circle: "Cercle",
   line: "Ligne",
 };
 
@@ -45,6 +48,7 @@ export function ShapeEditToolbar({
             const shapeType = event.target.value as ShapeType;
             onUpdate({
               shapeType,
+              rect: shapeType === "square" || shapeType === "circle" ? constrainSquare(edit.rect) : edit.rect,
               style: {
                 ...edit.style,
                 fillColor: shapeType === "line" ? null : edit.style.fillColor,
@@ -59,6 +63,7 @@ export function ShapeEditToolbar({
           ))}
         </select>
       </label>
+      {edit.shapeType === "line" ? <label>Trait<select aria-label="Type de trait" value={edit.lineStyle ?? "line"} onChange={(event) => onUpdate({ lineStyle: event.target.value as "line" | "arrow" })}><option value="line">Trait</option><option value="arrow">Flèche</option></select></label> : null}
       <ColorPicker label="Contour" value={edit.style.strokeColor} onChange={(strokeColor) => onUpdate({ style: { ...edit.style, strokeColor } })} onPickColor={() => onPickColor("stroke")} eyedropperActive={eyedropperTarget === "stroke"} />
       <PropertySlider
         label="Épaisseur du contour"

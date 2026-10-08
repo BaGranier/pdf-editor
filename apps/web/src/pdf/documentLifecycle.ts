@@ -17,6 +17,8 @@ export type OpenPdfDocument = {
   fileName: string;
   workingSaveName: string | null;
   source: DocumentSource;
+  /** Set only after a successful Save As; never persisted. */
+  saveDestination?: { documentId: string; fileName: string };
   file: File;
   pdfDocument: PDFDocumentProxy;
   loadingTask: PDFDocumentLoadingTask;

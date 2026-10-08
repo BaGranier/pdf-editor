@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearViewerStorage,
   loadOrganizationPlan,
+  loadImageAssets,
+  removeStoredDocument,
   loadStoredDocument,
   loadViewerPreferences,
   parseViewerPreferences,
@@ -178,4 +180,17 @@ describe("viewerStorage", () => {
     expect(loadViewerPreferences()).toBeNull();
     await expect(loadStoredDocument("pdf-1")).resolves.toBeNull();
   });
+  it("stores shared image assets separately and prunes after the last document is removed", async () => {
+    const asset = { id: "shared", mimeType: "image/png" as const, width: 60, height: 30, dataUrl: "data:image/png;base64,fixture" };
+    const snapshot: ViewerDocumentSnapshot = { id: "one", fileName: "one.pdf", mimeType: "application/pdf", content: new Blob(["%PDF"]), pageCount: 1, zoom: 1, scrollLeft: 0, scrollTop: 0, editsDirty: true, edits: [{ id: "edit", type: "image", imageId: "shared", page: 1, rect: { x0: 0, y0: 0, x1: 60, y1: 30 } }], imageAssets: [asset] };
+    await saveStoredDocument(snapshot);
+    await saveStoredDocument({ ...snapshot, id: "two" });
+    expect(await loadImageAssets(["shared"])).toEqual({ shared: asset });
+    const stored = await loadStoredDocument("one");
+    expect(stored).toMatchObject({ editsDirty: true, edits: snapshot.edits });
+    expect(stored).not.toHaveProperty("imageAssets");
+    await removeStoredDocument("one"); expect(await loadImageAssets(["shared"])).toEqual({ shared: asset });
+    await removeStoredDocument("two"); expect(await loadImageAssets(["shared"])).toEqual({});
+  });
+
 });

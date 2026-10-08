@@ -3645,3 +3645,16 @@ button:disabled {
     display: none;
   }
 }
+
+/* One stacking context per added object: array order is the export order. */
+.pdf-edit-object { position: absolute; inset: 0; pointer-events: none; }
+.layer-controls { display: grid; gap: .4rem; padding: .75rem; }
+
+.advanced-export-dialog { max-height: 90vh; overflow: auto; width: min(42rem, 90vw); }
+.advanced-export-dialog fieldset { display: grid; gap: .6rem; border: 0; padding: 0; }
+.advanced-export-dialog label { display: flex; gap: .5rem; align-items: center; justify-content: space-between; }
+.advanced-export-dialog input[type="password"], .advanced-export-dialog select { min-width: 12rem; }
+
+.presentation-render-error { position: absolute; bottom: 1rem; left: 1rem; z-index: 50; padding: .5rem; background: var(--surface); color: var(--text); }
+
+.pdf-shape-edit__endpoint { position: absolute; z-index: 5; transform: translate(-50%, -50%); width: 12px; height: 12px; border: 1px solid var(--accent); border-radius: 50%; background: var(--surface); cursor: crosshair; }

@@ -41,7 +41,12 @@ test("EDIT-SIGN-001 @smoke dessine, place et exporte une signature visuelle", as
   await page.getByRole("button", { name: "Valider la signature" }).click();
 
   const signatureLayer = page.getByLabel("Couche d'édition de la page 1");
-  await signatureLayer.click({ position: { x: 25, y: 120 } });
+  const layerBox = await signatureLayer.boundingBox();
+  if (!layerBox) throw new Error("La couche de signature n'est pas mesurable.");
+  await page.mouse.move(layerBox.x + 25, layerBox.y + 120);
+  await page.mouse.down();
+  await page.mouse.move(layerBox.x + 205, layerBox.y + 180, { steps: 4 });
+  await page.mouse.up();
   const signature = page.locator(".pdf-signature-edit");
   await expect(signature).toBeVisible();
   const initialBox = await signature.boundingBox();

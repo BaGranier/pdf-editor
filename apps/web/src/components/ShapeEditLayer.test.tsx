@@ -29,7 +29,7 @@ describe("ShapeEditBlock", () => {
     const { container, rerender } = render(
       <ShapeEditBlock edit={rectangle} viewport={viewport} selected={false} onSelect={vi.fn()} onMove={vi.fn()} />,
     );
-    expect(container.querySelector("rect")).toHaveStyle({ opacity: "1" });
+    expect(container.querySelector("g")).toHaveAttribute("opacity", "1");
 
     rerender(
       <ShapeEditBlock
@@ -40,7 +40,7 @@ describe("ShapeEditBlock", () => {
         onMove={vi.fn()}
       />,
     );
-    expect(container.querySelector("rect")).toHaveStyle({ opacity: "0.35" });
+    expect(container.querySelector("g")).toHaveAttribute("opacity", "0.35");
 
     rerender(
       <ShapeEditBlock
@@ -51,7 +51,7 @@ describe("ShapeEditBlock", () => {
         onMove={vi.fn()}
       />,
     );
-    expect(container.querySelector("rect")).toHaveStyle({ opacity: "0" });
+    expect(container.querySelector("g")).toHaveAttribute("opacity", "0");
   });
 
   it.each(["rectangle", "ellipse", "line"] as const)(
@@ -111,4 +111,28 @@ describe("ShapeEditBlock", () => {
       y1: 620,
     });
   });
+  it.each(["square", "circle"] as const)("commits one constrained %s resize", (shapeType) => {
+    const onMove = vi.fn();
+    render(<ShapeEditBlock edit={{ ...rectangle, shapeType, rect: { x0: 100, y0: 500, x1: 220, y1: 620 } }} viewport={viewport} selected onSelect={vi.fn()} onMove={onMove} />);
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Redimensionner la forme depuis se" }), { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.mouseMove(window, { clientX: 50, clientY: 30 });
+    fireEvent.mouseMove(window, { clientX: 60, clientY: 40 });
+    expect(onMove).not.toHaveBeenCalled();
+    fireEvent.mouseUp(window);
+    expect(onMove).toHaveBeenCalledTimes(1);
+    const rect = onMove.mock.calls[0][0];
+    expect(rect.x1 - rect.x0).toBe(rect.y1 - rect.y0);
+  });
+
+  it("moves an arrow endpoint in PDF coordinates and commits only on release", () => {
+    const onMove = vi.fn();
+    render(<ShapeEditBlock edit={{ ...rectangle, shapeType: "line", lineStyle: "arrow", start: { x: 100, y: 620 }, end: { x: 260, y: 500 } }} viewport={viewport} selected onSelect={vi.fn()} onMove={onMove} />);
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Déplacer la fin du trait" }), { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.mouseMove(window, { clientX: 50, clientY: 30 });
+    expect(onMove).not.toHaveBeenCalled();
+    fireEvent.mouseUp(window);
+    expect(onMove).toHaveBeenCalledTimes(1);
+    expect(onMove.mock.calls[0][1]).toEqual({ start: { x: 100, y: 620 }, end: { x: 300, y: 480 } });
+  });
+
 });

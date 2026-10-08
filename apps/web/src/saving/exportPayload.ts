@@ -1,3 +1,4 @@
+import type { ExportOptions } from "./exportOptions";
 import {
   createInitialPagePlan,
   isValidPagePlanForDocument,
@@ -13,6 +14,7 @@ import type {
   PdfEdit,
   ShapeEdit,
   SignatureEdit,
+  ImageEdit,
   SignatureImage,
   TextMarkupEdit,
 } from "../editing/types";
@@ -45,6 +47,7 @@ export type BuildPdfExportPayloadInput = {
   documentId: string;
   operation: PdfExportOperation;
   requestedOutputName?: string;
+  exportOptions?: ExportOptions;
   activeDocumentId: string | null;
   outputName: string;
   saveToOutputDir: boolean;
@@ -114,13 +117,17 @@ export function buildPdfExportPayload(
     exportedPages.add(page.sourcePageIndex + 1);
     exportedPagesByDocument.set(page.sourceDocumentId, exportedPages);
   });
+  const missingImage = requiredDocumentIds.some((documentId) =>
+    getDocumentEditingState(input.editsByDocument, documentId).edits.some((edit) =>
+      edit.type === "image" && exportedPagesByDocument.get(documentId)?.has(edit.page) && !input.signatureImages[edit.imageId]));
+  if (missingImage) return { ok: false, message: "Une image insérée est indisponible. Restaurez-la ou supprimez son objet avant l’export." };
   type ExportedEdit = PdfEdit & { sourceDocumentId: string; order: number };
   const exportedEdits: ExportedEdit[] = requiredDocumentIds.flatMap((documentId) =>
     getDocumentEditingState(input.editsByDocument, documentId).edits.flatMap((edit, order) => {
       const pageIsExported = exportedPagesByDocument.get(documentId)?.has(edit.page);
       const editIsExportable = edit.type === "add_text"
         ? edit.text.length > 0
-        : edit.type === "signature"
+        : (edit.type === "signature" || edit.type === "image")
           ? input.signatureImages[edit.imageId] !== undefined
           : true;
       return pageIsExported && editIsExportable ? [{ ...edit, sourceDocumentId: documentId, order }] : [];
@@ -129,6 +136,7 @@ export function buildPdfExportPayload(
   const textEdits = exportedEdits.filter((edit): edit is AddTextEdit & ExportedEdit => edit.type === "add_text");
   const nativeTextEdits = exportedEdits.filter((edit): edit is NativeTextEdit & ExportedEdit => edit.type === "native_text");
   const signatureEdits = exportedEdits.filter((edit): edit is SignatureEdit & ExportedEdit => edit.type === "signature");
+  const imageEdits = exportedEdits.filter((edit): edit is ImageEdit & ExportedEdit => edit.type === "image");
   const shapeEdits = exportedEdits.filter((edit): edit is ShapeEdit & ExportedEdit => edit.type === "shape");
   const freehandEdits = exportedEdits.filter((edit): edit is FreehandEdit & ExportedEdit => edit.type === "freehand");
   const textMarkupEdits = exportedEdits.filter((edit): edit is TextMarkupEdit & ExportedEdit => edit.type === "text_markup");
@@ -139,7 +147,7 @@ export function buildPdfExportPayload(
       edit.type === "form_lock" ? [{ ...edit, sourceDocumentId: documentId, order }] : [],
     ),
   ) as Array<PdfFormLockEdit & { sourceDocumentId: string; order: number }>;
-  const signatureImages = [...new Set(signatureEdits.map((edit) => edit.imageId))].flatMap((imageId) => {
+  const signatureImages = [...new Set([...signatureEdits, ...imageEdits].map((edit) => edit.imageId))].flatMap((imageId) => {
     const image = input.signatureImages[imageId];
     return image ? [image] : [];
   });
@@ -161,7 +169,9 @@ export function buildPdfExportPayload(
     availableDocuments.forEach((document) => formData.append("files", document.file, document.fileName));
     formData.append("documentIds", JSON.stringify(requiredDocumentIds));
     formData.append("plan", JSON.stringify({
+      schemaVersion: 2,
       outputName,
+      ...(input.exportOptions ? { exportOptions: input.exportOptions } : {}),
       saveToOutputDir: input.operation === "export" ? input.saveToOutputDir : false,
       pages: organizationPlan.pages.map((page) => ({
         sourceDocumentId: page.sourceDocumentId,
@@ -171,7 +181,9 @@ export function buildPdfExportPayload(
       ...(textEdits.length > 0 ? { edits: textEdits } : {}),
       ...(nativeTextEdits.length > 0 ? { nativeTextEdits } : {}),
       ...(fontResources.length > 0 ? { fontResources } : {}),
-      ...(signatureEdits.length > 0 ? { signatures: signatureEdits, signatureImages } : {}),
+      ...(signatureEdits.length > 0 ? { signatures: signatureEdits } : {}),
+      ...(imageEdits.length > 0 ? { images: imageEdits } : {}),
+      ...(signatureImages.length > 0 ? { signatureImages } : {}),
       ...(shapeEdits.length > 0 ? { shapes: shapeEdits } : {}),
       ...(freehandEdits.length > 0 ? { freehands: freehandEdits } : {}),
       ...(textMarkupEdits.length > 0 ? { textMarkups: textMarkupEdits } : {}),

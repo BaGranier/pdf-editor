@@ -1,3 +1,4 @@
+import { constrainSquare } from "../editing/objectGeometry";
 import type { PageViewport } from "pdfjs-dist";
 import {
   createPdfRectAtScreenPoint,
@@ -15,6 +16,7 @@ import type {
   PdfPoint,
   SignatureImage,
   ShapeType,
+  LineGeometry,
 } from "../editing/types";
 import { FreehandEditBlock } from "./FreehandEditLayer";
 import { TextMarkupLayer } from "./TextMarkupLayer";
@@ -33,7 +35,7 @@ type PdfEditLayerProps = {
   freehandStyle: FreehandStyle;
   pendingSignatureImage: SignatureImage | null;
   onAddText: (rect: PdfRect) => void;
-  onAddShape: (shapeType: ShapeType, rect: PdfRect) => void;
+  onAddShape: (shapeType: ShapeType, rect: PdfRect, line?: LineGeometry) => void;
   onPlaceSignature: (rect: PdfRect) => void;
   onAddFreehand: (points: PdfPoint[]) => void;
   onStartComment: (point: PdfPoint) => void;
@@ -78,9 +80,12 @@ export function PdfEditLayer({
   const freehandPointsRef = useRef<PdfPoint[] | null>(null);
   const ignoreCompletionClickRef = useRef(false);
   const [freehandPreview, setFreehandPreview] = useState<PdfPoint[]>([]);
-  const previewRect = creation
+  const rawPreviewRect = creation
     ? createPdfRectFromScreenPoints(viewport, creation.start, creation.end)
     : null;
+
+  const constrained = activeTool === "shape_square" || activeTool === "shape_circle";
+  const previewRect = rawPreviewRect && constrained ? constrainSquare(rawPreviewRect) : rawPreviewRect;
 
   useEffect(() => {
     setCreationState(null);
@@ -134,7 +139,12 @@ export function PdfEditLayer({
       onAddText(rect);
     } else if (activeTool.startsWith("shape_")) {
       ignoreCompletionClickRef.current = true;
-      onAddShape(activeTool.replace("shape_", "") as ShapeType, rect);
+      const tool = activeTool.replace("shape_", "");
+      const isLine = tool === "line" || tool === "arrow";
+      const [sx, sy] = viewport.convertToPdfPoint(currentCreation.start.x, currentCreation.start.y);
+      const [ex, ey] = viewport.convertToPdfPoint(end.x, end.y);
+      onAddShape(isLine ? "line" : tool as ShapeType, constrained ? constrainSquare(rect) : rect,
+        isLine ? { lineStyle: tool === "arrow" ? "arrow" : "line", start: { x: sx, y: sy }, end: { x: ex, y: ey } } : undefined);
     } else if (pendingSignatureImage) {
       ignoreCompletionClickRef.current = true;
       onPlaceSignature(
@@ -226,8 +236,10 @@ export function PdfEditLayer({
         if (activeTool === "add_text") {
           onAddText(createPdfRectAtScreenPoint(viewport, point));
         } else if (activeTool.startsWith("shape_")) {
-          const shapeType = activeTool.replace("shape_", "") as ShapeType;
-          onAddShape(shapeType, createPdfRectAtScreenPoint(viewport, point, 160, shapeType === "line" ? 80 : 120));
+          const tool = activeTool.replace("shape_", "");
+          const shapeType = tool === "arrow" ? "line" : tool as ShapeType;
+          const rect = createPdfRectAtScreenPoint(viewport, point, 160, shapeType === "line" ? 80 : 120);
+          onAddShape(shapeType, constrained ? constrainSquare(rect) : rect, { lineStyle: tool === "arrow" ? "arrow" : "line" });
         } else if (pendingSignatureImage) {
           onPlaceSignature(createProportionalPdfRectAtScreenPoint(viewport, point, pendingSignatureImage.width / pendingSignatureImage.height));
         }
@@ -242,9 +254,10 @@ export function PdfEditLayer({
         />
       ) : null}
       {freehandPreview.length > 1 ? <FreehandPreview points={freehandPreview} viewport={viewport} style={freehandStyle} /> : null}
-      {edits.map((edit) => {
+      {edits.map((edit, order) => {
         if (edit.type === "add_text") {
           return (
+            <div key={edit.id} className="pdf-edit-object" style={{ zIndex: order }}>
             <TextEditBlock
               key={edit.id}
               edit={edit}
@@ -266,24 +279,27 @@ export function PdfEditLayer({
                 onUpdate({ ...edit, rect, style: { ...edit.style, fontSize } });
               }}
             />
+            </div>
           );
         }
 
         if (edit.type === "shape") {
           return (
+            <div key={edit.id} className="pdf-edit-object" style={{ zIndex: order }}>
             <ShapeEditBlock
               key={edit.id}
               edit={edit}
               viewport={viewport}
               selected={edit.id === selectedEditId}
               onSelect={() => onSelect(edit.id)}
-              onMove={(rect) => onUpdate({ ...edit, rect })}
+              onMove={(rect, line) => onUpdate({ ...edit, rect, ...line })}
             />
+            </div>
           );
         }
 
         if (edit.type === "freehand") {
-          return <FreehandEditBlock key={edit.id} edit={edit} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} onMove={onUpdate} />;
+          return <div key={edit.id} className="pdf-edit-object" style={{ zIndex: order }}><FreehandEditBlock key={edit.id} edit={edit} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} onMove={onUpdate} /></div>;
         }
 
         if (edit.type === "text_markup") return <TextMarkupLayer key={edit.id} edit={edit} viewport={viewport} />;
@@ -298,6 +314,7 @@ export function PdfEditLayer({
 
         const image = images[edit.imageId];
         return image ? (
+          <div key={edit.id} className="pdf-edit-object" style={{ zIndex: order }}>
           <SignatureEditBlock
             key={edit.id}
             edit={edit}
@@ -308,6 +325,7 @@ export function PdfEditLayer({
             onMove={(rect) => onUpdate({ ...edit, rect })}
             onDelete={() => onDelete(edit.id)}
           />
+          </div>
         ) : null;
       })}
     </div>

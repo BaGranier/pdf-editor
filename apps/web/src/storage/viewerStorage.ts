@@ -1,5 +1,5 @@
 import type { OrganizePagePlan, OrganizedPage, PageRotation } from "../organize/pagePlan";
-import type { NativeTextEdit, PdfFormStateEdit } from "../editing/types";
+import type { NativeTextEdit, PdfFormStateEdit, PdfEdit, SignatureImage } from "../editing/types";
 
 export type ThemeMode = "light" | "dark";
 export type ViewerMode = "continuous" | "single-page";
@@ -25,11 +25,15 @@ export type StoredPdfDocument = {
   scrollLeft: number;
   scrollTop: number;
   updatedAt: number;
+  edits?: PdfEdit[];
+  editsDirty?: boolean;
   nativeTextEdits?: NativeTextEdit[];
   formEdits?: PdfFormStateEdit[];
 };
 
 export type ViewerDocumentSnapshot = {
+  /** Written once to the image store, never copied into document records. */
+  imageAssets?: SignatureImage[];
   id: string;
   fileName: string;
   workingSaveName?: string | null;
@@ -39,6 +43,8 @@ export type ViewerDocumentSnapshot = {
   zoom: number;
   scrollLeft: number;
   scrollTop: number;
+  edits?: PdfEdit[];
+  editsDirty?: boolean;
   nativeTextEdits?: NativeTextEdit[];
   formEdits?: PdfFormStateEdit[];
 };
@@ -51,7 +57,9 @@ export type StoredOrganizationPlan = {
 const PREF_KEY = "pdf-editor-mvp:viewer-preferences";
 const ORGANIZATION_PLANS_KEY = "pdf-editor-mvp:organization-plans";
 const DB_NAME = "pdf-editor-mvp-db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
+const IMAGE_STORE = "images";
+const memoryImages = new Map<string, SignatureImage>();
 const DOCUMENT_STORE = "documents";
 
 const memoryDocuments = new Map<string, StoredPdfDocument>();
@@ -115,6 +123,7 @@ async function openDatabase() {
   openRequest.addEventListener("upgradeneeded", () => {
     const database = openRequest.result;
 
+    if (!database.objectStoreNames.contains(IMAGE_STORE)) database.createObjectStore(IMAGE_STORE, { keyPath: "id" });
     if (!database.objectStoreNames.contains(DOCUMENT_STORE)) {
       database.createObjectStore(DOCUMENT_STORE, { keyPath: "id" });
     }
@@ -362,6 +371,7 @@ export function toStoredPdfDocument(snapshot: ViewerDocumentSnapshot): StoredPdf
     scrollLeft: snapshot.scrollLeft,
     scrollTop: snapshot.scrollTop,
     updatedAt: Date.now(),
+    ...(snapshot.edits ? { edits: snapshot.edits, editsDirty: snapshot.editsDirty ?? false } : {}),
     ...(snapshot.nativeTextEdits?.length ? { nativeTextEdits: snapshot.nativeTextEdits } : {}),
     ...(snapshot.formEdits?.length ? { formEdits: snapshot.formEdits } : {}),
   };
@@ -369,9 +379,10 @@ export function toStoredPdfDocument(snapshot: ViewerDocumentSnapshot): StoredPdf
 
 async function putStoredDocument(snapshot: ViewerDocumentSnapshot) {
   const storedDocument = toStoredPdfDocument(snapshot);
-
   if (!hasIndexedDb()) {
     memoryDocuments.set(storedDocument.id, storedDocument);
+    for (const image of snapshot.imageAssets ?? []) memoryImages.set(image.id, image);
+    pruneMemoryImages();
     return false;
   }
 
@@ -379,13 +390,24 @@ async function putStoredDocument(snapshot: ViewerDocumentSnapshot) {
 
   if (!database) {
     memoryDocuments.set(storedDocument.id, storedDocument);
+    for (const image of snapshot.imageAssets ?? []) memoryImages.set(image.id, image);
+    pruneMemoryImages();
     return false;
   }
 
   try {
-    const transaction = database.transaction(DOCUMENT_STORE, "readwrite");
+    const transaction = database.transaction([DOCUMENT_STORE, IMAGE_STORE], "readwrite");
+    for (const image of snapshot.imageAssets ?? []) transaction.objectStore(IMAGE_STORE).put(image);
     const store = transaction.objectStore(DOCUMENT_STORE);
     store.put(storedDocument);
+    // Prune assets that no persisted document references in the same transaction.
+    const records = store.getAll();
+    records.onsuccess = () => {
+      const used = new Set((records.result as StoredPdfDocument[]).flatMap((doc) => (doc.edits ?? []).flatMap((edit) => edit.type === "image" || edit.type === "signature" ? [edit.imageId] : [])));
+      const images = transaction.objectStore(IMAGE_STORE);
+      const keys = images.getAllKeys();
+      keys.onsuccess = () => { for (const key of keys.result) if (!used.has(String(key))) images.delete(key); };
+    };
 
     await new Promise<void>((resolve, reject) => {
       transaction.addEventListener("complete", () => resolve());
@@ -403,6 +425,8 @@ export async function saveStoredDocument(snapshot: ViewerDocumentSnapshot) {
     return await putStoredDocument(snapshot);
   } catch {
     memoryDocuments.set(snapshot.id, toStoredPdfDocument(snapshot));
+    for (const image of snapshot.imageAssets ?? []) memoryImages.set(image.id, image);
+    pruneMemoryImages();
     return false;
   }
 }
@@ -444,6 +468,7 @@ export async function loadStoredDocuments(documentIds: string[]) {
 export async function removeStoredDocument(documentId: string) {
   if (!hasIndexedDb()) {
     memoryDocuments.delete(documentId);
+    pruneMemoryImages();
     return false;
   }
 
@@ -453,17 +478,27 @@ export async function removeStoredDocument(documentId: string) {
     database = await openDatabase();
   } catch {
     memoryDocuments.delete(documentId);
+    pruneMemoryImages();
     return false;
   }
 
   if (!database) {
     memoryDocuments.delete(documentId);
+    pruneMemoryImages();
     return false;
   }
 
   try {
-    const transaction = database.transaction(DOCUMENT_STORE, "readwrite");
-    transaction.objectStore(DOCUMENT_STORE).delete(documentId);
+    const transaction = database.transaction([DOCUMENT_STORE, IMAGE_STORE], "readwrite");
+    const store = transaction.objectStore(DOCUMENT_STORE);
+    store.delete(documentId);
+    const records = store.getAll();
+    records.onsuccess = () => {
+      const used = new Set((records.result as StoredPdfDocument[]).flatMap((doc) => (doc.edits ?? []).flatMap((edit) => edit.type === "image" || edit.type === "signature" ? [edit.imageId] : [])));
+      const images = transaction.objectStore(IMAGE_STORE);
+      const keys = images.getAllKeys();
+      keys.onsuccess = () => { for (const key of keys.result) if (!used.has(String(key))) images.delete(key); };
+    };
 
     await new Promise<void>((resolve, reject) => {
       transaction.addEventListener("complete", () => resolve());
@@ -477,6 +512,7 @@ export async function removeStoredDocument(documentId: string) {
     return true;
   } catch {
     memoryDocuments.delete(documentId);
+    pruneMemoryImages();
     return false;
   } finally {
     database.close();
@@ -486,6 +522,7 @@ export async function removeStoredDocument(documentId: string) {
 export async function clearStoredDocuments() {
   if (!hasIndexedDb()) {
     memoryDocuments.clear();
+    memoryImages.clear();
     return true;
   }
 
@@ -495,17 +532,20 @@ export async function clearStoredDocuments() {
     database = await openDatabase();
   } catch {
     memoryDocuments.clear();
+    memoryImages.clear();
     return false;
   }
 
   if (!database) {
     memoryDocuments.clear();
+    memoryImages.clear();
     return false;
   }
 
   try {
-    const transaction = database.transaction(DOCUMENT_STORE, "readwrite");
+    const transaction = database.transaction([DOCUMENT_STORE, IMAGE_STORE], "readwrite");
     transaction.objectStore(DOCUMENT_STORE).clear();
+    transaction.objectStore(IMAGE_STORE).clear();
 
     await new Promise<void>((resolve, reject) => {
       transaction.addEventListener("complete", () => resolve());
@@ -517,11 +557,29 @@ export async function clearStoredDocuments() {
       );
     });
     memoryDocuments.clear();
+    memoryImages.clear();
     return true;
   } catch {
     memoryDocuments.clear();
+    memoryImages.clear();
     return false;
   } finally {
     database.close();
   }
+}
+
+export async function loadImageAssets(ids: string[]): Promise<Record<string, SignatureImage>> {
+  if (!hasIndexedDb()) return Object.fromEntries(ids.flatMap((id) => memoryImages.has(id) ? [[id, memoryImages.get(id)!]] : []));
+  const database = await openDatabase();
+  if (!database) return {};
+  try {
+    const store = database.transaction(IMAGE_STORE, "readonly").objectStore(IMAGE_STORE);
+    const images = await Promise.all(ids.map((id) => requestToPromise(store.get(id)) as Promise<SignatureImage | undefined>));
+    return Object.fromEntries(images.flatMap((image) => image ? [[image.id, image]] : []));
+  } finally { database.close(); }
+}
+
+function pruneMemoryImages() {
+  const used = new Set([...memoryDocuments.values()].flatMap((doc) => (doc.edits ?? []).flatMap((edit) => edit.type === "image" || edit.type === "signature" ? [edit.imageId] : [])));
+  for (const id of memoryImages.keys()) if (!used.has(id)) memoryImages.delete(id);
 }

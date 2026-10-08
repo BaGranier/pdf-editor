@@ -52,6 +52,7 @@ Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
 Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
   configurable: true,
   value: vi.fn(() => ({
+    drawImage: vi.fn(),
     clearRect: vi.fn(),
     setTransform: vi.fn(),
   })),

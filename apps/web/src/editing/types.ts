@@ -20,7 +20,7 @@ export type AddTextStyle = {
   fontStyle?: "normal" | "italic";
 };
 
-export const SHAPE_TYPES = ["rectangle", "ellipse", "line"] as const;
+export const SHAPE_TYPES = ["rectangle", "square", "ellipse", "circle", "line"] as const;
 
 export type ShapeType = (typeof SHAPE_TYPES)[number];
 
@@ -55,6 +55,9 @@ export type EditingTool =
   | "edit_text"
   | "signature"
   | "shape_rectangle"
+  | "shape_square"
+  | "shape_circle"
+  | "shape_arrow"
   | "shape_ellipse"
   | "shape_line"
   | "freehand"
@@ -103,9 +106,23 @@ export type SignatureEdit = BasePdfEdit & {
   imageId: string;
 };
 
+export type ImageEdit = BasePdfEdit & {
+  type: "image";
+  imageId: string;
+};
+
+export type LineGeometry = {
+  lineStyle?: "line" | "arrow";
+  start?: PdfPoint;
+  end?: PdfPoint;
+};
+
 export type ShapeEdit = BasePdfEdit & {
   type: "shape";
   shapeType: ShapeType;
+  lineStyle?: "line" | "arrow";
+  start?: PdfPoint;
+  end?: PdfPoint;
   style: ShapeStyle;
 };
 
@@ -149,7 +166,7 @@ export type PdfFormLockEdit = BasePdfEdit & {
 
 export type PdfFormStateEdit = PdfFormEdit | PdfFormLockEdit;
 
-export type PdfEdit = AddTextEdit | NativeTextEdit | SignatureEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit | PdfFormStateEdit;
+export type PdfEdit = AddTextEdit | NativeTextEdit | SignatureEdit | ImageEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit | PdfFormStateEdit;
 
 export type SignatureImage = {
   id: string;

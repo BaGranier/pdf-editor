@@ -763,7 +763,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Fichier/ }));
     const fileMenu = screen.getByRole("menu", { name: "Fichier" });
-    expect(within(fileMenu).getAllByRole("menuitem")).toHaveLength(2);
+    expect(within(fileMenu).getAllByRole("menuitem")).toHaveLength(3);
     expect(
       within(fileMenu).getByRole("menuitem", { name: "Enregistrer sous…" }),
     ).toBeInTheDocument();
@@ -1866,6 +1866,7 @@ describe("App", () => {
     });
     expect(documentIds).toHaveLength(1);
     expect(plan).toEqual({
+      schemaVersion: 2,
       outputName: "export-modifie.pdf",
       saveToOutputDir: false,
       pages: [

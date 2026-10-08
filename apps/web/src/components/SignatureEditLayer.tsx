@@ -13,11 +13,12 @@ import {
 import type {
   PdfRect,
   SignatureEdit,
+  ImageEdit,
   SignatureImage,
 } from "../editing/types";
 
 type SignatureEditBlockProps = {
-  edit: SignatureEdit;
+  edit: SignatureEdit | ImageEdit;
   image: SignatureImage;
   viewport: PageViewport;
   selected: boolean;
@@ -117,7 +118,10 @@ export function SignatureEditBlock({
   return (
     <div
       className={selected ? "pdf-signature-edit is-selected" : "pdf-signature-edit"}
-      data-signature-edit-id={edit.id}
+      data-signature-edit-id={edit.type === "signature" ? edit.id : undefined}
+      data-image-edit-id={edit.type === "image" ? edit.id : undefined}
+      tabIndex={0}
+      onFocus={onSelect}
       style={{
         left: style.left,
         top: style.top,
@@ -133,7 +137,7 @@ export function SignatureEditBlock({
     >
       <img
         src={image.dataUrl}
-        alt={`Signature visuelle page ${edit.page}`}
+        alt={`${edit.type === "image" ? "Image" : "Signature visuelle"} page ${edit.page}`}
         draggable={false}
       />
       {selected ? (
@@ -141,7 +145,7 @@ export function SignatureEditBlock({
           <button
             type="button"
             className="pdf-signature-edit__delete"
-            aria-label={`Supprimer la signature page ${edit.page}`}
+            aria-label={`Supprimer ${edit.type === "image" ? "l’image" : "la signature"} page ${edit.page}`}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
@@ -153,7 +157,7 @@ export function SignatureEditBlock({
           <button
             type="button"
             className="pdf-signature-edit__resize"
-            aria-label={`Redimensionner la signature page ${edit.page}`}
+            aria-label={`Redimensionner ${edit.type === "image" ? "l’image" : "la signature"} page ${edit.page}`}
             onMouseDown={(event) => startInteraction("resize", event)}
           />
         </>

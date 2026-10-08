@@ -7,7 +7,7 @@ async function sampleLargeDocumentResources(page: import("@playwright/test").Pag
     const canvas = [...document.querySelectorAll<HTMLCanvasElement>(".pdf-page canvas")];
     const canvasPixels = canvas.reduce((total, element) => total + element.width * element.height, 0);
     const printFrames = document.querySelectorAll("iframe.pdf-print-frame").length;
-    const request = indexedDB.open("pdf-editor-mvp-db", 1);
+    const request = indexedDB.open("pdf-editor-mvp-db");
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);

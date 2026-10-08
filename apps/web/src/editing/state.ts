@@ -1,3 +1,4 @@
+import { isLayerObject, type LayerDirection } from "./layers";
 import type { PdfEdit } from "./types";
 
 export type EditingSnapshot = {
@@ -16,6 +17,7 @@ export type DocumentEditingState = {
   savedRevision: number;
   nextRevision: number;
   externalDirty: boolean;
+  externalRevision: number;
   coalescingKey: string | null;
 };
 
@@ -27,10 +29,11 @@ export type PdfEditsAction =
   | { type: "replace"; documentId: string; edit: PdfEdit; coalesceKey?: string }
   | { type: "finish_coalescing"; documentId: string; coalesceKey: string }
   | { type: "delete"; documentId: string; editId: string }
+  | { type: "reorder"; documentId: string; editId: string; direction: LayerDirection }
   | { type: "undo"; documentId: string }
   | { type: "redo"; documentId: string }
   | { type: "mark_dirty"; documentId: string }
-  | { type: "mark_saved"; documentId: string }
+  | { type: "mark_saved"; documentId: string; revision?: number; edits?: PdfEdit[]; externalRevision?: number }
   | { type: "remove_document"; documentId: string }
   | { type: "clear" };
 
@@ -47,6 +50,7 @@ const EMPTY_DOCUMENT_EDITING_STATE: DocumentEditingState = {
   savedRevision: 0,
   nextRevision: 1,
   externalDirty: false,
+  externalRevision: 0,
   coalescingKey: null,
 };
 
@@ -70,7 +74,7 @@ function editsAreEqual(left: PdfEdit, right: PdfEdit) {
     return false;
   }
 
-  if (left.type === "signature" && right.type === "signature") {
+  if ((left.type === "signature" || left.type === "image") && right.type === left.type) {
     return left.imageId === right.imageId;
   }
 
@@ -103,6 +107,9 @@ function editsAreEqual(left: PdfEdit, right: PdfEdit) {
   if (left.type === "shape" && right.type === "shape") {
     return (
       left.shapeType === right.shapeType &&
+      (left.lineStyle ?? "line") === (right.lineStyle ?? "line") &&
+      JSON.stringify(left.start) === JSON.stringify(right.start) &&
+      JSON.stringify(left.end) === JSON.stringify(right.end) &&
       left.style.strokeColor === right.style.strokeColor &&
       left.style.strokeWidth === right.style.strokeWidth &&
       left.style.fillColor === right.style.fillColor &&
@@ -160,6 +167,7 @@ function commitEdits(
     savedRevision: current.savedRevision,
     nextRevision: current.nextRevision + 1,
     externalDirty: current.externalDirty,
+    externalRevision: current.externalRevision,
     coalescingKey: null,
   });
 }
@@ -241,6 +249,24 @@ export function pdfEditsReducer(
         ),
       };
     }
+    case "reorder": {
+      const current = getDocumentEditingState(state, action.documentId);
+      const selected = current.edits.find((edit) => edit.id === action.editId);
+      if (!selected) return state;
+      const objects = current.edits.filter((edit) => edit.page === selected.page &&
+        isLayerObject(edit));
+      const from = objects.findIndex((edit) => edit.id === selected.id);
+      if (from < 0) return state;
+      const to = action.direction === "front" ? objects.length - 1 : action.direction === "back" ? 0 :
+        Math.max(0, Math.min(objects.length - 1, from + (action.direction === "forward" ? 1 : -1)));
+      if (from === to) return state;
+      objects.splice(from, 1);
+      objects.splice(to, 0, selected);
+      let index = 0;
+      const ids = new Set(objects.map((edit) => edit.id));
+      const edits = current.edits.map((edit) => ids.has(edit.id) ? objects[index++] : edit);
+      return { ...state, [action.documentId]: commitEdits(current, edits) };
+    }
     case "undo": {
       const current = getDocumentEditingState(state, action.documentId);
       const previous = current.past[current.past.length - 1];
@@ -262,6 +288,7 @@ export function pdfEditsReducer(
           savedRevision: current.savedRevision,
           nextRevision: current.nextRevision,
           externalDirty: current.externalDirty,
+          externalRevision: current.externalRevision,
           coalescingKey: null,
         }),
       };
@@ -287,6 +314,7 @@ export function pdfEditsReducer(
           savedRevision: current.savedRevision,
           nextRevision: current.nextRevision,
           externalDirty: current.externalDirty,
+          externalRevision: current.externalRevision,
           coalescingKey: null,
         }),
       };
@@ -294,22 +322,19 @@ export function pdfEditsReducer(
     case "mark_dirty": {
       const current = getDocumentEditingState(state, action.documentId);
 
-      if (current.externalDirty) {
-        return state;
-      }
-
       return {
         ...state,
         [action.documentId]: withDerivedState({
           ...current,
           externalDirty: true,
+          externalRevision: current.externalRevision + 1,
         }),
       };
     }
     case "mark_saved": {
       const current = getDocumentEditingState(state, action.documentId);
 
-      if (!current.isDirty) {
+      if (!current.isDirty || (action.edits && action.edits !== current.edits)) {
         return state;
       }
 
@@ -317,8 +342,9 @@ export function pdfEditsReducer(
         ...state,
         [action.documentId]: withDerivedState({
           ...current,
-          savedRevision: current.revision,
-          externalDirty: false,
+          coalescingKey: null,
+          savedRevision: action.revision ?? current.revision,
+          externalDirty: (action.revision !== undefined && action.revision !== current.revision) || (action.externalRevision !== undefined && action.externalRevision !== current.externalRevision) ? current.externalDirty : false,
         }),
       };
     }

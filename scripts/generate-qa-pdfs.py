@@ -358,6 +358,46 @@ def generate_conversion_fixtures() -> list[Path]:
     return generated
 
 
+def generate_editor_feature_fixtures() -> list[Path]:
+    """Small synthetic assets for image insertion and 20 presentation swaps."""
+    samples = bytes(
+        channel
+        for y in range(80)
+        for x in range(160)
+        for channel in (x % 256, y * 2, (x + y) % 256)
+    )
+    pixmap = fitz.Pixmap(fitz.csRGB, 160, 80, samples, False)
+    generated = []
+    for extension in ("png", "jpg"):
+        path = FIXTURE_DIR / f"editor-image.{extension}"
+        path.write_bytes(pixmap.tobytes(extension))
+        generated.append(path)
+    # JPEG with orientation 6: the editor must materialize the browser's rotation.
+    exif = (
+        b"Exif\x00\x00II"
+        + struct.pack("<HIH", 42, 8, 1)
+        + struct.pack("<HHIHHI", 0x112, 3, 1, 6, 0, 0)
+    )
+    jpeg = pixmap.tobytes("jpg")
+    oriented = FIXTURE_DIR / "editor-image-oriented.jpg"
+    oriented.write_bytes(
+        jpeg[:2] + b"\xff\xe1" + struct.pack(">H", len(exif) + 2) + exif + jpeg[2:]
+    )
+    generated.append(oriented)
+    slides = fitz.open()
+    for index in range(20):
+        page = slides.new_page(
+            width=600 if index % 2 == 0 else 800, height=800 if index % 2 == 0 else 600
+        )
+        page.draw_rect(page.rect, fill=(0.15 + index * 0.02, 0.3, 0.65), color=None)
+        page.insert_text(
+            (60, 100), f"Synthetic slide {index + 1}", fontsize=32, color=(1, 1, 1)
+        )
+    generated.append(save_fitz_fixture("editor-slides-20.pdf", slides))
+    return generated
+
+
+
 def generate(include_large: bool) -> list[Path]:
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
     generated = [
@@ -385,6 +425,7 @@ def generate(include_large: bool) -> list[Path]:
     )
     generated.append(corrupted_path)
     generated.extend(generate_conversion_fixtures())
+    generated.extend(generate_editor_feature_fixtures())
 
     if include_large:
         generated.append(write_large_pdf())

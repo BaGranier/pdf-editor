@@ -25,7 +25,7 @@ test("QA-E2E-014 @smoke refuse un PDF corrompu puis accepte un PDF valide", asyn
   ).toBeVisible();
   await expect(page.locator(".document-item")).toHaveCount(0);
   const persistedAfterFailure = await page.evaluate(async () => {
-    const request = indexedDB.open("pdf-editor-mvp-db", 1);
+    const request = indexedDB.open("pdf-editor-mvp-db");
     const database = await new Promise<IDBDatabase>((resolve) => {
       request.onsuccess = () => resolve(request.result);
     });

@@ -124,14 +124,14 @@ describe("SignatureDialog", () => {
     fireEvent.change(picker, {
       target: { files: [new File(["svg"], "signature.svg", { type: "image/svg+xml" })] },
     });
-    expect(screen.getByRole("alert")).toHaveTextContent("PNG ou JPEG");
+    expect(await screen.findByRole("alert")).toHaveTextContent("PNG ou JPEG");
 
     fireEvent.change(picker, {
       target: {
         files: [new File(["svg"], "signature.png", { type: "image/svg+xml" })],
       },
     });
-    expect(screen.getByRole("alert")).toHaveTextContent("PNG ou JPEG");
+    expect(await screen.findByRole("alert")).toHaveTextContent("PNG ou JPEG");
 
     fireEvent.change(picker, {
       target: {
@@ -142,7 +142,7 @@ describe("SignatureDialog", () => {
         ],
       },
     });
-    expect(screen.getByRole("alert")).toHaveTextContent("5 Mo");
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("5 Mo"));
 
     fireEvent.change(picker, {
       target: { files: [new File(["jpeg"], "signature.jpg", { type: "image/jpeg" })] },

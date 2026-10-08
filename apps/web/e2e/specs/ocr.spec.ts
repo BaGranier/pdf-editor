@@ -5,7 +5,7 @@ import { validatePdf } from "../helpers/pdf-validation";
 
 async function getStoredOcrBytes(page: import("@playwright/test").Page) {
   return page.evaluate(async () => {
-    const request = indexedDB.open("pdf-editor-mvp-db", 1);
+    const request = indexedDB.open("pdf-editor-mvp-db");
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);

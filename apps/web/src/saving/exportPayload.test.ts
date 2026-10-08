@@ -31,7 +31,7 @@ function editingState(edits: PdfEdit[]): PdfEditsByDocument {
     revision: 0,
     savedRevision: 0,
     nextRevision: 1,
-    externalDirty: false,
+    externalDirty: false, externalRevision: 0,
     coalescingKey: null,
   };
   return { source: state };

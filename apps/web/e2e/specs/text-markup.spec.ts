@@ -46,6 +46,7 @@ test("EDIT-TEXT-MARKUP-001 sélectionne du texte natif, annote et exporte", asyn
   if (!highlightBox) throw new Error("Surlignage non mesurable.");
   await page.mouse.click(highlightBox.x + highlightBox.width / 2, highlightBox.y + highlightBox.height / 2);
   await expect(page.getByRole("region", { name: "Propriétés de l'annotation texte" })).toBeVisible();
+  await page.getByRole("region", { name: "Propriétés de l'annotation texte" }).getByRole("button", { name: "Couleur de l'annotation", exact: true }).click();
   await page.getByRole("button", { name: "Couleur #dc2626" }).click();
 
   await enterOrganizeMode(page);

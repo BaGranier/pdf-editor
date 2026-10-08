@@ -1,3 +1,10 @@
+import { LayerControls } from "./components/LayerControls";
+import { loadImageAssets } from "./storage/viewerStorage";
+import { AdvancedExportDialog } from "./components/AdvancedExportDialog";
+import { EXPORT_QUALITY_LABELS, type ExportOptions } from "./saving/exportOptions";
+import { importLocalImage } from "./images/importImage";
+import { initialImageRect } from "./editing/objectGeometry";
+import type { LineGeometry, ImageEdit } from "./editing/types";
 import {
   useCallback,
   useEffect,
@@ -347,7 +354,7 @@ type PdfPageCanvasProps = {
   registerPageRef: (pageNumber: number, node: HTMLElement | null) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddNativeText: (span: NativeTextSpan, text: string) => void;
-  onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect) => void;
+  onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect, line?: LineGeometry) => void;
   onAddFreehand: (pageNumber: number, points: import("./editing/types").PdfPoint[]) => void;
   onStartComment: (pageNumber: number, point: import("./editing/types").PdfPoint) => void;
   onPlaceSignature: (pageNumber: number, rect: PdfRect) => void;
@@ -366,6 +373,8 @@ type PdfPageCanvasProps = {
   isIncomingPage?: boolean;
   renderEnabled: boolean;
   onRenderReady?: (pageNumber: number) => void;
+  onRenderError?: (pageNumber: number) => void;
+  presentation?: boolean;
 };
 
 function PdfPageCanvas({
@@ -409,6 +418,8 @@ function PdfPageCanvas({
   isIncomingPage = false,
   renderEnabled,
   onRenderReady,
+  onRenderError,
+  presentation = false,
 }: PdfPageCanvasProps) {
   const pageRef = useRef<HTMLElement | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -466,6 +477,7 @@ function PdfPageCanvas({
     setRenderState("idle");
     setCanvasAnnotationMode(null);
     setTextLayerRevision((revision) => revision + 1);
+    clearCanvas(canvasRef.current);
   }, [shouldRender]);
 
   useEffect(() => () => {
@@ -654,6 +666,7 @@ function PdfPageCanvas({
     let isCancelled = false;
     let renderTask: RenderTask | null = null;
     let textLayerTask: PdfTextLayerRenderTask | null = null;
+    const staging = document.createElement("canvas");
     const canvas = canvasRef.current;
     const surface = surfaceRef.current;
     const textLayerContainer = textLayerRef.current;
@@ -681,7 +694,7 @@ function PdfPageCanvas({
           scale: zoom,
           rotation: ((page.rotate ?? 0) + rotation) % 360,
         });
-        const context = canvas.getContext("2d");
+        const context = staging.getContext("2d");
 
         if (!context) {
           throw new Error("Le canvas n'est pas disponible.");
@@ -692,26 +705,16 @@ function PdfPageCanvas({
           viewport.height,
           window.devicePixelRatio,
         );
-        canvas.width = renderDimensions.canvasWidth;
-        canvas.height = renderDimensions.canvasHeight;
-        canvas.style.width = `${renderDimensions.cssWidth}px`;
-        canvas.style.height = `${renderDimensions.cssHeight}px`;
-        surface.style.width = `${renderDimensions.cssWidth}px`;
-        surface.style.height = `${renderDimensions.cssHeight}px`;
-        surface.style.minWidth = "0";
-        surface.style.minHeight = "0";
-        setViewport(viewport);
-
-        context.setTransform(1, 0, 0, 1, 0, 0);
-        context.clearRect(0, 0, canvas.width, canvas.height);
+        staging.width = renderDimensions.canvasWidth;
+        staging.height = renderDimensions.canvasHeight;
 
         try {
-          textLayerTask = renderPdfTextLayer({
+          if (!presentation) textLayerTask = renderPdfTextLayer({
             page,
             viewport,
             container: textLayerContainer,
           });
-          void textLayerTask.promise.then((rendered) => {
+          void textLayerTask?.promise.then((rendered) => {
             if (!isCancelled && rendered) setTextLayerRevision((revision) => revision + 1);
           }).catch((error: unknown) => {
             if (!isCancelled) {
@@ -725,7 +728,7 @@ function PdfPageCanvas({
         }
 
         renderTask = page.render({
-          canvas,
+          canvas: staging,
           canvasContext: context,
           viewport,
           annotationMode: requestedAnnotationMode,
@@ -735,6 +738,19 @@ function PdfPageCanvas({
         await renderTask.promise;
 
         if (!isCancelled) {
+          const visibleContext = canvas.getContext("2d");
+          if (!visibleContext) throw new Error("Canvas indisponible.");
+          // Synchronous copy: the browser cannot paint between resize and draw.
+          canvas.width = staging.width;
+          canvas.height = staging.height;
+          visibleContext.drawImage(staging, 0, 0);
+          canvas.style.width = `${renderDimensions.cssWidth}px`;
+          canvas.style.height = `${renderDimensions.cssHeight}px`;
+          surface.style.width = `${renderDimensions.cssWidth}px`;
+          surface.style.height = `${renderDimensions.cssHeight}px`;
+          surface.style.minWidth = "0";
+          surface.style.minHeight = "0";
+          setViewport(viewport);
           setCanvasAnnotationMode(requestedAnnotationMode);
           setRenderState("ready");
           onRenderReady?.(displayPageNumber);
@@ -742,7 +758,10 @@ function PdfPageCanvas({
       } catch (error) {
         if (!isCancelled && (error as Error).name !== "RenderingCancelledException") {
           setRenderState("error");
+          onRenderError?.(displayPageNumber);
         }
+      } finally {
+        clearCanvas(staging);
       }
     }
 
@@ -754,9 +773,9 @@ function PdfPageCanvas({
       textLayerTask?.cancel();
       textLayerContainer.replaceChildren();
       textLayerContainer.hidden = true;
-      clearCanvas(canvas);
+      // Preserve the visible frame until its replacement has fully rendered.
     };
-  }, [displayPageNumber, onRenderReady, pdfDocument, requestedAnnotationMode, rotation, shouldRender, sourcePageNumber, zoom]);
+  }, [displayPageNumber, onRenderReady, onRenderError, presentation, pdfDocument, requestedAnnotationMode, rotation, shouldRender, sourcePageNumber, zoom]);
 
   useEffect(() => {
     return () => {
@@ -776,9 +795,11 @@ function PdfPageCanvas({
       data-source-page-number={sourcePageNumber}
       data-rotation={rotation}
       data-rendered={shouldRender ? "true" : "false"}
+      data-render-state={renderState}
       data-annotation-mode={canvasAnnotationMode === PDFJS_DISPLAY_ANNOTATION_MODES.ENABLE_FORMS ? "enable_forms" : "enable"}
       aria-label={`Page ${displayPageNumber}`}
       aria-hidden={isIncomingPage || undefined}
+      inert={presentation || isIncomingPage}
     >
       <div className="page-number">Page {displayPageNumber}</div>
       <div
@@ -924,8 +945,8 @@ function PdfPageCanvas({
             freehandStyle={freehandStyle}
             pendingSignatureImage={pendingSignatureImage}
             onAddText={(rect) => onAddText(sourcePageNumber, rect)}
-            onAddShape={(shapeType, rect) =>
-              onAddShape(sourcePageNumber, shapeType, rect)
+            onAddShape={(shapeType, rect, line) =>
+              onAddShape(sourcePageNumber, shapeType, rect, line)
             }
             onAddFreehand={(points) => onAddFreehand(sourcePageNumber, points)}
             onStartComment={(point) => onStartComment(sourcePageNumber, point)}
@@ -959,7 +980,7 @@ type PdfViewerProps = {
   onScrollPositionChange: (documentId: string, scrollLeft: number, scrollTop: number) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddNativeText: (span: NativeTextSpan, text: string) => void;
-  onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect) => void;
+  onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect, line?: LineGeometry) => void;
   onAddFreehand: (pageNumber: number, points: import("./editing/types").PdfPoint[]) => void;
   onStartComment: (pageNumber: number, point: import("./editing/types").PdfPoint) => void;
   onPlaceSignature: (pageNumber: number, rect: PdfRect) => void;
@@ -1059,14 +1080,19 @@ function PdfViewer({
     setVisiblePage(null);
   }, [document.id]);
 
+  const [pageTransitionError, setPageTransitionError] = useState<string | null>(null);
+  const reportRenderError = useCallback((pageNumber: number) => setPageTransitionError(`La page ${pageNumber} n’a pas pu être rendue. La slide courante est conservée.`), []);
+  const requestedPageRef = useRef(activePageNumber);
+  requestedPageRef.current = activePageNumber;
   const commitVisiblePage = useCallback((pageNumber: number) => {
-    if (viewerMode === "continuous" || pageNumber !== activePageNumber) return;
+    if (viewerMode === "continuous" || pageNumber !== requestedPageRef.current) return;
+    setPageTransitionError(null);
     setVisiblePage((current) =>
       current?.documentId === document.id && current.pageNumber === pageNumber
         ? current
         : { documentId: document.id, pageNumber },
     );
-  }, [activePageNumber, document.id, viewerMode]);
+  }, [document.id, viewerMode]);
 
   const pagesToRender = useMemo(() => {
     if (viewerMode === "continuous") return pages.map((page) => ({ page, isIncoming: false }));
@@ -1075,7 +1101,7 @@ function PdfViewer({
     const visible = visiblePageNumber === null
       ? null
       : pages.find((page) => page.displayPageNumber === visiblePageNumber) ?? null;
-    if (!visible || visible.id === requested.id) return [{ page: requested, isIncoming: visible === null }];
+    if (!visible || visible.id === requested.id) return [{ page: requested, isIncoming: false }];
     return [{ page: visible, isIncoming: false }, { page: requested, isIncoming: true }];
   }, [activePageNumber, pages, viewerMode, visiblePageNumber]);
 
@@ -1547,6 +1573,7 @@ function PdfViewer({
       onKeyDown={handleKeyDown}
       onMouseDown={handleMouseDown}
     >
+      {pageTransitionError ? <p className="presentation-render-error" role="status">{pageTransitionError}</p> : null}
       {document.error ? <p className="status">{document.error}</p> : null}
       <div className={viewerMode === "continuous" ? "pdf-document" : "pdf-document pdf-document--page-transition"} aria-label={`Document PDF ${document.fileName}`}>
         {pagesToRender.map(({ page, isIncoming }) => {
@@ -1569,7 +1596,7 @@ function PdfViewer({
               rotation={page.rotation}
               zoom={document.zoom}
               edits={
-                viewerMode !== "presentation" && isActiveDocumentSource
+                isActiveDocumentSource
                   ? edits.filter(
                       (edit) => edit.page === page.sourcePageIndex + 1,
                     )
@@ -1611,8 +1638,10 @@ function PdfViewer({
               }
               activeSearchHitId={activeSearchHitId}
               isIncomingPage={isIncoming}
+              presentation={viewerMode === "presentation"}
               renderEnabled={viewerMode !== "continuous" || continuousRenderPageNumbers?.has(page.displayPageNumber) === true}
               onRenderReady={viewerMode === "continuous" ? undefined : commitVisiblePage}
+              onRenderError={viewerMode === "continuous" ? undefined : reportRenderError}
             />
           );
         })}
@@ -2702,6 +2731,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   >(null);
   const [isSignatureDialogOpen, setIsSignatureDialogOpen] = useState(false);
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
+  const [isAdvancedExportOpen, setIsAdvancedExportOpen] = useState(false);
   const [saveAsDocumentId, setSaveAsDocumentId] = useState<string | null>(null);
   const [pendingCloseDocumentId, setPendingCloseDocumentId] = useState<
     string | null
@@ -2850,6 +2880,19 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const selectedCommentEdit = activePdfEdits.find((edit): edit is PdfCommentEdit => edit.id === selectedEditId && edit.type === "comment") ?? null;
   const selectedPdfEdit =
     activePdfEdits.find((edit) => edit.id === selectedEditId) ?? null;
+  useEffect(() => {
+    const used = new Set<string>(pendingSignatureImageId ? [pendingSignatureImageId] : []);
+    const copied = clipboardEditRef.current;
+    if (copied?.type === "image" || copied?.type === "signature") used.add(copied.imageId);
+    for (const state of Object.values(pdfEditsByDocument)) {
+      for (const snapshot of [{ edits: state.edits }, ...state.past, ...state.future]) {
+        for (const edit of snapshot.edits) if (edit.type === "image" || edit.type === "signature") used.add(edit.imageId);
+      }
+    }
+    setSignatureImages((images) => Object.keys(images).some((id) => !used.has(id))
+      ? Object.fromEntries(Object.entries(images).filter(([id]) => used.has(id))) : images);
+  }, [pdfEditsByDocument, pendingSignatureImageId]);
+
   const pendingSignatureImage = pendingSignatureImageId
     ? (signatureImages[pendingSignatureImageId] ?? null)
     : null;
@@ -3069,8 +3112,16 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             : null;
         });
 
+        const restoredImages = await loadImageAssets([...new Set(storedDocuments.flatMap((doc) => (doc.edits ?? []).flatMap((edit) => edit.type === "image" || edit.type === "signature" ? [edit.imageId] : [])))]);
+        if (isCancelled) { restoredDocuments.forEach(releasePdfDocument); return; }
+        setSignatureImages(restoredImages);
         setDocuments(restoredDocuments);
         storedDocuments.forEach((storedDocument) => {
+          if (storedDocument.edits) {
+            dispatchPdfEdits({ type: "hydrate", documentId: storedDocument.id, edits: storedDocument.edits });
+            if (storedDocument.editsDirty) dispatchPdfEdits({ type: "mark_dirty", documentId: storedDocument.id });
+            return;
+          }
           if (storedDocument.nativeTextEdits?.length) {
             dispatchPdfEdits({ type: "hydrate", documentId: storedDocument.id, edits: storedDocument.nativeTextEdits });
           }
@@ -3159,11 +3210,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         return;
       }
 
-      void Promise.all(restorableDocuments.map((document) => saveStoredDocument(buildViewerSnapshot(
+      void Promise.all(restorableDocuments.map((document) => saveStoredDocument({ ...buildViewerSnapshot(
         document,
         getDocumentEditingState(pdfEditsByDocument, document.id).edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text"),
         getDocumentEditingState(pdfEditsByDocument, document.id).edits.filter((edit): edit is PdfFormStateEdit => edit.type === "form_field" || edit.type === "form_lock"),
-      )))).then((results) => {
+      ), edits: getDocumentEditingState(pdfEditsByDocument, document.id).edits,
+        editsDirty: getDocumentEditingState(pdfEditsByDocument, document.id).isDirty,
+        imageAssets: [...new Set(getDocumentEditingState(pdfEditsByDocument, document.id).edits.flatMap((edit) => edit.type === "image" || edit.type === "signature" ? [edit.imageId] : []))].flatMap((id) => signatureImages[id] ? [signatureImages[id]] : []),
+      }))).then((results) => {
         if (results.some((saved) => !saved)) {
           setStorageWarning(
             "Les PDF ne peuvent pas être conservés durablement dans ce navigateur. Ils resteront ouverts jusqu'à la fermeture de l'onglet.",
@@ -3175,7 +3229,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     return () => {
       window.clearTimeout(saveTimeout);
     };
-  }, [documents, isRestoringDocuments, pdfEditsByDocument]);
+  }, [documents, isRestoringDocuments, pdfEditsByDocument, signatureImages]);
 
   useEffect(() => {
     if (isRestoringDocuments) {
@@ -3443,7 +3497,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   );
 
   const addShapeEdit = useCallback(
-    (pageNumber: number, shapeType: ShapeType, rect: PdfRect) => {
+    (pageNumber: number, shapeType: ShapeType, rect: PdfRect, line?: LineGeometry) => {
       if (!activeDocument) {
         return;
       }
@@ -3451,6 +3505,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         id: `shape-${Date.now()}-${nextShapeEditId.current++}`,
         type: "shape",
         shapeType,
+        ...line,
         page: pageNumber,
         rect,
         style: { ...DEFAULT_SHAPE_STYLE },
@@ -3681,6 +3736,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         page: pageNumber,
         rect,
       } as ShapeEdit;
+      if (sourceEdit.start && sourceEdit.end && edit.type === "shape") {
+        const dx = rect.x0 - sourceEdit.rect.x0, dy = rect.y0 - sourceEdit.rect.y0;
+        edit.start = { x: sourceEdit.start.x + dx, y: sourceEdit.start.y + dy };
+        edit.end = { x: sourceEdit.end.x + dx, y: sourceEdit.end.y + dy };
+      }
     } else {
       edit = {
         ...clonePdfEdit(sourceEdit),
@@ -3735,6 +3795,29 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     window.addEventListener("keydown", handleSelectedEditDeletion);
     return () => window.removeEventListener("keydown", handleSelectedEditDeletion);
   }, [deletePdfEdit, selectedEditId]);
+
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const insertImage = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    const document = activeDocument;
+    const page = activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber);
+    if (!file || !document || !page || page.sourceDocumentId !== document.id) return;
+    try {
+      const [draft, digest] = await Promise.all([importLocalImage(file), file.arrayBuffer().then((bytes) => crypto.subtle.digest("SHA-256", bytes))]);
+      if (documentsRef.current.every((candidate) => candidate.id !== document.id)) return;
+      const pdfPage = await document.pdfDocument.getPage(page.sourcePageIndex + 1);
+      const image: SignatureImage = { ...draft, id: `image-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}` };
+      const edit: ImageEdit = { id: `image-edit-${crypto.randomUUID()}`, type: "image", page: page.sourcePageIndex + 1, imageId: image.id, rect: initialImageRect(pdfPage.view, image.width, image.height) };
+      setSignatureImages((images) => images[image.id] ? images : { ...images, [image.id]: image });
+      dispatchPdfEdits({ type: "add", documentId: document.id, edit });
+      setSelectedEditId(edit.id);
+      setActiveEditingTool("select");
+      setExportFeedback(null);
+    } catch (error) {
+      setExportFeedback({ kind: "error", message: error instanceof Error ? error.message : "Image invalide." });
+    }
+  };
 
   const prepareSignatureImage = useCallback((draft: SignatureImageDraft) => {
     const image: SignatureImage = {
@@ -4376,6 +4459,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     documentId: string,
     operation: "export" | "save" | "save_as" | "print",
     requestedOutputName?: string,
+    exportOptions?: ExportOptions,
   ): Promise<boolean> => {
     setIsExporting(true);
     setExportFeedback(null);
@@ -4384,6 +4468,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         documentId,
         operation,
         requestedOutputName,
+        exportOptions,
         activeDocumentId,
         outputName,
         saveToOutputDir,
@@ -4428,9 +4513,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         ? ` ${textOverflowWarningCount} zone${textOverflowWarningCount > 1 ? "s" : ""} de texte dépassai${textOverflowWarningCount > 1 ? "ent" : "t"} de ${textOverflowWarningCount > 1 ? "leur" : "son"} cadre. ${textOverflowWarningCount > 1 ? "Leur export a" : "Son export a"} été réalisé en mode best effort.`
         : "";
       const document = documents.find((candidate) => candidate.id === documentId);
-      const desktopSource = document?.source.type === "desktop"
-        ? document.source
-        : null;
+      const desktopSource = document?.saveDestination ?? null;
       const nativeSave = isDesktopRuntime()
         ? operation === "save_as" || operation === "export"
           ? await saveDesktopPdfAs(exported.downloadedName, exported.pdfBlob)
@@ -4458,6 +4541,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           })
         : downloadPdfToBrowser(exported.pdfBlob, exported.downloadedName);
       const operationLabel = operation === "export" ? "exporté" : "sauvegardé";
+      const sizeReport = exportOptions ? ` Taille source : ${documents.filter((doc) => organizationPlans[documentId]?.pages.some((page) => page.sourceDocumentId === doc.id) || doc.id === documentId).reduce((size, doc) => size + doc.file.size, 0).toLocaleString("fr-FR")} octets. Taille exportée : ${exported.pdfBlob.size.toLocaleString("fr-FR")} octets. Profil : ${EXPORT_QUALITY_LABELS[exportOptions.quality]}.` : "";
       const exportMessage = exported.outputWarning
         ? `PDF ${operationLabel} avec succès : ${savedFileName}. ${exported.outputWarning}`
         : exported.outputStatus === "saved"
@@ -4465,7 +4549,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           : `PDF ${operationLabel} avec succès : ${savedFileName}.`;
 
       try {
-        if (isDesktopRuntime() && operation !== "export") {
+        if ((isDesktopRuntime() && operation !== "export") || Boolean(exportOptions?.openPassword || exportOptions?.ownerPassword)) {
           if (operation === "save_as" && nativeSave) {
             setDocuments((currentDocuments) => currentDocuments.map((candidate) =>
               candidate.id === documentId
@@ -4473,14 +4557,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                     ...candidate,
                     fileName: nativeSave.fileName,
                     workingSaveName: nativeSave.fileName,
-                    source: { type: "desktop", documentId: nativeSave.documentId },
+                    saveDestination: nativeSave,
                   }
                 : candidate,
             ));
           }
           setExportFeedback({
             kind: exported.outputWarning || textOverflowWarningCount > 0 ? "warning" : "success",
-            message: `${exportMessage}${textOverflowMessage}`,
+            message: `${exportMessage}${sizeReport}${textOverflowMessage}`,
           });
         } else {
           const { usageWarnings: exportUsageWarnings } =
@@ -4498,7 +4582,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             exportUsageWarnings.length > 0
               ? "warning"
               : "success",
-          message: `${exportMessage}${textOverflowMessage} Ouvert dans l'application en mode lecture.${exportUsageWarnings
+          message: `${exportMessage}${sizeReport}${textOverflowMessage} Ouvert dans l'application en mode lecture.${exportUsageWarnings
             .map((warning) => ` Avertissement: ${warning}`)
             .join("")}`,
         });
@@ -4506,11 +4590,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       } catch {
         setExportFeedback({
           kind: "warning",
-          message: `${exportMessage}${textOverflowMessage} Le téléchargement est disponible, mais l'ouverture dans l'application a échoué.`,
+          message: `${exportMessage}${sizeReport}${textOverflowMessage} Le téléchargement est disponible, mais l'ouverture dans l'application a échoué.`,
         });
       }
-      if (operation === "save" || operation === "save_as" || (isDesktopRuntime() && desktopSource)) {
-        dispatchPdfEdits({ type: "mark_saved", documentId });
+      if (operation === "save" || operation === "save_as") {
+        const savedState = getDocumentEditingState(pdfEditsByDocument, documentId);
+        dispatchPdfEdits({ type: "mark_saved", documentId, revision: savedState.revision, edits: savedState.edits, externalRevision: savedState.externalRevision });
       }
       return true;
     } catch (error) {
@@ -4582,7 +4667,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   );
 
   const openActiveSaveAsDialog = useCallback(() => {
-    if (!activeDocument || !isActiveDocumentDirty || isExporting) {
+    if (!activeDocument || isExporting) {
       return;
     }
 
@@ -4602,7 +4687,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     if (!activeDocument || !isActiveDocumentDirty || isExporting) {
       return;
     }
-    if (isDesktopRuntime() && activeDocument.source.type === "desktop") {
+    if (isDesktopRuntime() && activeDocument.saveDestination) {
       void generatePdfForDocument(
         activeDocument.id,
         "save",
@@ -4642,12 +4727,18 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     const document = documents.find((candidate) => candidate.id === documentId);
     setPendingCloseDocumentId(null);
     setCloseAfterSaveDocumentId(documentId);
-    if (isDesktopRuntime() && document?.source.type === "desktop") {
+    if (isDesktopRuntime() && document?.saveDestination) {
       void generatePdfForDocument(documentId, "save", document.fileName).then((didSave) => {
         if (!didSave) {
           setCloseAfterSaveDocumentId(null);
           setPendingCloseDocumentId(documentId);
         }
+      });
+      return;
+    }
+    if (isDesktopRuntime() && document) {
+      void generatePdfForDocument(documentId, "save_as", getSuggestedPdfSaveName(document.fileName, document.workingSaveName)).then((didSave) => {
+        if (!didSave) { setCloseAfterSaveDocumentId(null); setPendingCloseDocumentId(documentId); }
       });
       return;
     }
@@ -4692,6 +4783,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         desktop: isDesktopRuntime(),
         platform: getShortcutPlatform(),
       });
+      if (isAdvancedExportOpen) return;
       if (!commandId || (commandId !== "overlay.escape" && isEditableKeyboardTarget(event.target))) return;
 
       const editingState = activeDocument
@@ -4701,7 +4793,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         "file.open": saveAsDocumentId || pendingCloseDocumentId ? null : openPdfFromUser,
         "file.close": activeDocument ? closeActiveDocumentByKeyboard : null,
         "file.save": activeDocument && isActiveDocumentDirty && !isExporting ? saveActiveDocument : null,
-        "file.saveAs": activeDocument && isActiveDocumentDirty && !isExporting ? openActiveSaveAsDialog : null,
+        "file.saveAs": activeDocument && !isExporting ? openActiveSaveAsDialog : null,
         "print.document": activeDocument && !isExporting ? printActiveDocument : null,
         "history.undo": workspaceMode === "read" && editingState?.canUndo ? undoPdfEdit : null,
         "history.redo": workspaceMode === "read" && editingState?.canRedo ? redoPdfEdit : null,
@@ -4760,6 +4852,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     documents.length,
     isFileMenuOpen,
     isSignatureDialogOpen,
+    isAdvancedExportOpen,
     isActiveDocumentDirty,
     isExporting,
     eyedropperTarget,
@@ -5028,7 +5121,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       return;
     }
 
-    const pickerWidth = 9.5 * 16;
+    const pickerWidth = 15.5 * 16;
     const pickerHeight = 3.5 * 16;
     const left = anchor.right + 8 + pickerWidth <= window.innerWidth
       ? anchor.right + 8
@@ -5132,10 +5225,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                     type="button"
                     role="menuitem"
                     onClick={openActiveSaveAsDialog}
-                    disabled={!isActiveDocumentDirty || isExporting}
+                    disabled={isExporting}
                   >
                     Enregistrer sous… <span aria-hidden="true">{getAppCommandShortcutLabel("file.saveAs")}</span>
                   </button>
+                  <button type="button" role="menuitem" disabled={isExporting} onClick={() => { setIsFileMenuOpen(false); setIsAdvancedExportOpen(true); }}>Exporter / Finaliser…</button>
                   <button
                     type="button"
                     role="menuitem"
@@ -5185,6 +5279,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           }}
         />
       </header>
+      {isAdvancedExportOpen ? <AdvancedExportDialog busy={isExporting} onCancel={() => setIsAdvancedExportOpen(false)} onExport={async (options) => {
+        if (!activeDocument) return false;
+        const saved = await generatePdfForDocument(activeDocument.id, "export", undefined, options);
+        if (saved) setIsAdvancedExportOpen(false);
+        return saved;
+      }} /> : null}
       {isSignatureDialogOpen ? (
         <SignatureDialog
           onCancel={() => {
@@ -5402,6 +5502,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <span>Signature</span>
           </button>
 
+          <input ref={imageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier image" hidden onChange={(event) => void insertImage(event)} />
+          <button type="button" aria-label="Image" title="Insérer une image PNG ou JPEG" disabled={!activeDocument || workspaceMode !== "read" || activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourceDocumentId !== activeDocument.id} onClick={() => imageInputRef.current?.click()}><span aria-hidden="true">▧</span><span>Image</span></button>
           <div className="tool-rail__shape-group">
             <button
               ref={shapePickerButtonRef}
@@ -5691,12 +5793,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <section className="shape-edit-toolbar" aria-label="Propriétés de l'annotation texte"><strong>{selectedTextMarkupEdit.kind === "highlight" ? "Surlignage" : selectedTextMarkupEdit.kind === "underline" ? "Soulignement" : "Barré"}</strong><ColorPicker label="Couleur de l'annotation" value={selectedTextMarkupEdit.color} onChange={(color) => updatePdfEdit({ ...selectedTextMarkupEdit, color })} /><button type="button" onClick={() => deletePdfEdit(selectedTextMarkupEdit.id)}>Supprimer l'annotation</button></section>
           ) : workspaceMode === "read" && selectedCommentEdit ? (
             <CommentInspector edit={selectedCommentEdit} onUpdate={updatePdfEdit} onDelete={() => deletePdfEdit(selectedCommentEdit.id)} />
-          ) : selectedPdfEdit?.type === "signature" ? (
+          ) : (selectedPdfEdit?.type === "signature" || selectedPdfEdit?.type === "image") ? (
             <section className="properties-panel__empty">
-              <strong>Signature</strong>
-              <p>Déplacez ou redimensionnez la signature directement sur la page.</p>
+              <strong>{selectedPdfEdit.type === "image" ? "Image" : "Signature graphique"}</strong>
+              <p>Déplacez ou redimensionnez l’image directement sur la page. Son ratio est conservé.</p>
               <button type="button" onClick={() => deletePdfEdit(selectedPdfEdit.id)}>
-                Supprimer la signature
+                Supprimer {selectedPdfEdit.type === "image" ? "l’image" : "la signature"}
               </button>
             </section>
           ) : (
@@ -5714,6 +5816,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               </span>
             </section>
           )}
+          <LayerControls edits={activeDocumentEditingState?.edits ?? []} page={(activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourcePageIndex ?? -1) + 1} selectedId={selectedEditId} onSelect={setSelectedEditId} onReorder={(editId, direction) => activeDocument && dispatchPdfEdits({ type: "reorder", documentId: activeDocument.id, editId, direction })} />
         </aside> : <button type="button" className="properties-panel-toggle" aria-label="Afficher les propriétés" title="Afficher les propriétés" onClick={() => setIsPropertiesPanelVisible(true)}>❮</button>}
       </section>
 
@@ -5726,9 +5829,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               aria-label="Formes"
               style={shapePickerPosition}
             >
-              {(["rectangle", "ellipse", "line"] as const).map((shapeType) => {
-                const label = shapeType === "rectangle" ? "Rectangle" : shapeType === "ellipse" ? "Ellipse" : "Ligne";
-                const icon = shapeType === "rectangle" ? "▭" : shapeType === "ellipse" ? "○" : "╱";
+              {(["rectangle", "square", "ellipse", "circle", "line", "arrow"] as const).map((shapeType) => {
+                const label = { rectangle: "Rectangle", square: "Carré", ellipse: "Ellipse", circle: "Cercle", line: "Ligne", arrow: "Flèche" }[shapeType];
+                const icon = { rectangle: "▭", square: "□", ellipse: "⬭", circle: "○", line: "╱", arrow: "↗" }[shapeType];
                 return (
                   <button
                     key={shapeType}
