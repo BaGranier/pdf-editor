@@ -6,7 +6,8 @@ Le backend Windows utilise maintenant un Job Object : la disparition forcée
 du shell termine aussi ses descendants PyInstaller. Un dossier temporaire peut
 subsister après crash brutal. Le MSI est construit, mais son installation sur
 le poste QA est empêchée par les privilèges administrateur. DPI/multi-écran,
-impression produite et autonomie OCR restent à qualifier.
+impression produite et smoke test de VM clean restent à qualifier. Le package
+Windows inclut désormais l'OCR ; sa portée est décrite dans le rapport 004.
 
 L’audit natif Windows 11 et ses limites sont détaillés dans
 [WINDOWS_STABILIZATION_AUDIT_001.md](WINDOWS_STABILIZATION_AUDIT_001.md).
@@ -165,8 +166,11 @@ npm.cmd run desktop:build
 sans modifier cette politique. Les scripts Python du projet sont lancés par uv
 en mode module ; aucun alias `python3` Windows n’est nécessaire.
 
-L’OCR utilise les outils système sur PATH : Tesseract, OCRmyPDF, Ghostscript
-(`gswin64c`) et QPDF. Vérifier les versions et `tesseract --list-langs`.
+Le développement web historique utilise Tesseract, OCRmyPDF et Ghostscript
+(`gswin64c`) système. QPDF CLI reste un outil de QA. Le sidecar Windows gelé
+utilise son propre moteur MuPDF/Tesseract et ses langues eng/fra/osd, indépendamment
+du PATH et de `TESSDATA_PREFIX`. Vérifier les versions et `tesseract --list-langs`
+uniquement pour le parcours web historique.
 `TESSDATA_PREFIX`, s’il est utilisé, doit désigner un dossier contenant les
 langues **et** les configurations Tesseract (`configs`, `tessconfigs`). L’audit
 a d’abord reproduit l’erreur explicite de langue `fra` absente, puis exécuté
@@ -175,7 +179,8 @@ l’OCR `eng`/`fra` avec un dossier QA complet. LibreOffice reste réservé à l
 Les bundles se trouvent dans `src-tauri/target/release/bundle/msi` et `nsis`.
 WebView2 installé a été testé ; le bundle conserve le bootstrapper Tauri par
 défaut pour le runtime manquant. Ce cas et l’installation hors ligne restent
-à qualifier. Les outils OCR ne sont pas inclus dans ces installateurs.
+à qualifier sur VM clean. Les langues OCR et notices sont incluses dans ces
+installateurs ; aucun exécutable Ghostscript/QPDF/OCRmyPDF n'y est ajouté.
 
 ## Développement
 
@@ -309,25 +314,34 @@ Cette commande :
 5. construit le frontend puis le bundle Tauri de la plateforme courante.
 
 Le sidecar PyInstaller embarque l'interpréteur Python et les modules Python du
-moteur. Il n'embarque pas actuellement les exécutables système appelés par le
-parcours OCR (`ocrmypdf`, Tesseract, Ghostscript et QPDF), ni leurs données de
-langue. Les bundles produits aujourd'hui ne doivent donc pas être présentés
-comme des installateurs autonomes validés pour toutes les fonctionnalités et
-toutes les plateformes.
+moteur. `prepare-ocr-resources.py` télécharge les langues eng/fra/osd d'une
+révision tessdata_fast verrouillée, contrôle leurs SHA-256 et produit un manifest.
+PyInstaller les embarque sous `ocr/` ; `sys._MEIPASS/ocr` est résolu à chaque
+exécution, sans chemin d'installation fixe ni dépendance au dépôt. Les notices
+sont également installées sous `licenses/ocr/`. Les bundles multi-plateformes
+ne sont pas tous qualifiés : voir le rapport Windows 004.
 
 ### Stratégie des dépendances OCR et conversion
 
-La stratégie actuelle est **dépendance système détectée au runtime**, sur les
-trois OS. Le backend reste l'unique autorité pour le diagnostic : il retourne
-des erreurs métier explicites lorsque Tesseract, une langue ou OCRmyPDF manque.
-Le viewer, l'édition et l'ouverture de PDF continuent de fonctionner.
+Le sidecar gelé lance un worker `--ocr-worker` dans le même exécutable Python
+packagé. Il utilise `Pixmap.pdfocr_tobytes` et le moteur OCR intégré au wheel
+PyMuPDF 1.26.3 ; aucun nouveau package Python majeur n'est ajouté. Les langues
+sont validées avant OCR, y compris par checksum. Une ressource absente/corrompue
+produit une erreur contrôlée, sans fallback vers un Tesseract utilisateur.
+Le développement non gelé conserve le parcours système historique, ou utilise
+explicitement `PDF_ENGINE_OCR_RUNTIME` vers les ressources préparées pour la QA.
+Le worker est isolé, borné à 40 millions de pixels par page avant allocation et
+supervisé avec timeout/annulation ; les descendants appartiennent au Job Object.
+Le mode intégré ne redresse pas les pages inclinées. `osd` est inclus, sans
+promesse d'orientation automatique. Force OCR rasterise les pages à 200 DPI et
+ajoute une couche texte ; skip-text conserve les pages déjà numériques.
 
 | Outil / donnée | Utilisation réelle | Windows | macOS | Linux | Décision de release actuelle |
 | --- | --- | --- | --- | --- | --- |
-| Tesseract | langues installées et OCR indirect via OCRmyPDF | dépendance système | dépendance système | dépendance système | Ne pas embarquer avant inventaire des binaires, données et notices ; Tesseract est sous Apache-2.0, mais ses dépendances et données doivent être revues séparément. |
-| `tessdata` `eng`, `fra` | langues proposées par l'interface | dépendance système | dépendance système | dépendance système | Ne pas présumer de la disponibilité : vérifier `tesseract --list-langs` lors de la QA native. |
-| OCRmyPDF | commande OCR appelée par `app/ocr.py` | dépendance système | dépendance système | dépendance système | Pas de bundle ; revue des dépendances transitives et de sa licence MPL-2.0 requise avant redistribution. |
-| Ghostscript | dépendance d'OCRmyPDF | dépendance système | dépendance système | dépendance système | Pas de bundle ; décision juridique préalable obligatoire (AGPL ou licence commerciale selon le mode de redistribution). |
+| MuPDF/Tesseract/Leptonica | OCR du sidecar gelé | intégré au wheel PyMuPDF | non qualifié | non qualifié | MuPDF AGPL-3.0 ou licence commerciale ; décision de distribution encore requise. |
+| `tessdata` `eng`, `fra`, `osd` | langues locales | ressources verrouillées embarquées | non qualifié | non qualifié | Apache-2.0, notice incluse ; SHA et versions exactes dans le rapport 004. |
+| OCRmyPDF | OCR web historique | développement seulement | parcours historique | parcours historique | Pas de redistribution dans le package 004. |
+| Ghostscript | dépendance du parcours OCRmyPDF | développement seulement | parcours historique | parcours historique | Pas de redistribution dans le package 004 ; licence AGPL/commerciale reste pertinente pour d'autres stratégies. |
 | QPDF CLI | contrôle PDF de QA ; aucun appel CLI direct dans le moteur applicatif | outil système QA | outil système QA | outil système QA | Pas de bundle ; distinguer ce CLI des bibliothèques PDF utilisées par les dépendances OCR. |
 | LibreOffice | validation visuelle DOCX, pas la conversion applicative courante | non requis au runtime | non requis au runtime | non requis au runtime | Réservé à la QA, non distribué avec l'application. |
 
@@ -475,7 +489,7 @@ native.
 | Save As vers une destination native | OK, annulation et overwrite | Non testé | Implémenté ; QA dialogue interactive restante |
 | Save vers un chemin déjà choisi | OK, destination après Save As | Non testé | Implémenté ; test Rust/Frontend OK, QA interactive restante |
 | Sidecar, port dynamique, health/restart/shutdown | Dev/release OK ; crash/retry testé, voir rapport | Configuré ; non testé nativement | Dev et `.deb` : WebView, port dynamique, health et arrêt sidecar OK ; crash détecté, restart UI manuel à qualifier |
-| OCR `eng` / `fra` | OK natif avec outils système et tessdata QA | Configuré comme dépendance système ; non testé | Configuré comme dépendance système ; non testé |
+| OCR `eng` / `fra` | OK sidecar installé avec runtime embarqué et PATH isolé ; VM clean ENV | Non qualifié | Non qualifié |
 | Conversion | TXT/DOCX/PNG OK via sidecar installé | Configuré ; non testé | Configuré ; non testé |
 | Impression et AcroForms | Aperçu/demande d’impression seulement ; champs/verrou local OK | Non testé | Non testé |
 | Signature Windows | Non supporté | Non supporté | Non supporté |
@@ -485,8 +499,8 @@ Il n'existe pas encore d'installateur final validé comme entièrement autonome.
 Node.js, Rust/Cargo, Visual Studio Build Tools, MSVC, le Windows SDK, Xcode et le
 Python de développement sont des outils de construction, pas des dépendances
 fonctionnelles que l'utilisateur final devrait installer. En revanche, tant que
-le packaging OCR n'est pas finalisé, une build locale peut encore dépendre des
-outils OCR système listés plus haut.
+la VM clean n'est pas accessible, son smoke test reste ENV. Le package Windows
+004 contient le runtime OCR ; le développement web conserve les outils système.
 
 ### Procédure de QA native avant release
 

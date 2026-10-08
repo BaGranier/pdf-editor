@@ -26,9 +26,18 @@ if ($Action -ne 'Snapshot') {
 $snapshot = @($ids | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue } | ForEach-Object {
     [pscustomobject]@{ pid = $_.Id; name = $_.ProcessName; workingSetBytes = $_.WorkingSet64; privateBytes = $_.PrivateMemorySize64; cpuSeconds = $_.CPU; handles = $_.HandleCount }
 })
-$output = Join-Path $repository 'data/output/windows-qa-002/performance'
+$qaOutput = if ($env:PDF_STUDIO_QA_OUTPUT) { $env:PDF_STUDIO_QA_OUTPUT } else { 'data/output/windows-qa-002' }
+$output = [IO.Path]::GetFullPath((Join-Path $repository (Join-Path $qaOutput 'performance')))
+if (!$output.StartsWith((Join-Path $repository 'data/output') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'QA output must remain under repository data/output.' }
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $remainingPorts = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in $ports -and $_.LocalAddress -eq '127.0.0.1' } | Select-Object -ExpandProperty LocalPort)
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('com.local.pdfstudio/backend-' + $application.Id)
+foreach ($candidate in $all | Where-Object { $_.ProcessId -in $ids -and $_.Name -eq 'pdf-engine.exe' }) {
+    if ($candidate.CommandLine -match '--temp-dir\s+(?:"([^"]+)"|(\S+))') {
+        $argument = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+        $temporary = [IO.Path]::GetFullPath($argument)
+        break
+    }
+}
 [ordered]@{ timestamp = [DateTime]::UtcNow.ToString('o'); action = $Action; before = $processes; after = $snapshot; beforeListenPorts = $ports; remainingListenPorts = $remainingPorts; temporaryDirectoryRemains = (Test-Path -LiteralPath $temporary) } | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8 -LiteralPath (Join-Path $output ($Action + '.json'))
 $snapshot | Select-Object pid,name,workingSetBytes

@@ -188,10 +188,14 @@ téléchargements et peuvent être rouverts dans l'application.
 ### OCR local
 
 L'action **OCR** produit un nouveau PDF recherchable sans fermer ni modifier le
-document source. Elle accepte `fra`, `eng` et `fra+eng`, avec correction
-d'inclinaison optionnelle. OCRmyPDF, Tesseract, Ghostscript et QPDF doivent être
-installés sur la machine. Les erreurs de dépendance ou de PDF invalide sont
-renvoyées avec des codes métier stables.
+document source. Elle accepte `fra`, `eng` et `fra+eng`. Le package Windows
+embarque MuPDF/Tesseract, Python et les données de langue : aucune installation
+manuelle d'outils OCR n'est nécessaire. Ce moteur travaille à 200 DPI et ne
+redresse pas automatiquement les scans inclinés. En développement web, le
+parcours historique utilise OCRmyPDF, Tesseract et Ghostscript système ; QPDF
+CLI est un validateur QA. Les erreurs restent contrôlées et préservent la source.
+La campagne clean et les obligations de redistribution sont détaillées dans
+[QA_WINDOWS_CLEAN_INTEGRATION_004.md](QA_WINDOWS_CLEAN_INTEGRATION_004.md).
 
 ### Conversion locale
 
@@ -263,12 +267,24 @@ ne permet pas de réécrire directement une destination déjà choisie.
 possède ses dialogues natifs et identifiants de fichiers opaques ; leur statut
 par plateforme est détaillé dans [DESKTOP.md](DESKTOP.md).
 
-**Image** insère un PNG ou JPEG local (5 Mio maximum, 40 millions de pixels,
-20 000 pixels par axe). L'image est centrée, agrandie si minuscule, bornée à 60 % de la page et conserve
-son ratio lors du resize. Le panneau **Plans des objets ajoutés** permet de
+**Image** insère un PNG ou JPEG local. Les dimensions sont vérifiées avant
+décodage : 40 millions de pixels et 20 000 pixels par axe. Le budget de lecture
+compressée est 32 Mio par asset, avec 192 Mio compressés et 512 Mio RGBA estimés
+pour les assets uniques de la session ; aucune limite de champ multipart à
+1 Mio ne s'applique aux nouveaux imports. Les originaux ne sont pas dégradés
+systématiquement. L'image est centrée, bornée à 60 % de la page et librement
+redimensionnable ; Shift ou **Conserver les proportions** verrouille son ratio.
+**Rogner l’image** permet de déplacer/redimensionner un cadre, valider, annuler
+avec Escape ou rétablir l'image entière, avec undo/redo. Le crop est non destructif
+et persiste avec les documents web restaurables. Les documents natifs ouverts
+par identifiant Tauri restent volontairement limités à la session.
+Le panneau **Plans des objets ajoutés** permet de
 sélectionner un objet couvert et de le placer devant/derrière les autres edits.
 Le contenu PDF original reste la base. Carré et cercle gardent une géométrie 1:1 ;
-les extrémités du trait/flèche sont déplaçables. Les images n'ont pas d'outil de
+les extrémités du trait/flèche sont déplaçables. Les markups locaux participent
+au même ordre que les formes et sont exportés comme vecteurs ; les annotations
+déjà présentes dans le PDF source conservent leur comportement PDF.
+Les images n'ont pas d'outil de
 rotation dédié ; SVG et WebP ne sont pas acceptés.
 
 **Exporter / Finaliser…** propose :
@@ -300,8 +316,9 @@ certificat n'est pas livrée** : audit et critères sont dans
 [SIGNATURE_NUMERIQUE_004.md](SIGNATURE_NUMERIQUE_004.md).
 
 Validation WSL : voir [le rapport du ticket 003](QA_EDITOR_EXPORT_PRESENTATION_003.md).
-**Validation Windows native : NON RÉALISÉE / À REQUALIFIER** pour ces évolutions.
-Les rapports Windows existants restent des photographies historiques.
+La requalification Windows installée et ses limites clean/1080×1900 sont dans
+[le rapport 004](QA_WINDOWS_CLEAN_INTEGRATION_004.md).
+Les rapports Windows précédents restent des photographies historiques.
 
 ### Limites d'usage recommandées
 

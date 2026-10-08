@@ -67,8 +67,10 @@ Le moteur examine chaque page avant la conversion :
   numérisée ;
 - `always` force l’OCR sur toutes les pages.
 
-Tesseract, OCRmyPDF et les langues demandées doivent être installés sur la
-machine pour les modes nécessitant l’OCR. Une dépendance absente produit le code
+Le package Windows utilise son runtime MuPDF/Tesseract et ses langues embarquées
+sans installation manuelle. L'OCR de conversion utilise alors 200 DPI, sans
+redressement automatique. Le mode web de développement conserve OCRmyPDF,
+Tesseract et les langues système. Une dépendance absente produit le code
 stable `DEPENDENCY_UNAVAILABLE`.
 
 Sous Debian ou Ubuntu :

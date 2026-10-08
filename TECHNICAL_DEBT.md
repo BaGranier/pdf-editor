@@ -72,6 +72,17 @@ netteté du texte fin.
 Le code ne contient pas de branche Firefox : le canvas PDF.js utilise le même
 backing store proportionnel au DPR dans les deux navigateurs.
 
+## IMAGE-MEMORY-004 — Assets et sessions longues
+
+Les nouveaux imports/exports ont des budgets pixels/RGBA/copies et transportent
+les binaires hors du champ JSON limité à 1 Mio. Dix instances partagent un asset.
+La RAM après plusieurs exports ouverts reste élevée ; le stress natif sur dix
+imports ne prouve pas l'absence de fuite GPU ou de références d'historique.
+Qualifier vingt assets distincts, plusieurs cycles et la fermeture des documents,
+puis vérifier le pruning existant, qui tient compte des documents, undo/redo,
+signature en attente et presse-papiers. Les budgets portent sur la session et ne sont pas un seuil de RAM
+totale. Le rapport 004 contient les snapshots, sans faux seuil de release.
+
 ## PDF-PERF-001 — Limites mémoire et exports extrêmes
 
 Les seuils de 50 Mo, 250 pages et huit documents ouverts restent des
@@ -85,10 +96,9 @@ taille du bundle PDF.js reste non bloquant.
 
 ## BACKEND-TEST-001 — Multipart FastAPI d'intégration
 
-Les validations unitaires du moteur PDF sont couvertes, mais le multipart HTTP
-complet n'a pas encore de couverture d'intégration dédiée. Ajouter ce parcours
-avec un corpus de PDF synthétique si la dépendance de test correspondante est
-acceptée.
+Le ticket 004 ajoute le multipart ASGI réel avec images synthétiques de 1,4 à
+10,8 Mo, sans nouvelle dépendance majeure. Les exports sont rouverts et inspectés.
+Les charges extrêmes et erreurs de transport réelles restent à étendre.
 
 ## NATIVE-TEXT-002 — Shaping et transformations avancées
 
@@ -103,13 +113,17 @@ contournés par rasterisation, faux style CSS ou remplacement visuel opaque.
 La campagne native est détaillée dans
 [WINDOWS_NATIVE_QUALIFICATION_002.md](WINDOWS_NATIVE_QUALIFICATION_002.md).
 Le crash forcé du shell termine désormais les descendants backend par Job Object,
-mais son dossier temporaire peut subsister. Restent : DPI natifs variés et
+mais son dossier temporaire peut subsister. Le ticket 004 nettoie au démarrage
+les dossiers de plus de 24 h munis d'une lease, seulement si le PID est prouvé
+absent ; les dossiers legacy sans lease sont conservés. Restent : DPI natifs variés et
 multi-écran, installation MSI avec droits administrateur, WebView2 absent/offline,
 impression produite, chemins réseau/OneDrive, association par double-clic et
 validation visuelle LibreOffice. Une VM sans outils dev est nécessaire pour
-qualifier l'autonomie utilisateur. L'OCR dépend encore d'outils système ; un
-bundle OCR offline est recommandé après audit de redistribution, sans nouvelle
-stratégie lourde implémentée ici. La baseline actuelle n'est pas un seuil de release.
+qualifier l'autonomie utilisateur. Le sidecar Windows embarque désormais OCR
+MuPDF/Tesseract et les langues eng/fra/osd. Le smoke clean et l'écran 1080×1900
+restent ENV (VM inaccessible). L'absence de deskew, la qualité des scans tournés,
+le statut AGPL/licence commerciale et la mémoire cumulée des images restent à
+traiter avant diffusion générale. La baseline n'est pas un seuil de release.
 
 ## DESKTOP-LINUX-001 — QA native et bundle Linux
 

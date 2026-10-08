@@ -388,6 +388,55 @@ Ces contrôles sont documentés dans le résumé, mais ne bloquent pas la campag
 - comportement avec des PDF confidentiels ou non reproductibles ;
 - validation finale du niveau de gravité des anomalies.
 
+## Windows clean et intégration 004
+
+Le rapport [QA_WINDOWS_CLEAN_INTEGRATION_004.md](QA_WINDOWS_CLEAN_INTEGRATION_004.md)
+sépare tests automatiques, WebView2 installée sur poste de développement et VM
+clean. Une résolution Playwright 1080×1900 ne valide ni le DPI Windows ni la
+work area native. La VM clean était inaccessible pendant cette campagne.
+
+```powershell
+uv run --project services/pdf-engine python -m scripts.generate-clean-integration-fixtures
+./scripts/windows-qa-environment.ps1 -Output data/output/windows-qa-004/environment.json
+# Après desktop:build, installation isolée sous le dépôt :
+./scripts/windows-clean-qa.ps1 -Action Install
+./scripts/windows-clean-qa.ps1 -Action Launch
+$env:PDF_STUDIO_QA_OUTPUT='data/output/windows-qa-004'
+node scripts/windows-qa-cdp.cjs startup
+node scripts/windows-qa-cdp.cjs files
+node scripts/windows-qa-cdp.cjs integration-004
+./scripts/windows-clean-qa.ps1 -Action Close
+./scripts/windows-clean-qa.ps1 -Action Uninstall
+```
+
+`Launch` isole le PATH du processus, le profil WebView2 et les temporaires ;
+il n'installe aucun outil OCR système. `files` teste les vrais dialogues et
+Ctrl+S initial. `integration-004` teste crop/resize, dix images partageant un
+asset exporté, les profils et snapshots mémoire de l'arbre complet. Les documents
+natifs opaques ne sont pas restaurés via IndexedDB ; la migration/persistance
+web sont couvertes séparément. Fermer la session avant chaque scénario OCR,
+puis lancer `Launch -Pdf apps/web/e2e/fixtures/conversion-scan.pdf` et `ocr-eng`,
+ou la fixture `conversion-scan-french.pdf` et `ocr-fra`. `ocr-multipage` accepte
+la fixture ignorée `data/output/windows-qa-004/fixtures/scan-multipage-rotated.pdf`.
+`ocr-errors-004` altère puis restaure uniquement les langues de l'extraction QA
+sous `data/output/windows-qa-004/temp`. `ocr-close-004` ferme normalement pendant
+un OCR du corpus synthétique `scan-interrupt-50.pdf`. `idle-004` ferme les documents
+QA (avec discard explicite si dirty) avant le snapshot mémoire. `editor-004`
+couvre plans mixtes/carré/cercle/flèche/AES et `presentation-004` le fullscreen réel.
+Les anciennes instructions OCR 002 restent historiques ; les scénarios d'absence
+PATH système ne s'appliquent plus au sidecar 004 embarqué.
+
+```powershell
+cd apps/web
+$env:PLAYWRIGHT_BROWSERS_PATH=Join-Path $PWD '../../.playwright-browsers'
+npx.cmd playwright test clean-integration.spec.ts editor-export-presentation.spec.ts storage-upgrade.spec.ts text-markup.spec.ts
+```
+
+Les fixtures volumineuses sont générées avant E2E, sous `data/output`, et ne
+sont pas committées. Les nouveaux tests examinent de vrais exports PDF,
+pas seulement le statut HTTP. Aucune mesure locale ne remplace le smoke final
+sur VM restaurée, le lancement menu Démarrer ou l'association système `.pdf`.
+
 
 ## Régression EDITOR-FEATURES-EXPORT-PRESENTATION-003
 

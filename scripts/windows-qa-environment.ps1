@@ -18,6 +18,11 @@ public static class PdfQaDisplays {
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr monitor, ref Info info);
     [DllImport("shcore.dll")] static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint x, out uint y);
     [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+    [StructLayout(LayoutKind.Explicit, Size=220)] public struct Mode {
+        [FieldOffset(68)] public ushort size;
+        [FieldOffset(84)] public uint orientation;
+    }
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern bool EnumDisplaySettings(string device, int mode, ref Mode settings);
     public static object[] Read() {
         var results = new List<object>();
         var previous = SetThreadDpiAwarenessContext(new IntPtr(-4));
@@ -26,10 +31,13 @@ public static class PdfQaDisplays {
                 var info = new Info { size = Marshal.SizeOf(typeof(Info)) };
                 if (!GetMonitorInfo(monitor, ref info)) throw new Exception("GetMonitorInfo failed");
                 uint x, y; int result = GetDpiForMonitor(monitor, 0, out x, out y);
+                var mode = new Mode { size = 220 };
+                bool orientationRead = EnumDisplaySettings(info.device, -1, ref mode);
                 results.Add(new { name = info.device, bounds = info.monitor, workArea = info.work,
                     primary = (info.flags & 1) != 0, dpiX = result == 0 ? (uint?)x : null,
                     dpiY = result == 0 ? (uint?)y : null, dpiResult = result,
-                    orientation = info.monitor.bottom-info.monitor.top > info.monitor.right-info.monitor.left ? "portrait" : "landscape" });
+                    displayOrientation = orientationRead ? (uint?)mode.orientation : null,
+                    orientationSource = "EnumDisplaySettings dmDisplayOrientation (0 default, 1 rotate90, 2 rotate180, 3 rotate270); not inferred from resolution" });
                 return true;
             }, IntPtr.Zero);
         } finally { SetThreadDpiAwarenessContext(previous); }
@@ -76,6 +84,7 @@ $result = [ordered]@{
     timestamp = [DateTime]::UtcNow.ToString('o'); commit = (& git -C $repository rev-parse HEAD)
     os = @{ caption = $os.Caption; version = $os.Version; build = $os.BuildNumber; architecture = $os.OSArchitecture }
     ram = @{ totalKiB = $os.TotalVisibleMemorySize; availableKiB = $os.FreePhysicalMemory }
+    virtualization = @(Get-CimInstance Win32_ComputerSystem | Select-Object Manufacturer,Model,HypervisorPresent,NumberOfLogicalProcessors)
     cpu = @(Get-CimInstance Win32_Processor | Select-Object Name,Architecture,NumberOfLogicalProcessors)
     monitors = @([PdfQaDisplays]::Read()); gpu = @($gpu); webview2 = $runtime
     tools = $tools; msvcDirectories = $msvc; windowsSdkDirectories = $sdk
