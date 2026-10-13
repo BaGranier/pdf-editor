@@ -106,11 +106,11 @@ restent ignorés. Les scripts n'utilisent aucun document personnel.
 
 | Domaine modifié | Sentinelles à rejouer dans Chromium et Firefox |
 | --- | --- |
-| Documents/persistance | `pdf-opening`, `document-navigation`, `persistence`, `storage-upgrade`, `multi-document` |
+| Documents/persistance | `password-protection`, `pdf-opening`, `document-navigation`, `persistence`, `storage-upgrade`, `multi-document` |
 | Viewer/layout | `viewer-modes`, `viewer-page-transition`, `ui-workspace-responsive`, `zoom-and-scroll` |
 | Sauvegarde/export | `save-editing`, `export`, `organize-pages`, `editor-export-presentation` |
 | Édition/composition | `text-editing`, `native-text-editing`, `shape-editing`, `freehand-controls`, `text-markup`, `comments`, `clean-integration` |
-| OCR/conversion | `ocr`, `conversion`, `conversion-docx-regression` |
+| OCR/conversion | `ocr-orientation`, `ocr`, `conversion`, `conversion-docx-regression` |
 | Forms/impression/accessibilité | `pdf-forms`, `print-workflow`, `accessibility-smoke`, `keyboard-navigation`, `shortcuts-audit` |
 
 Les noms correspondent aux fichiers `apps/web/e2e/specs/*.spec.ts`.
@@ -123,6 +123,34 @@ Les tests `QA-E2E-015`/`PERF-MEMORY-002` contrôlent gros PDF, cycles open/close
 ressources DOM et IndexedDB. Le heap JS Chromium ne mesure pas la RAM totale/GPU ;
 Firefox n'offre pas la même métrique. Les tests de composition couvrent ordre/alpha
 et pixels PDF ; ils ne remplacent pas toute la qualification de scène native.
+
+## PDF protégés et scans orientés
+
+Le petit corpus versionné se régénère sans document personnel :
+
+```bash
+uv run --project services/pdf-engine python -m scripts.generate-protection-ocr-fixtures
+uv run --project services/pdf-engine python -m scripts.prepare-ocr-resources
+uv run --project services/pdf-engine python -m scripts.measure-ocr-orientation
+cd services/pdf-engine
+uv run pytest tests/test_passwords.py tests/test_ocr_orientation.py tests/test_ocr_runtime.py -s
+```
+
+Les identifiants de la fixture protégée sont exclusivement synthétiques :
+`synthetic-open` et `synthetic-owner`. La génération reproduit le contenu ; le
+chiffrement emploie des valeurs aléatoires, donc les octets ne sont pas identiques.
+`test_ocr_orientation` mesure chaque cas et compare deskew activé/désactivé ; absence
+d’OCRmyPDF ou de ressources préparées est un skip explicite, pas une qualification.
+Les E2E `password-protection` et `ocr-orientation` tournent dans Chromium/Firefox :
+annulation/retry/rendu/restauration sans secret et OCR réel du scan tourné.
+Les anciennes sentinelles ouverture/sauvegarde restent nécessaires.
+
+Rejouer sur l’artefact Windows final : sélection via dialogue natif puis prompt
+applicatif, association OS d’un PDF protégé, mauvais mot de passe/annulation/retry,
+édition/undo/redo, Save As non chiffré et export avec un nouveau mot de passe,
+OCR packagé eng/fra/mixte et rotations offline, ressources absentes, fermeture
+pendant traitement, crash du worker/backend puis retry. Le prompt de mot de passe
+est React ; Playwright ne qualifie pas les dialogues natifs de fichiers.
 
 ## Résultats et contrôle visuel
 

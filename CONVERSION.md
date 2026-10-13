@@ -57,7 +57,7 @@ OCRmyPDF/Tesseract/Ghostscript système. Architecture et ressources :
 | Sortie | 200 Mio |
 | Conversion hors OCR | 180 secondes |
 | OCR | 600 secondes |
-| PDF protégé par mot de passe | Non pris en charge |
+| PDF protégé par mot de passe | Ouvrir et authentifier dans l’éditeur avant conversion/OCR |
 
 Les erreurs exposent un code métier et une étape de traitement, sans contenu
 PDF : `INVALID_PDF`, `UNSUPPORTED_TARGET_FORMAT`, `INVALID_PAGE_RANGE`,
@@ -65,6 +65,56 @@ PDF : `INVALID_PDF`, `UNSUPPORTED_TARGET_FORMAT`, `INVALID_PAGE_RANGE`,
 `DEPENDENCY_UNAVAILABLE`, `INVALID_OUTPUT_FILENAME`.
 Le frontend vérifie un Blob non vide commençant par `%PDF-`, y compris après
 restauration IndexedDB. Les réponses publient les métriques via `X-Conversion-*`.
+
+## Correction d’orientation OCR
+
+`POST /ocr` accepte un champ multipart optionnel `rotation` (défaut `0` ;
+`90`, `180`, `270` degrés horaires). Les anciens payloads restent valides.
+Le dialogue propose la même correction sur Web et Desktop. Elle s’applique aux
+pixels de toutes les pages source, indépendamment du plan d’organisation édité.
+Utiliser 270° pour corriger un scan tourné de 90° horaire. À 90°/270°, largeur
+et hauteur sont échangées ; nombre de pages et échelle physique sont conservés.
+La correction travaille sur un temporaire dans un worker supervisé, sans modifier
+l’original ; timeout/erreur/arrêt conservent la source. Les rotations PDF existantes
+restent gérées par le pipeline embarqué lorsque la correction vaut zéro.
+
+Le deskew OCRmyPDF système reste optionnel. MuPDF 1.26.3 ne fournit pas d’option
+deskew via `Pixmap.pdfocr_tobytes` ; aucun binaire ni dépendance supplémentaire
+n’est ajouté au package. Le dialogue desktop désactive cette option et le backend
+retourne `OCR_DESKEW_UNAVAILABLE` si elle est demandée. Aucune détection automatique
+d’orientation n’est annoncée ; des orientations différentes selon les pages
+demandent encore une préparation séparée. La conversion automatique ne reprend
+pas les options du dialogue OCR : convertir le PDF OCR produit pour les utiliser.
+
+Le corpus `ocr-oriented-*` couvre 0/90/180/270°, ±3°, faible contraste et trois
+pages mixtes français/anglais ; les fixtures `conversion-scan*` couvrent aussi
+les langues séparément. Les tests contrôlent témoins, accents `été`/`café`, ordre
+des lignes OCR et dimensions, puis rouvrent avec PyMuPDF et pypdf. Espaces sont
+normalisés pour les témoins ; extraction sans tri géométrique pour l’ordre OCR.
+D’autres accents et mots peuvent rester mal reconnus (par exemple ç ou « line ») ;
+ce corpus n’est pas une garantie sur des scans réels et ne définit aucun CER/WER.
+
+Mesures reproductibles : `pytest tests/test_ocr_orientation.py -s` avec ressources
+eng/fra verrouillées (appel direct du worker MuPDF, hors lancement/API). Sur Linux, page droite MuPDF ≈0,28–0,74 s, rotations corrigées
+≈0,35–0,73 s, inclinaisons ≈0,31–0,66 s, trois pages ≈0,78–1,91 s ; sorties
+≈98–168 ko/page, ≈378 ko pour trois pages. OCRmyPDF 14.0.1 sur ce même corpus :
+≈0,71–0,74 s/page sans deskew, ≈0,95–1,15 s avec ; trois pages ≈1,56 contre 2,71 s.
+Sans correction, les témoins des trois rotations sont absents ; après correction,
+ils sont retrouvés avec les six mots accentués contrôlés. Le gain des témoins sur ±3° ne justifie pas une nouvelle dépendance embarquée.
+Mesure isolée sans PATH via `scripts.measure-ocr-orientation` : CPU ≈0,30 s pour
+la page droite, ≈0,31–0,34 s après correction (contre ≈0,55–0,93 s avant),
+≈0,92 s pour trois pages ; pic RSS du processus ≈93–95 Mo/page et 112 Mo pour
+trois pages. Artefacts ignorés : `data/output/protection-ocr-007/metrics.json`.
+Ces durées ponctuelles varient selon la machine et la concurrence. Le plafond
+embarqué reste 40 millions de pixels/page à 200 DPI (120 Mo pour le seul buffer
+RGB, hors buffers OCR) ; la correction préalable réutilise le contenu PDF sans
+allouer une seconde image pleine page dans le parent.
+
+Les erreurs d’ouverture distinguent `PDF_PASSWORD_REQUIRED`,
+`PDF_PASSWORD_INVALID`, `PDF_PERMISSION_DENIED` et, lorsque le moteur le distingue,
+`PDF_ENCRYPTION_UNSUPPORTED`. Un document illisible reste `INVALID_PDF`.
+Une rotation invalide retourne `OCR_ORIENTATION_UNAVAILABLE` ; l’échec d’un worker
+retourne `OCR_FAILED`, sans exception brute dans l’interface.
 
 ## Validation
 

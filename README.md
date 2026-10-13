@@ -17,14 +17,28 @@ Linux et macOS nécessitent une qualification propre.
 - Organisation/composition multi-source ; sauvegarde desktop native avec Save As
   initial préservant la source, téléchargement de copies dans le navigateur.
 - Export avec compression, aplatissement explicite formulaires/annotations,
-  AES-256 et permissions ; pas de dialogue d'ouverture des PDF protégés.
+  AES-256 et permissions ; ouverture des PDF protégés avec saisie ponctuelle.
 - OCR local eng/fra/mixte embarqué dans le sidecar Windows ; conversion DOCX,
-  TXT, HTML, PNG/JPEG et aperçu d'impression de l'état courant.
+  TXT, HTML, PNG/JPEG, correction manuelle des scans tournés et aperçu d'impression de l'état courant.
 
 La signature graphique, le chiffrement et l'aplatissement sont distincts de la
 signature cryptographique avec certificat, qui n'est pas implémentée. La fidélité
 DOCX complexe et la qualité OCR dépendent du document. Les permissions PDF peuvent
 être ignorées par des lecteurs tiers.
+
+## PDF protégés
+
+La saisie masquée permet annulation et nouvelles tentatives. Le mot de passe
+transite uniquement dans un formulaire POST vers le moteur local ; il n’est
+conservé ni dans IndexedDB, ni dans les préférences, ni dans undo/redo ou les logs.
+Après authentification, l’éditeur utilise une copie déchiffrée : comme les autres
+PDF ouverts, **cette copie de travail peut être conservée dans IndexedDB**.
+Le fichier original reste intact. Save / Save As produisent une copie non chiffrée ;
+Exporter / Finaliser permet un nouveau chiffrement AES-256 avec un secret choisi
+séparément. Le mot de passe d’ouverture n’est jamais réutilisé pour la sortie.
+Si les permissions ne permettent pas tous les outils exposés (édition, copie,
+annotations, formulaires, assemblage et impression), le mot de passe propriétaire
+est requis. Le mode lecture seule des PDF restreints n’est pas proposé.
 
 ## Architecture
 

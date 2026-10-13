@@ -63,3 +63,14 @@ arbitraires restent limités par le pipeline actuel ; aucun reflow sémantique
 des paragraphes voisins. Éviter les contournements par rasterisation ou masque
 opaque. Le contrat et les limites sont dans
 [NATIVE_TEXT_EDITING.md](NATIVE_TEXT_EDITING.md).
+
+## Copie de travail des PDF protégés
+
+Les backends d’édition continuent de recevoir des PDF non chiffrés. L’ouverture
+protégée authentifie avec PyMuPDF et crée une copie de travail déchiffrée ; aucun
+secret n’entre dans les contrats persistés. IndexedDB conserve cette copie comme
+les autres documents. Les secrets JavaScript/Python ne peuvent pas être garantis
+physiquement effacés de la mémoire : champs et références sont libérés après
+utilisation, sans stockage applicatif. Un mode lecture seule respectant chaque
+permission PDF séparément demanderait un modèle de capacités dans les outils ;
+actuellement, toute restriction d’un outil exposé requiert le mot de passe propriétaire.

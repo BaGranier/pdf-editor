@@ -21,8 +21,8 @@ nécessiter une qualification native ; les items ci-dessous distinguent les deux
     WebView2 absent/offline et migration d'une version installée restent incomplets.
   - Critère de sortie : VM restaurée sans Node/Rust/Python/OCR système ; installation
     NSIS, lancement menu/raccourci sans console parasite, exports avec polices
-    intégrées (écart de résolution décrit dans la dette), OCR eng/fra/mixte offline,
-    erreurs OCR contrôlées, upgrade avec préférences/données compatibles et
+    intégrées (écart de résolution décrit dans la dette), OCR eng/fra/mixte offline
+    avec correction de rotation, erreurs OCR contrôlées, upgrade avec préférences/données compatibles et
     désinstallation vérifiés. Tester WebView2 absent/corrompu et définir une
     politique offline explicite sans promettre un runtime actuellement non embarqué.
 - [ ] Fermer la qualification native des parcours essentiels et de l'affichage.
@@ -30,7 +30,9 @@ nécessiter une qualification native ; les items ci-dessous distinguent les deux
     et association système ne sont pas validés sur l'artefact final.
   - Critère de sortie : vrais dialogues Open/Save/Save As, annulation/overwrite
     Oui/Non, Unicode/chemin long/lecture seule/destination disparue ; source
-    préservée après erreur. Double-clic et « Ouvrir avec », DPI 100–200 %,
+    préservée après erreur. PDF protégés : prompt applicatif, annulation/mauvais
+    mot de passe/retry, Save As déchiffré et export avec secret indépendant.
+    Double-clic et « Ouvrir avec », DPI 100–200 %,
     portrait 1080×1900/work area réelle et transitions multi-écran exercés.
     Export Organiser, AcroForms/markup, conversion UI, présentation et impression
     vers PDF réellement produit contrôlés. Écarts résolus ou support réduit
@@ -38,12 +40,11 @@ nécessiter une qualification native ; les items ci-dessous distinguent les deux
 
 ## P1 — Prochains chantiers produit
 
-- [ ] Ouvrir un PDF protégé avec saisie ponctuelle du mot de passe : l'export
-  AES-256 existe, mais le dialogue d'ouverture manque. Préserver les secrets
-  éphémères et distinguer mauvais mot de passe/document invalide.
-- [ ] Améliorer l'OCR des scans inclinés ou orientés dans le runtime embarqué :
-  évaluer deskew/orientation, qualité et coût sur corpus synthétique tourné,
-  faible contraste et mixte ; annoncer seulement les capacités qualifiées.
+- [ ] Étendre l’OCR aux orientations hétérogènes par page et qualifier des scans
+  réels inclinés/faible contraste : la correction manuelle globale 0/90/180/270°
+  est implémentée sur Web/Desktop et qualifiée sur corpus synthétique Linux.
+  Le runtime embarqué n’a pas de deskew ni détection automatique fiable ; aucune
+  dépendance supplémentaire n’est justifiée par les mesures actuelles.
 
 ## P2 — Qualité / robustesse
 
