@@ -61,7 +61,7 @@ test("QA-OCR-001 @smoke exécute un OCR réel et ouvre un PDF consultable", asyn
       name: "conversion-scan_OCR.pdf, document actif",
     }),
   ).toBeVisible();
-  await expect(page.locator(".document-item")).toHaveCount(2);
+  await expect(page.locator(".document-tab")).toHaveCount(2);
   await expect(page.getByRole("status")).toContainText(
     "OCR terminé. Le document OCR a été ouvert.",
   );

@@ -23,7 +23,7 @@ test("QA-E2E-014 @smoke refuse un PDF corrompu puis accepte un PDF valide", asyn
       .getByRole("complementary", { name: "Documents ouverts" })
       .getByText("Impossible d'ouvrir pdf-corrupted.pdf."),
   ).toBeVisible();
-  await expect(page.locator(".document-item")).toHaveCount(0);
+  await expect(page.locator(".document-tab")).toHaveCount(0);
   const persistedAfterFailure = await page.evaluate(async () => {
     const request = indexedDB.open("pdf-editor-mvp-db");
     const database = await new Promise<IDBDatabase>((resolve) => {
@@ -50,13 +50,13 @@ test("QA-E2E-016 @slow @regression garde huit documents accessibles", async ({
   await qa.measure("open-eight-documents", async () => {
     for (let index = 0; index < 8; index += 1) {
       await page.locator("input[type='file'][aria-label='Ouvrir un PDF']").setInputFiles(fixtures.onePage);
-      await expect(page.locator(".document-item")).toHaveCount(index + 1);
+      await expect(page.locator(".document-tab")).toHaveCount(index + 1);
     }
   });
 
-  await expect(page.locator(".document-item")).toHaveCount(8);
+  await expect(page.locator(".document-tab")).toHaveCount(8);
   await page.locator(".document-select").first().click();
   await expect(page.locator(".document-select").first()).toHaveAttribute("aria-current", "true");
   await page.locator(".document-close").first().click();
-  await expect(page.locator(".document-item")).toHaveCount(7);
+  await expect(page.locator(".document-tab")).toHaveCount(7);
 });

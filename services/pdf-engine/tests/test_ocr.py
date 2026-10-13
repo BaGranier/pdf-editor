@@ -169,8 +169,8 @@ def test_encrypted_pdf_is_rejected_and_cleaned(
     with pytest.raises(ocr.OcrError) as error:
         run(ocr.ocr_pdf(file=make_upload(encrypted.getvalue())))
 
-    assert_ocr_error(error, "INVALID_PDF")
-    assert "protégés" in error.value.message
+    assert_ocr_error(error, "PDF_PASSWORD_REQUIRED")
+    assert "mot de passe" in error.value.message
     assert not temporary_directory.exists()
 
 
@@ -773,3 +773,33 @@ def test_real_ocrmypdf_integration() -> None:
     finally:
         assert response.background is not None
         run(response.background())
+
+
+def test_orientation_validation_before_temporary_files(monkeypatch, tmp_path):
+    temporary = track_temporary_directory(monkeypatch, tmp_path)
+    with pytest.raises(ocr.OcrError) as error:
+        run(ocr.ocr_pdf(file=make_upload(make_pdf()), rotation=45))
+    assert error.value.code == "OCR_ORIENTATION_UNAVAILABLE"
+    assert not temporary.exists()
+
+
+def test_orientation_worker_failure_keeps_source_and_cleans(monkeypatch, tmp_path):
+    source = make_pdf()
+    upload = make_upload(source)
+    temporary = track_temporary_directory(monkeypatch, tmp_path)
+    install_languages(monkeypatch)
+    commands = []
+
+    async def failure(command, **kwargs):
+        commands.append(command)
+        assert Path(command[-2]).read_bytes() == source
+        raise ocr.OcrError(502, "OCR_FAILED", "Échec contrôlé.")
+
+    monkeypatch.setattr(ocr, "execute_ocr", failure)
+    with pytest.raises(ocr.OcrError) as error:
+        run(ocr.ocr_pdf(file=upload, deskew=False, rotation=90))
+    assert error.value.code == "OCR_FAILED"
+    assert "--rotate-only" in commands[0]
+    assert not temporary.exists()
+    upload.file.seek(0)
+    assert upload.file.read() == source

@@ -34,6 +34,7 @@ from app.export_options import ExportOptions, finalize_export
 from app.conversion import router as conversion_router
 from app.conversion.errors import ConversionError
 from app.ocr import OcrError, router as ocr_router
+from app.passwords import router as password_router
 
 
 class HealthResponse(BaseModel):
@@ -413,6 +414,7 @@ app.add_middleware(
     ],
 )
 app.include_router(ocr_router)
+app.include_router(password_router)
 app.include_router(conversion_router)
 
 

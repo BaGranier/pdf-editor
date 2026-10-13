@@ -23,6 +23,7 @@ export function OcrDialog({
   const firstControlRef = useRef<HTMLSelectElement | null>(null);
   const [languages, setLanguages] = useState<OcrLanguages>("fra");
   const [deskew, setDeskew] = useState(supportsDeskew);
+  const [rotation, setRotation] = useState<0 | 90 | 180 | 270>(0);
 
   useEffect(() => {
     firstControlRef.current?.focus();
@@ -41,7 +42,7 @@ export function OcrDialog({
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!isProcessing) {
-      onSubmit({ languages, deskew });
+      onSubmit({ languages, deskew, ...(rotation ? { rotation } : {}) });
     }
   }
 
@@ -83,6 +84,16 @@ export function OcrDialog({
             <p>L’OCR sera appliqué à toutes les pages du document.</p>
             <p>Le traitement de toutes les pages peut prendre plusieurs minutes.</p>
           </div>
+          <label className="ocr-field">
+            <span>Correction de rotation des scans</span>
+            <select value={rotation} disabled={isProcessing} onChange={(event) => setRotation(Number(event.target.value) as 0 | 90 | 180 | 270)}>
+              <option value={0}>Aucune</option>
+              <option value={90}>90° sens horaire</option>
+              <option value={180}>180°</option>
+              <option value={270}>90° sens antihoraire</option>
+            </select>
+          </label>
+          <p>La correction s’applique à toutes les pages source. La détection automatique d’orientation n’est pas disponible.</p>
 
           <label className="ocr-checkbox-field">
             <input

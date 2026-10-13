@@ -8,6 +8,7 @@ from pathlib import Path
 import fitz
 
 from app.ocr_runtime import validate_runtime
+from app.ocr_orientation import rotate_scan
 
 OCR_DPI = 200
 MAX_PAGE_PIXELS = 40_000_000  # RGB + OCR buffers; reject before allocating.
@@ -32,7 +33,9 @@ def run_worker(
             rotation = page.rotation
             page.set_rotation(0)
             try:
-                pixmap = page.get_pixmap(dpi=OCR_DPI, colorspace=fitz.csRGB, alpha=False)
+                pixmap = page.get_pixmap(
+                    dpi=OCR_DPI, colorspace=fitz.csRGB, alpha=False
+                )
             finally:
                 page.set_rotation(rotation)
             data = pixmap.pdfocr_tobytes(
@@ -50,12 +53,21 @@ def run_worker(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runtime", type=Path, required=True)
-    parser.add_argument("--language", required=True)
-    parser.add_argument("--mode", choices=("force-ocr", "skip-text"), required=True)
+    parser.add_argument("--runtime", type=Path)
+    parser.add_argument("--language", default="fra")
+    parser.add_argument(
+        "--mode", choices=("force-ocr", "skip-text"), default="force-ocr"
+    )
+    parser.add_argument("--rotate-only", action="store_true")
+    parser.add_argument("--rotation", type=int, choices=(0, 90, 180, 270), default=0)
     parser.add_argument("input", type=Path)
     parser.add_argument("output", type=Path)
     options = parser.parse_args()
+    if options.rotate_only:
+        rotate_scan(options.input, options.output, options.rotation)
+        return
+    if options.runtime is None:
+        parser.error("--runtime is required for OCR")
     run_worker(
         options.input, options.output, options.runtime, options.language, options.mode
     )

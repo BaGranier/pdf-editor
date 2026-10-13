@@ -121,6 +121,60 @@ describe("OCR in App", () => {
     vi.unstubAllGlobals();
   });
 
+  it("keeps a protected PDF closed on cancel and wrong password, then persists only working bytes", async () => {
+    render(<App />);
+    const protectedFile = new File(["%PDF-locked"], "protected.pdf", { type: "application/pdf" });
+    const input = within(screen.getByRole("complementary", { name: "Documents ouverts" })).getByLabelText("Ouvrir un PDF");
+    const rejectTask = () => ({
+      promise: Promise.reject(Object.assign(new Error("Password required"), { name: "PasswordException" })),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    });
+    vi.mocked(pdfjsLib.getDocument).mockImplementation(rejectTask as never);
+    fireEvent.change(input, { target: { files: [protectedFile] } });
+    const cancelled = await screen.findByRole("dialog", { name: "PDF protégé" });
+    fireEvent.click(within(cancelled).getByRole("button", { name: "Annuler" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "PDF protégé" })).not.toBeInTheDocument());
+    expect(loadViewerPreferences()?.documentOrder ?? []).toEqual([]);
+    const fetchMock = vi.fn().mockResolvedValueOnce(createResponse({ ok: false, json: async () => ({ code: "PDF_PASSWORD_INVALID" }) })).mockResolvedValueOnce(createResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    fireEvent.change(input, { target: { files: [protectedFile] } });
+    let dialog = await screen.findByRole("dialog", { name: "PDF protégé" });
+    fireEvent.change(within(dialog).getByLabelText("Mot de passe"), { target: { value: "synthetic-wrong" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Ouvrir" }));
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: "protected.pdf, document actif" })).not.toBeInTheDocument();
+    vi.mocked(pdfjsLib.getDocument).mockReturnValue({ promise: Promise.resolve(createPdfDocumentMock()), destroy: vi.fn().mockResolvedValue(undefined) } as never);
+    dialog = screen.getByRole("dialog", { name: "PDF protégé" });
+    fireEvent.change(within(dialog).getByLabelText("Mot de passe"), { target: { value: "synthetic-open" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Ouvrir" }));
+    const opened = await screen.findByRole("button", { name: "protected.pdf, document actif" });
+    expect(opened).not.toHaveAttribute("aria-describedby");
+    await waitFor(() => expect(loadViewerPreferences()?.documentOrder).toHaveLength(1));
+    let stored: Awaited<ReturnType<typeof loadStoredDocument>> = null;
+    await waitFor(async () => {
+      stored = await loadStoredDocument(loadViewerPreferences()!.documentOrder[0]);
+      expect(stored).not.toBeNull();
+    });
+    expect(JSON.stringify(stored)).not.toContain("synthetic-open");
+    expect(await stored!.content.text()).not.toContain("synthetic-open");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("transports explicit scan rotation without changing existing OCR defaults", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await openPdf();
+    const dialog = openOcrDialog();
+    fireEvent.change(within(dialog).getByLabelText("Correction de rotation des scans"), { target: { value: "270" } });
+    launchOcr();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const form = fetchMock.mock.calls[0][1].body as FormData;
+    expect(form.get("rotation")).toBe("270");
+    expect(form.get("mode")).toBe("force-ocr");
+    expect(form.get("deskew")).toBe("true");
+  });
+
   it("shows a disabled OCR button until a PDF is active", async () => {
     render(<App />);
 

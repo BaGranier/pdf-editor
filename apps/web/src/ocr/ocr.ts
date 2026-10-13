@@ -3,6 +3,7 @@ export type OcrLanguages = "fra" | "eng" | "fra+eng";
 export type OcrOptions = {
   languages: OcrLanguages;
   deskew: boolean;
+  rotation?: 0 | 90 | 180 | 270;
 };
 
 type OcrErrorPayload = {
@@ -21,6 +22,9 @@ const OCR_ERROR_MESSAGES: Record<string, string> = {
   OCR_TOOL_UNAVAILABLE: "Le moteur OCR n'est pas disponible.",
   OCR_TIMEOUT: "Le traitement OCR a dépassé le délai autorisé.",
   OCR_FAILED: "Le moteur OCR n'a pas pu traiter le document.",
+  OCR_ORIENTATION_UNAVAILABLE: "Cette correction d’orientation n’est pas disponible.",
+  OCR_DESKEW_UNAVAILABLE: "Le redressement n’est pas disponible dans ce moteur OCR.",
+  PDF_PASSWORD_REQUIRED: "Ouvrez le document avec son mot de passe avant l’OCR.",
   OCR_OUTPUT_INVALID: "Le serveur n'a pas produit un PDF valide.",
 };
 
@@ -149,6 +153,7 @@ export async function requestOcrPdf(
   formData.append("languages", options.languages);
   formData.append("mode", "force-ocr");
   formData.append("deskew", String(options.deskew));
+  if (options.rotation) formData.append("rotation", String(options.rotation));
 
   let response: Response;
 

@@ -1,3 +1,5 @@
+import { PdfPasswordDialog } from "./components/PdfPasswordDialog";
+import { unlockWorkingPdf, PdfOpenCancelled, PdfUnlockError } from "./pdf/passwords";
 import { LayerControls } from "./components/LayerControls";
 import { loadImageAssets } from "./storage/viewerStorage";
 import { AdvancedExportDialog } from "./components/AdvancedExportDialog";
@@ -2663,6 +2665,19 @@ type AppProps = {
 export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const storedPreferences = useMemo(() => loadViewerPreferences(), []);
   const nextDocumentId = useRef(1);
+  const [passwordPrompt, setPasswordPrompt] = useState<{ error: string; answer: (password: string | null) => void } | null>(null);
+  const passwordAnswer = useRef<((password: string | null) => void) | null>(null);
+  const protectedOpeningRef = useRef(false);
+  useEffect(() => () => { passwordAnswer.current?.(null); }, []);
+  const promptPassword = useCallback((error: string) => new Promise<string | null>((resolve) => {
+    const answer = (password: string | null) => {
+      passwordAnswer.current = null;
+      setPasswordPrompt(null);
+      resolve(password);
+    };
+    passwordAnswer.current = answer;
+    setPasswordPrompt({ error, answer });
+  }), []);
   const documentsRef = useRef<OpenPdfDocument[]>([]);
   const openFileInputRef = useRef<HTMLInputElement | null>(null);
   const presentationContainerRef = useRef<HTMLElement | null>(null);
@@ -4276,13 +4291,39 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     removeOrganizationPlan(activeDocument.id);
   }, [activeDocument, organizationPlans]);
 
+  const authenticateWorkingFile = useCallback(async (file: File) => {
+    if (protectedOpeningRef.current) throw new PdfUnlockError("Une ouverture protégée est déjà en cours.");
+    protectedOpeningRef.current = true;
+    try { return await unlockWorkingPdf(file, backendUrl, promptPassword); }
+    finally { protectedOpeningRef.current = false; }
+  }, [backendUrl, promptPassword]);
+
   const loadOpenPdfDocument = useCallback(async (
     file: File,
     workingSaveName: string | null = null,
     source: DocumentSource = { type: "web" },
   ): Promise<OpenPdfDocument> => {
-    const data = new Uint8Array(await file.arrayBuffer());
-    const loadingTask = pdfjsLib.getDocument({ data });
+    if (protectedOpeningRef.current) throw new PdfUnlockError("Une ouverture protégée est déjà en cours.");
+    let data = new Uint8Array(await file.arrayBuffer());
+    let loadingTask = pdfjsLib.getDocument({ data });
+    try {
+      const initialDocument = await loadingTask.promise;
+      if (typeof initialDocument.getPermissions === "function" && await initialDocument.getPermissions() !== null) {
+        await loadingTask.destroy().catch(() => undefined);
+        file = await authenticateWorkingFile(file);
+        data = new Uint8Array(await file.arrayBuffer());
+        loadingTask = pdfjsLib.getDocument({ data });
+      }
+    } catch (error) {
+      await loadingTask.destroy().catch(() => undefined);
+      if (error instanceof PdfOpenCancelled || error instanceof PdfUnlockError) throw error;
+      if (!(error instanceof Error) || error.name !== "PasswordException") {
+        throw new PdfUnlockError("Le PDF est invalide ou son chiffrement n’est pas pris en charge.");
+      }
+      file = await authenticateWorkingFile(file);
+      data = new Uint8Array(await file.arrayBuffer());
+      loadingTask = pdfjsLib.getDocument({ data });
+    }
 
     try {
       const pdfDocument = await loadingTask.promise;
@@ -4305,9 +4346,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       };
     } catch (error) {
       void loadingTask.destroy().catch(() => undefined);
-      throw error;
+      throw new PdfUnlockError("La copie de travail PDF n’a pas pu être ouverte.");
     }
-  }, []);
+  }, [authenticateWorkingFile]);
 
   const openGeneratedPdfDocument = useCallback(
     async (
@@ -4382,6 +4423,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       });
       setStatus(usageWarnings.map((warning) => `Avertissement: ${warning}`).join(" "));
     } catch (error) {
+      if (error instanceof PdfOpenCancelled) { setStatus("Ouverture annulée."); return; }
       setExportFeedback({
         kind: "error",
         message: error instanceof Error ? error.message : "Impossible d'ouvrir le PDF sélectionné.",
@@ -4404,6 +4446,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             { type: "desktop", documentId: startupFile.documentId },
           ));
         } catch (error) {
+          if (error instanceof PdfOpenCancelled) continue;
           setExportFeedback({
             kind: "error",
             message: error instanceof Error ? error.message : `Impossible d'ouvrir ${startupFile.file.name}.`,
@@ -4785,7 +4828,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         desktop: isDesktopRuntime(),
         platform: getShortcutPlatform(),
       });
-      if (isAdvancedExportOpen) return;
+      if (isAdvancedExportOpen || protectedOpeningRef.current) return;
       if (!commandId || (commandId !== "overlay.escape" && isEditableKeyboardTarget(event.target))) return;
 
       const editingState = activeDocument
@@ -5032,8 +5075,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     for (const file of pdfFiles) {
       try {
         openedDocuments.push(await loadOpenPdfDocument(file));
-      } catch {
-        failedFileNames.push(file.name);
+      } catch (error) {
+        if (!(error instanceof PdfOpenCancelled)) {
+          failedFileNames.push(file.name);
+          if (error instanceof PdfUnlockError) setExportFeedback({ kind: "error", message: error.message });
+        }
       }
     }
 
@@ -5402,6 +5448,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         </div>
       ) : null}
 
+      {passwordPrompt ? <PdfPasswordDialog error={passwordPrompt.error} onAnswer={passwordPrompt.answer} /> : null}
       {isOcrDialogOpen && activeDocument ? (
         <OcrDialog
           supportsDeskew={!isDesktopRuntime()}

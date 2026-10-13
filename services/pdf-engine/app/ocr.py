@@ -259,8 +259,10 @@ def _read_pdf_page_count(path: Path) -> int:
             pdf_file.seek(0)
             reader = PdfReader(pdf_file, strict=True)
             if reader.is_encrypted:
-                raise invalid_pdf(
-                    "Les PDF protégés ne sont pas pris en charge pour l'OCR."
+                raise OcrError(
+                    401,
+                    "PDF_PASSWORD_REQUIRED",
+                    "Ouvrez le document avec son mot de passe avant l’OCR.",
                 )
             return len(reader.pages)
     except OcrError:
@@ -478,9 +480,18 @@ async def ocr_pdf(
         ),
     ] = DEFAULT_OCR_MODE,
     deskew: Annotated[bool, Form(description="Redresser les pages")] = True,
+    rotation: Annotated[
+        int, Form(description="Correction horaire des pixels : 0, 90, 180, 270")
+    ] = 0,
 ) -> FileResponse:
     request_started = time.perf_counter()
     validate_mode(mode)
+    if rotation not in (0, 90, 180, 270):
+        raise OcrError(
+            422,
+            "OCR_ORIENTATION_UNAVAILABLE",
+            "Choisissez une rotation de 0, 90, 180 ou 270 degrés.",
+        )
     requested_languages = parse_languages(languages)
 
     temporary_directory = create_temporary_directory()
@@ -504,6 +515,27 @@ async def ocr_pdf(
         jobs = calculate_ocr_jobs(page_count)
         installed_languages = await get_installed_languages()
         validate_languages_available(requested_languages, installed_languages)
+
+        if rotation:
+            corrected_path = temporary_directory / "oriented.pdf"
+            prefix = (
+                [sys.executable, "--ocr-worker"]
+                if getattr(sys, "frozen", False)
+                else [sys.executable, "-m", "app.ocr_worker"]
+            )
+            await execute_ocr(
+                [
+                    *prefix,
+                    "--rotate-only",
+                    "--rotation",
+                    str(rotation),
+                    str(input_path),
+                    str(corrected_path),
+                ],
+                temporary_directory=temporary_directory,
+            )
+            validate_output_pdf(corrected_path, expected_page_count=page_count)
+            input_path = corrected_path
 
         command = build_ocr_command(
             input_path,
