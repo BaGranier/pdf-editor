@@ -371,8 +371,8 @@ def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
     lines = [
         "# Rapport QA navigateur automatisé",
         "",
-        "> Ce rapport est généré depuis les résultats Playwright. Il ne remplace ni "
-        "`QA_BROWSER_REPORT.md` ni ses observations humaines.",
+        "> Ce rapport est généré depuis les résultats Playwright. Les procédures "
+        "et contrôles humains complémentaires sont décrits dans `QA_AUTOMATION.md`.",
         "",
         "## Synthèse",
         "",

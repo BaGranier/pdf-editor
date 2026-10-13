@@ -62,11 +62,12 @@ références `pdf-standard:*`. Les appels `FontFace` sont dédupliqués et lanc�
 la demande.
 
 Les 20 familles hors ligne se trouvent dans `apps/web/public/fonts`. Le backend
-lit exactement les mêmes fichiers. Les faces distribuées sont Regular
+lit les mêmes fichiers dans le dépôt ; leur résolution dans le sidecar gelé
+reste à qualifier selon [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
+Les faces distribuées sont Regular
 uniquement; l'interface ne synthétise donc pas gras ou italique pour ces
-familles. Les notices et la mesure exacte de taille sont dans
-`public/fonts/NOTICE.md`. Le catalogue ajoute 10,710,141 octets (10,21 MiB) aux
-assets web et au payload web desktop, sans chargement eager.
+familles. Les licences sont dans [NOTICE.md](apps/web/public/fonts/NOTICE.md).
+Vite copie les assets dans le payload web/desktop, sans chargement eager.
 
 ### Ajouter une police intégrée
 
@@ -74,7 +75,7 @@ assets web et au payload web desktop, sans chargement eager.
 2. ajouter le TTF/OTF dans `apps/web/public/fonts`;
 3. ajouter la face dans `fonts/catalog.ts` et `BUNDLED_FONT_FILES` côté backend;
 4. ne déclarer que les poids/styles réellement présents;
-5. mettre à jour `public/fonts/NOTICE.md` et joindre la licence;
+5. mettre à jour `apps/web/public/fonts/NOTICE.md` et joindre la licence;
 6. compléter le test de catalogue frontend et le test d'export backend;
 7. vérifier web et desktop puis mesurer `du -ch public/fonts/*` et `du -sh dist`.
 

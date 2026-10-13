@@ -39,7 +39,10 @@ contract; Python and TypeScript models must not be duplicated there manually.
 - display page thumbnails and manage multiple open documents;
 - rotate, delete, duplicate, and reorder pages in UI state;
 - compose and export mono-document or multi-document PDFs through FastAPI;
-- add text blocks and signatures, then include them in PDF export;
+- add text, images with crop, visual signatures, shapes, drawings and markup;
+- edit supported native text spans and standard AcroForms;
+- save through native desktop dialogs, preserving the source on initial Save;
+- export with compression, optional flattening and AES-256 protection;
 - run local OCR and reopen the generated searchable PDF;
 - convert PDF to DOCX, TXT, HTML, PNG, or JPEG;
 - start the local FastAPI backend from the Tauri desktop shell.
@@ -49,22 +52,21 @@ contract; Python and TypeScript models must not be duplicated there manually.
 - editable DOCX layout reconstruction for complex source documents;
 - OCR recognition quality, output size, and performance on real-world scans;
 - text placement when fonts or glyphs differ from the supported built-in fonts;
-- desktop packaging of OCR and conversion system dependencies on every OS.
+- packaged OCR qualification on clean machines and across desktop platforms.
 
 ### Remaining work before a general desktop release
 
-- native save dialogs and final destination management;
-- PDF file association and operating-system “Open with” integration;
-- native builds and installers validated on Windows, Linux, and macOS;
-- Windows signing, macOS notarization, and application updates;
-- focused modularization of the large frontend application and stylesheet.
+Release gates and product priorities are maintained only in `NEXT_STEPS.md`.
+Structural constraints are maintained in `TECHNICAL_DEBT.md`; runtime and
+platform qualification boundaries are described in `DESKTOP.md`.
 
 ### Explicitly out of scope
 
 - cloud synchronization or remote document storage;
 - user accounts, authentication, billing, or multi-user collaboration;
 - server-hosted document processing;
-- advanced split workflows, full PDF object editing, or arbitrary font embedding;
+- advanced split workflows or full PDF object editing;
+- unrestricted font embedding beyond the validated local font pipeline;
 - guarantees of pixel-perfect editable DOCX conversion for complex layouts.
 
 ## Code style

@@ -1,361 +1,99 @@
 # PDF Studio Local
 
-Éditeur PDF local-first disponible dans un navigateur ou dans une application
-desktop Tauri. Les documents restent sur la machine : le frontend communique
-uniquement avec le moteur FastAPI local.
+Éditeur PDF local-first, utilisable dans un navigateur ou dans un shell desktop
+Tauri. Les documents sont traités sur la machine, sans compte ni stockage distant.
+Windows est la cible de la première release ; sa qualification reste incomplète.
+Linux et macOS nécessitent une qualification propre.
 
-## Structure
+## Capacités actuelles
 
-- `apps/web`: Vite + React + TypeScript frontend
-- `apps/desktop`: Tauri v2 native shell and local backend lifecycle
-- `services/pdf-engine`: FastAPI backend
-- `apps/web/e2e/fixtures`: fixtures QA synthétiques et versionnées
-- `data/input`: documents d'entrée locaux, entièrement ignorés par Git
-- `data/output`: documents générés localement, entièrement ignorés par Git
+- Lecture, miniatures, recherche, navigation multi-document ; modes Continu,
+  Page unique et Présentation avec transition à deux buffers.
+- Texte ajouté et édition limitée du texte natif, polices locales, signatures
+  graphiques, images PNG/JPEG avec crop non destructif, formes et dessin libre.
+- Plans/transparence des objets ajoutés, commentaires, markup et undo/redo.
+- AcroForms standards : valeurs et verrou ReadOnly ; pas de XFA ni de sauvegarde
+  des valeurs après réorganisation des pages.
+- Organisation/composition multi-source ; sauvegarde desktop native avec Save As
+  initial préservant la source, téléchargement de copies dans le navigateur.
+- Export avec compression, aplatissement explicite formulaires/annotations,
+  AES-256 et permissions ; pas de dialogue d'ouverture des PDF protégés.
+- OCR local eng/fra/mixte embarqué dans le sidecar Windows ; conversion DOCX,
+  TXT, HTML, PNG/JPEG et aperçu d'impression de l'état courant.
 
-Le développement et le packaging natifs sont documentés dans
-[DESKTOP.md](DESKTOP.md).
+La signature graphique, le chiffrement et l'aplatissement sont distincts de la
+signature cryptographique avec certificat, qui n'est pas implémentée. La fidélité
+DOCX complexe et la qualité OCR dépendent du document. Les permissions PDF peuvent
+être ignorées par des lecteurs tiers.
 
-Le shell de développement Linux a été démarré avec WebView et sidecar sur Ubuntu
-22.04.5 LTS. Le bundle, les dialogues interactifs de fichiers et l'association
-système `.pdf` restent explicitement à qualifier avant de présenter Linux comme
-supporté en production.
+## Architecture
 
-## Fonctionnalités
+| Répertoire | Responsabilité |
+| --- | --- |
+| `apps/web` | React / Vite / TypeScript, viewer PDF.js et persistance IndexedDB |
+| `apps/desktop` | Tauri v2 / Rust, fichiers natifs et supervision du sidecar |
+| `services/pdf-engine` | FastAPI / Python / PyMuPDF, pypdf et python-docx |
+| `scripts` | Fixtures, packaging et pilotes QA |
 
-- ouverture, affichage, miniatures et navigation multi-document ;
-- persistance locale des documents et préférences avec IndexedDB ;
-- rotation, suppression, duplication et réorganisation des pages ;
-- composition et export PDF mono-document ou multi-document ;
-- ajout, déplacement et redimensionnement de textes, signatures graphiques et images PNG/JPEG ;
-- rectangle, carré, ellipse, cercle, trait et flèche vectorielle ;
-- plans des objets ajoutés, transparence et historique undo/redo ;
-- Save As initial préservant la source, export avec compression/finalisation/chiffrement ;
-- présentation conservant la slide visible pendant le rendu de la suivante ;
-- OCR local en français, anglais ou mode mixte ;
-- conversion en DOCX éditable ou visuel, TXT, HTML, PNG et JPEG ;
-- exécution web ou desktop avec cycle de vie du backend géré par Tauri.
+Tests : Vitest, Playwright Chromium/Firefox, pytest et Rust.
+Les documents utilisateur restent dans `data/input`, les sorties dans
+`data/output` (ignorés). Seules les fixtures synthétiques reproductibles vont
+dans `apps/web/e2e/fixtures`.
 
-### Raccourcis clavier
+## Démarrer
 
-Les commandes applicatives réutilisent les mêmes actions que les boutons. Le
-modificateur principal est `Ctrl` sous Windows/Linux et `Cmd` sous macOS.
+Environnement de référence : Node **22**, Python **>= 3.11** et uv ; Rust
+**>= 1.88** pour Tauri. Les dépendances sont verrouillées par les lockfiles de
+chaque workspace. Prérequis OCR système et conteneur :
+[DEVELOPMENT.md](DEVELOPMENT.md).
 
-| Action | Windows / Linux | macOS | Web / Desktop |
-| --- | --- | --- | --- |
-| Ouvrir un PDF | `Ctrl+O` | `Cmd+O` | Web et Desktop |
-| Enregistrer / Enregistrer sous | `Ctrl+S` / `Ctrl+Shift+S` | `Cmd+S` / `Cmd+Shift+S` | Web et Desktop ; le web ouvre le workflow de téléchargement |
-| Fermer le document actif | `Ctrl+W` | `Cmd+W` | Desktop seulement ; respecte la confirmation d'état modifié |
-| Annuler / Rétablir | `Ctrl+Z` / `Ctrl+Y` ou `Ctrl+Shift+Z` | `Cmd+Z` / `Cmd+Shift+Z` | Web et Desktop |
-| Zoom | `Ctrl++`, `Ctrl+-`, `Ctrl+0` | `Cmd++`, `Cmd+-`, `Cmd+0` | Web et Desktop ; `+` accepte aussi `=` et le pavé numérique |
-| Rechercher dans le document | `Ctrl+F` | `Cmd+F` | Web et Desktop ; la recherche est incrémentale et reste locale |
-| Document suivant / précédent | `Ctrl+Tab` / `Ctrl+Shift+Tab` | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Desktop seulement ; `Cmd+Tab` reste réservé au système macOS |
-| Fermer l'overlay actif | `Escape` | `Escape` | Contextuel |
-
-Les champs de saisie, `textarea`, `select` et éditeurs `contenteditable`
-conservent leurs raccourcis natifs : copier/coller, tout sélectionner et undo
-local ne déclenchent pas une commande documentaire.
-
-### Impression
-
-**Fichier → Imprimer** affiche immédiatement un état de préparation, puis un
-aperçu interne du PDF temporaire produit depuis l'état courant. Les annotations
-et modifications non sauvegardées sont donc incluses sans modifier le dirty
-state. Le clic **Imprimer** utilise un iframe temporaire, retiré avec son URL
-objet après impression ou annulation : aucun onglet PDF persistant n'est créé.
-Si un navigateur bloque le dialogue, l’utilisateur peut réessayer ou choisir
-explicitement **Ouvrir le PDF à imprimer**. Chromium et Firefox sont couverts
-jusqu’à cette frontière Web ; la validation d'un dialogue système natif Tauri
-par plateforme reste une étape de release.
-
-### Formulaires PDF
-
-Les widgets **AcroForm** standards de la page active (texte simple ou
-multiligne, cases à cocher, radios, listes et combos) sont rendus au-dessus du
-PDF. Une valeur modifiée participe au dirty state et à undo/redo, puis est
-réécrite sans aplatir le formulaire lors d'une sauvegarde qui conserve l'ordre
-et la rotation des pages. Les cases à cocher et radios conservent leur valeur
-d’export et leur état d’apparence PDF (`/V` et `/AS`). Les formulaires XFA et
-la sauvegarde d'un AcroForm après réorganisation des pages ne sont pas pris en
-charge. À l’écran, les widgets éditables sont rendus par la couche interactive
-afin que chaque valeur n'apparaisse qu'une seule fois. Les widgets
-nativement `ReadOnly` conservent au contraire leur apparence PDF dans le
-canvas ; leur couche React est seulement sémantique et non interactive, ce qui
-évite aussi toute duplication visuelle.
-
-Le cadenas au-dessus d'un formulaire ouvre un choix entre deux verrouillages
-distincts. **Verrouiller** est un verrou local temporaire : il bloque les
-contrôles dans PDF Studio Local sans modifier le PDF, le dirty state ou
-l’historique. **Verrouiller le PDF pour l’export** est différent : après
-confirmation, la sauvegarde applique le flag AcroForm standard `ReadOnly` à
-tous les champs encore modifiables. Les widgets et leurs valeurs restent
-interactifs au sens PDF, les valeurs et appearances des boutons sont
-conservées, et l’opération est une seule action undoable avant enregistrement.
-Ce n’est ni un aplatissement ni une protection cryptographique ; l’aplatissement
-des formulaires reste hors périmètre.
-
-### Modes de lecture
-
-Le viewer propose trois modes complémentaires :
-
-- **Continu** affiche toutes les pages avec défilement ;
-- **Page unique** affiche une page, applique un ajustement automatique, conserve
-  la page active entre les modes et laisse disponibles le zoom manuel et
-  **Ajuster** ;
-- **Présentation** demande le plein écran via l'API navigateur lorsqu'elle est
-  disponible, sinon utilise toute la surface applicative. Elle n'affiche que le
-  PDF et son fond, sans chrome d'édition.
-
-En Page unique et Présentation, `ArrowLeft`/`PageUp` vont à la page précédente,
-`ArrowRight`/`PageDown` à la suivante, `Home` à la première et `End` à la
-dernière. En Présentation, `Space` avance et `Escape` revient à Page unique en
-conservant la page active. Les miniatures et commentaires ouvrent la page ciblée.
-
-La reconstruction DOCX éditable, la qualité OCR sur des scans réels et le
-packaging desktop multi-plateforme restent soumis aux limites décrites dans
-[CONVERSION.md](CONVERSION.md), [NATIVE_TEXT_EDITING.md](NATIVE_TEXT_EDITING.md), [DESKTOP.md](DESKTOP.md) et
-[TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
-
-## Frontend
-
-```bash
-cd apps/web
-npm ci
-npm run dev -- --host 0.0.0.0
-```
-
-Build and type-check:
-
-```bash
-cd apps/web
-npm run lint
-npm run build
-```
-
-Run tests:
-
-```bash
-cd apps/web
-npm run test
-npm run test:run
-```
-
-### QA navigateur Playwright
-
-La campagne reproductible Chromium + Firefox, ses prérequis, ses artefacts et les
-contrôles restant manuels sont documentés dans
-[QA_AUTOMATION.md](QA_AUTOMATION.md).
-
-Commande complète depuis `apps/web` :
-
-```bash
-npm run qa:e2e
-```
-
-Commande rapide utilisée en CI :
-
-```bash
-npm run qa:e2e:quick
-```
-
-## Backend
+Dans deux terminaux, depuis la racine :
 
 ```bash
 cd services/pdf-engine
 uv sync --locked
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
-
-Health check:
 
 ```bash
-curl http://localhost:8000/health
-```
-
-### API locale
-
-| Méthode et route | Rôle |
-| --- | --- |
-| `GET /health` | vérifier que le moteur local est prêt |
-| `POST /pdf/export/organize` | composer, éditer et exporter un PDF |
-| `POST /ocr` | produire un PDF local avec couche texte OCR |
-| `POST /convert` | convertir un PDF en document ou en images |
-
-Les trois routes de traitement utilisent `multipart/form-data`. Les fichiers
-sources ne sont jamais modifiés ; les résultats sont renvoyés comme
-téléchargements et peuvent être rouverts dans l'application.
-
-### OCR local
-
-L'action **OCR** produit un nouveau PDF recherchable sans fermer ni modifier le
-document source. Elle accepte `fra`, `eng` et `fra+eng`. Le package Windows
-embarque MuPDF/Tesseract, Python et les données de langue : aucune installation
-manuelle d'outils OCR n'est nécessaire. Ce moteur travaille à 200 DPI et ne
-redresse pas automatiquement les scans inclinés. En développement web, le
-parcours historique utilise OCRmyPDF, Tesseract et Ghostscript système ; QPDF
-CLI est un validateur QA. Les erreurs restent contrôlées et préservent la source.
-La campagne clean et les obligations de redistribution sont détaillées dans
-[QA_WINDOWS_CLEAN_INTEGRATION_004.md](QA_WINDOWS_CLEAN_INTEGRATION_004.md).
-
-### Conversion locale
-
-L’action **Convertir** conserve le PDF source ouvert et télécharge le résultat
-sans l’ajouter au viewer. Elle prend en charge DOCX, TXT UTF-8, HTML autonome,
-PNG et JPEG via `POST /convert`. Pour DOCX, TXT et HTML, le mode OCR automatique
-réutilise l’OCR existant uniquement sur les pages sans couche texte exploitable.
-
-Les formats, options multipart, limites de sécurité, dépendances OCR et limites
-de fidélité sont détaillés dans [CONVERSION.md](CONVERSION.md).
-
-### Export PDF organisé
-
-Le mode **Organiser** du frontend envoie tous les PDF sources nécessaires et son
-plan au backend via `POST /pdf/export/organize` en `multipart/form-data` :
-
-- `files` : un ou plusieurs PDF sources ;
-- `documentIds` : une chaîne JSON avec les IDs frontend, dans le même ordre que
-  les fichiers ;
-- `plan` : une chaîne JSON avec `outputName`, `saveToOutputDir` et une liste
-  `pages` (`sourceDocumentId`, `sourcePageIndex` zéro-based, `rotation` à 0,
-  90, 180 ou 270).
-
-Exemple de plan :
-
-```json
-{
-  "outputName": "fusion-modifiee.pdf",
-  "saveToOutputDir": true,
-  "pages": [
-    { "sourceDocumentId": "doc-a", "sourcePageIndex": 0, "rotation": 0 },
-    { "sourceDocumentId": "doc-b", "sourcePageIndex": 2, "rotation": 90 }
-  ]
-}
-```
-
-Le backend renvoie toujours le PDF généré pour téléchargement et ne modifie jamais
-le fichier source. Après un export réussi, le frontend ouvre aussi ce PDF comme un
-nouveau document interne en mode lecture, sans fermer les documents sources. Avec
-`saveToOutputDir: false`, aucune écriture locale n'est tentée. En développement,
-`saveToOutputDir: true` tente aussi une copie sécurisée
-dans `/workspace/data/output`, crée le dossier si nécessaire et ajoute un suffixe
-en cas de conflit. Si cette copie échoue, le téléchargement reste disponible et la
-réponse contient l'avertissement `X-Pdf-Output-Warning`.
-
-Avec plusieurs PDF ouverts, le panneau « Ajouter depuis un PDF ouvert » permet de
-choisir un document puis certaines de ses pages via des miniatures au rendu
-progressif. « Ajouter les pages sélectionnées » ajoute les pages cochées à la fin,
-dans l'ordre croissant ; « Tout ajouter » ajoute toutes les pages du PDF source à la
-fin. Elles restent ensuite réorganisables dans la grille principale.
-
-Les blocs de texte et signatures ajoutés dans l'interface sont inclus dans le
-plan d'export. Le frontend conserve un historique local pour les interactions
-d'édition prises en charge, et le backend signale les éventuels débordements de
-texte sans altérer les PDF sources.
-
-### Sauvegarder, exporter et finaliser
-
-Le premier **Enregistrer / Ctrl+S** d'un document ouvert lance **Enregistrer
-sous…** en Desktop. Après réussite, les prochains Ctrl+S écrivent atomiquement
-vers cette copie pendant la session. La destination d'ouverture n'est jamais
-choisie implicitement ; les destinations natives ne sont pas restaurées depuis
-IndexedDB. **Ctrl+Shift+S** permet de choisir une autre destination, même sans
-modification. Annulation et erreur conservent l'état modifié.
-
-En web, ces actions proposent un nom puis téléchargent une copie. Le navigateur
-ne permet pas de réécrire directement une destination déjà choisie.
-`data/output` reste une sortie de développement facultative. Le shell Tauri
-possède ses dialogues natifs et identifiants de fichiers opaques ; leur statut
-par plateforme est détaillé dans [DESKTOP.md](DESKTOP.md).
-
-**Image** insère un PNG ou JPEG local. Les dimensions sont vérifiées avant
-décodage : 40 millions de pixels et 20 000 pixels par axe. Le budget de lecture
-compressée est 32 Mio par asset, avec 192 Mio compressés et 512 Mio RGBA estimés
-pour les assets uniques de la session ; aucune limite de champ multipart à
-1 Mio ne s'applique aux nouveaux imports. Les originaux ne sont pas dégradés
-systématiquement. L'image est centrée, bornée à 60 % de la page et librement
-redimensionnable ; Shift ou **Conserver les proportions** verrouille son ratio.
-**Rogner l’image** permet de déplacer/redimensionner un cadre, valider, annuler
-avec Escape ou rétablir l'image entière, avec undo/redo. Le crop est non destructif
-et persiste avec les documents web restaurables. Les documents natifs ouverts
-par identifiant Tauri restent volontairement limités à la session.
-Le panneau **Plans des objets ajoutés** permet de
-sélectionner un objet couvert et de le placer devant/derrière les autres edits.
-Le contenu PDF original reste la base. Carré et cercle gardent une géométrie 1:1 ;
-les extrémités du trait/flèche sont déplaçables. Les markups locaux participent
-au même ordre que les formes et sont exportés comme vecteurs ; les annotations
-déjà présentes dans le PDF source conservent leur comportement PDF.
-Les images n'ont pas d'outil de
-rotation dédié ; SVG et WebP ne sont pas acceptés.
-
-**Exporter / Finaliser…** propose :
-
-| Profil | Politique |
-| --- | --- |
-| Qualité maximale | optimisation des flux/objets sans recompression destructive des images |
-| Équilibré | images à haute résolution : cible 180 DPI, seuil 225 DPI, qualité 85 |
-| Taille réduite | images à haute résolution : cible 100 DPI, seuil 125 DPI, qualité 65 |
-
-Les images source et ajoutées peuvent être recompressées ; MuPDF choisit le
-sous-échantillonnage effectif. Le texte reste sélectionnable et les vecteurs
-restent vectoriels. Aucune réduction de taille universelle n'est garantie.
-Le rapport affiche les tailles source/export et le profil sans promettre un gain.
-
-Les edits ajoutés sont déjà intégrés au PDF. L'aplatissement des **formulaires**
-et celui des **annotations** sont deux options explicites : ils conservent leur
-apparence et suppriment leur interactivité ; celui des annotations peut perdre
-commentaires et pièces jointes. Les annotations sont conservées par défaut.
-La protection utilise AES-256, un mot de passe d'ouverture facultatif et des
-permissions d'impression/modification avec mot de passe propriétaire distinct.
-Ces permissions peuvent être ignorées par d'autres logiciels. Les secrets ne
-sont ni persistés ni journalisés. Une sortie chiffrée est enregistrée/téléchargée
-sans réouverture automatique : l'éditeur n'offre pas encore le dialogue de
-mot de passe à l'ouverture d'un PDF protégé.
-
-Une signature graphique est une image manuscrite. **La signature numérique avec
-certificat n'est pas livrée** : audit et critères sont dans
-[SIGNATURE_NUMERIQUE_004.md](SIGNATURE_NUMERIQUE_004.md).
-
-Validation WSL : voir [le rapport du ticket 003](QA_EDITOR_EXPORT_PRESENTATION_003.md).
-La requalification Windows installée et ses limites clean/1080×1900 sont dans
-[le rapport 004](QA_WINDOWS_CLEAN_INTEGRATION_004.md).
-Les rapports Windows précédents restent des photographies historiques.
-
-### Limites d'usage recommandées
-
-Le frontend avertit sans bloquer l'ouverture ou l'export au-delà de **50 Mo** par
-PDF, **250 pages** par PDF ou **8 documents ouverts**. Ces valeurs sont des
-recommandations de mémoire et de quota navigateur, configurables au build par
-`VITE_PDF_RECOMMENDED_MAX_SIZE_MB`, `VITE_PDF_RECOMMENDED_MAX_PAGE_COUNT` et
-`VITE_PDF_RECOMMENDED_MAX_OPEN_DOCUMENTS`. En cas d'échec IndexedDB, les PDF
-peuvent rester ouverts pour la session mais ne seront pas forcément restaurés
-après fermeture de l'onglet.
-
-Les fixtures reproductibles versionnées sont dans `apps/web/e2e/fixtures`. Les
-documents complémentaires placés dans `data/input` restent locaux et ignorés par
-Git. La campagne manuelle est décrite dans
-[QA_BROWSER_CHECKLIST.md](QA_BROWSER_CHECKLIST.md).
-
-Limites actuelles : pas de split avancé ni d'édition arbitraire des objets PDF
-existants. L'édition ajoute des blocs de texte et des signatures lors de
-l'export ; elle ne remplace pas une suite PAO complète. La conversion DOCX
-reconstruit un document éditable sans garantir une reproduction parfaite des
-mises en page complexes.
-
-## Application desktop
-
-```bash
-cd apps/desktop
+cd apps/web
 npm ci
-npm run desktop:dev
+npm run dev -- --host 127.0.0.1
 ```
 
-Le shell Tauri démarre le frontend et un backend FastAPI sur un port loopback
-dynamique. La configuration, les prérequis système, le build du sidecar et les
-limites de packaging sont détaillés dans [DESKTOP.md](DESKTOP.md).
+Ouvrir `http://localhost:5173`. Le backend répond sur `/health`.
+Dans le devcontainer, remplacer les deux hôtes par `0.0.0.0` pour les mappings
+locaux de ports. Le serveur desktop reste exclusivement sur loopback.
 
-Pour valider la configuration desktop :
+Pour Tauri, installer aussi les dépendances natives de [DESKTOP.md](DESKTOP.md),
+puis lancer `npm ci` et `npm run desktop:dev` depuis `apps/desktop`.
+
+## Vérifier
 
 ```bash
-cd apps/desktop
-npm run desktop:check
+cd apps/web
+npm test -- --run
+npm run build
+npm run typecheck:e2e
+npm run qa:e2e:quick
 ```
+
+```bash
+cd services/pdf-engine
+uv run pytest
+uv run ruff check .
+```
+
+La QA navigateur demande Playwright et la toolchain OCR locale.
+Les commandes desktop et les gates de release sont dans les documents suivants.
+
+## Documentation de référence
+
+- [DESKTOP.md](DESKTOP.md) : runtime, build, OCR packagé et support par OS.
+- [DEVELOPMENT.md](DEVELOPMENT.md) : environnement, contrats et compatibilité persistée.
+- [CONVERSION.md](CONVERSION.md) : formats, options et limites de conversion.
+- [NATIVE_TEXT_EDITING.md](NATIVE_TEXT_EDITING.md) : spans natifs et registre de polices.
+- [QA_AUTOMATION.md](QA_AUTOMATION.md) : tests, scripts et qualification native.
+- [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) : dette structurelle active.
+- [NEXT_STEPS.md](NEXT_STEPS.md) : seule roadmap opérationnelle priorisée.
+- [SIGNATURE_NUMERIQUE_004.md](SIGNATURE_NUMERIQUE_004.md) : signatures avec certificat, chantier différé.

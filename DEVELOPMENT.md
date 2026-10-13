@@ -1,122 +1,118 @@
-# Environnement de développement
+# Développement et contrats locaux
 
-Le dépôt peut être utilisé directement sur l'hôte ou dans le devcontainer. Ce
-document décrit l'environnement réellement configuré ; les commandes propres au
-produit restent détaillées dans `README.md`, `QA_AUTOMATION.md` et `DESKTOP.md`.
+## Environnement
 
-## Devcontainer actuel
+Le devcontainer utilise le service `dev` de `docker-compose.yml`, construit depuis
+`Dockerfile.dev` (Node 22 Bookworm), avec le dépôt dans `/workspace` et l'utilisateur
+`node`. Il fournit Python, uv, les outils de compilation Debian, QPDF, Poppler,
+Ghostscript, OCRmyPDF, Tesseract eng/fra et LibreOffice. Rust et WebKitGTK ne sont
+pas installés : le build Tauri demande les prérequis de [DESKTOP.md](DESKTOP.md).
 
-Le fichier `.devcontainer/devcontainer.json` utilise le service `dev` de
-`docker-compose.yml`. Celui-ci construit `Dockerfile.dev` à partir de l'image
-`mcr.microsoft.com/devcontainers/javascript-node:22-bookworm` et ouvre le dépôt
-dans `/workspace` avec l'utilisateur `node`.
+Les caches npm/pip/uv et la configuration locale de l'agent sont des volumes
+persistants ; ne pas copier les secrets ou fichiers d'authentification dans Git.
+Les versions de uv et de la CLI installée ne sont pas épinglées par le Dockerfile.
+Les dépendances applicatives sont contrôlées par les lockfiles npm, uv et Cargo.
 
-L'image installe :
+Les ports hôte `5173`/`8000` sont publiés sur `127.0.0.1`. Dans le conteneur,
+lancer Vite/FastAPI avec `--host 0.0.0.0` selon le [README](README.md).
+Le compose n'expose pas le socket Docker ; son profil `SYS_ADMIN`, seccomp et
+AppArmor désactivés est réservé au développement.
 
-- Python 3 et les outils de création d'environnements virtuels ;
-- `uv`, installé par le script officiel Astral dans
-  `/home/node/.local/bin` ;
-- QPDF, Poppler, Ghostscript et OCRmyPDF ;
-- Tesseract avec les données de langue anglaises et françaises ;
-- LibreOffice pour les contrôles visuels DOCX ;
-- Git, curl, tmux, zsh, bubblewrap et les outils de compilation Debian ;
-- la CLI Codex. La création du devcontainer vérifie également la CLI via son
-  `postCreateCommand`.
-
-Les versions de `uv` et de la CLI Codex ne sont pas épinglées dans le
-Dockerfile. Les dépendances applicatives, elles, restent contrôlées par les lock
-files du frontend, du desktop et du backend.
-
-Le devcontainer n'installe ni Rust/Cargo, ni les bibliothèques WebKitGTK requises
-pour compiler Tauri sous Linux. Il couvre donc le développement web/backend et
-la QA navigateur, mais pas à lui seul `npm run desktop:check` ou
-`npm run desktop:build`. Les prérequis natifs sont dans `DESKTOP.md`.
-
-## Volumes, ports et caches
-
-Le compose monte :
-
-| Emplacement | Rôle |
-| --- | --- |
-| dépôt courant vers `/workspace` | sources et working directory |
-| `codex-home` vers `/home/node/.codex` | configuration locale persistante de Codex |
-| `node-cache` vers `/home/node/.npm` | cache npm |
-| `pip-cache` vers `/home/node/.cache/pip` | cache pip |
-| `uv-cache` vers `/home/node/.cache/uv` | cache uv |
-
-Les ports `5173` et `8000` sont publiés uniquement sur `127.0.0.1` côté hôte.
-Pour rendre les serveurs joignables à travers ces mappings, utiliser les
-commandes du README avec `--host 0.0.0.0` dans le conteneur.
-
-Aucun socket Docker n'est monté. Le profil compose ajoute cependant
-`SYS_ADMIN` et désactive les profils seccomp et AppArmor pour le conteneur de
-développement. Ce profil est plus permissif qu'un conteneur de production et ne
-doit pas être réutilisé comme configuration de déploiement.
-
-## Installation du dépôt
-
-Après création du conteneur :
+Pour le parcours OCR système Debian/Ubuntu :
 
 ```bash
-cd /workspace/apps/web
-npm ci
-
-cd /workspace/apps/desktop
-npm ci
-
-cd /workspace/services/pdf-engine
-uv sync --locked
+sudo apt-get install ghostscript ocrmypdf qpdf \
+  tesseract-ocr-eng tesseract-ocr-fra libreoffice-writer
 ```
 
-Les navigateurs Playwright ne sont pas installés par `Dockerfile.dev`. Pour la
-QA navigateur :
+QPDF contrôle les résultats PDF ; LibreOffice rend les DOCX pour la QA et
+n'est pas appelé par la conversion applicative. Pour Tesseract système,
+`TESSDATA_PREFIX` doit contenir langues, `configs` et `tessconfigs`.
+Le runtime gelé a une stratégie distincte décrite dans [DESKTOP.md](DESKTOP.md).
 
-```bash
-cd /workspace/apps/web
-PLAYWRIGHT_BROWSERS_PATH=/workspace/.playwright-browsers \
-  npx playwright install chromium firefox
-npm run qa:e2e:quick
-```
+Commandes d'installation/lancement : [README.md](README.md).
+Fixtures, navigateurs et tests : [QA_AUTOMATION.md](QA_AUTOMATION.md).
+Les données privées restent sous `data/input`, les résultats sous `data/output` ;
+les deux sont ignorés. Les fixtures versionnées sont exclusivement synthétiques.
 
-Les PDF de QA reproductibles sont générés sous `apps/web/e2e/fixtures`. Les
-résultats Playwright, téléchargements et rapports générés restent sous
-`apps/web/test-results` et sont ignorés par Git.
+## API et composition PDF
 
-## Rendu du viewer
+Les clients typés se trouvent dans `apps/web/src/api`, `saving`, `pdf`, `ocr` et
+`conversion`. FastAPI expose `/health`, `/pdf/export/organize`, `/ocr`, `/convert`,
+`/pdf/forms` et les routes `/pdf/native-text*`. Les schémas Pydantic sont dans
+`app/main.py` et les modules métier ; la documentation API locale est sur `/docs`.
 
-Les modes Continu, Page unique et Présentation partagent le même rendu PDF.js.
-Le canvas conserve sa taille CSS correspondant au viewport PDF, tandis que son
-backing store est dimensionné avec `window.devicePixelRatio`. PDF.js est rerendu
-après un changement de zoom, de fit, de redimensionnement ou de fullscreen ; la
-text layer et les overlays continuent à utiliser le viewport CSS. Cette logique
-est commune à Chromium et Firefox.
+L'export organisé reçoit en multipart :
 
-En Page unique et Présentation, le viewer utilise un front/back buffer borné :
-la page visible reste le front buffer pendant que la page demandée est peinte
-hors affichage. Le swap n’a lieu qu’après résolution de `page.render(...)`, puis
-l’ancien canvas est démonté. Il n’y a donc jamais plus de deux canvases pleine
-résolution pendant une transition, ni de cache bitmap de pages visitées. La
-scène Présentation est noire tant qu’aucun canvas rendu n’est disponible.
+- `files` et `documentIds` JSON dans le même ordre ;
+- `plan` JSON : pages source (`sourceDocumentId`, `sourcePageIndex` zéro-based,
+  `rotation` orthogonale), edits et options ;
+- `imageFiles` et `imageIds` pour les assets binaires uniques, hors du champ JSON.
 
-## Layout du workspace
+`PdfEdit[]` est la source de vérité de l'ordre des objets ajoutés ; le payload
+en dérive `order`, puis le backend compose les objets visuels dans cet ordre.
+Le contenu PDF source reste la base. Markups locaux exportés en vecteurs et
+marqueurs de commentaires participent à l'ordre ; le contenu du commentaire est
+conservé dans une annotation cachée. Les annotations préexistantes gardent leur
+couche PDF et ne sont pas réordonnables comme objets locaux.
 
-Le shell du workspace occupe la hauteur de son parent (`html`, `body`, `#root`)
-et répartit header, espace de travail et barre d’état avec une grille
-`auto minmax(0, 1fr) auto`. Le scroll global est désactivé : le viewer, la
-barre d’outils et l’inspecteur sont les propriétaires de leurs scrolls locaux.
-Cette chaîne de hauteurs est la même dans la WebView Tauri ; lorsque le backend
-local est prêt, le gate desktop rend directement l’application sans bandeau
-permanent afin de ne pas réduire l’espace du viewer. Les états de démarrage et
-d’erreur restent des écrans explicites.
+L'export ne modifie pas les fichiers source. `saveToOutputDir: true` demande une
+copie facultative sans écrasement dans la sortie locale ; un échec de copie porte
+`X-Pdf-Output-Warning` sans supprimer le téléchargement. En desktop, cette sortie
+est redirigée vers les données applicatives. La destination native est gérée par
+Rust, séparément de cette copie de développement.
 
-## Données locales et secrets
+Les profils maximum/équilibré/réduit optimisent les flux et, pour les deux derniers,
+recompressent les images sans rasterisation globale : cibles 180/100 DPI,
+seuils 225/125 DPI et qualités 85/65. Aucun gain universel n'est garanti.
+Aplatissement des formulaires et annotations : options explicites distinctes,
+perte d'interactivité et possible perte des données de commentaires/pièces jointes.
+AES-256 : secrets éphémères, permissions non garanties par les lecteurs tiers ;
+la sortie chiffrée est téléchargée/enregistrée sans réouverture automatique.
 
-- placer les documents utilisateur dans `data/input`, qui est ignoré hormis son
-  `.gitkeep` ;
-- conserver les sorties locales dans `data/output`, également ignoré hormis son
-  `.gitkeep` ;
-- ne pas utiliser `apps/web/e2e/fixtures` pour des documents personnels : ce
-  dossier est réservé aux fixtures synthétiques reproductibles ;
-- ne pas copier les identifiants ou fichiers d'authentification du volume
-  `codex-home` dans le dépôt ;
-- ne pas effectuer de connexion Codex pendant la construction de l'image.
+## Persistance et compatibilité
+
+`apps/web/src/storage/viewerStorage.ts` maintient `pdf-editor-mvp-db` **v2** :
+upgrade additif depuis v1, documents et assets dans des stores dédiés, écriture
+transactionnelle. Les préférences utilisent aussi localStorage. En cas de quota,
+la session peut rester utilisable sans garantie de restauration.
+
+Les images sont référencées par ID SHA-256 et partagées avec les signatures,
+sans duplication par instance/historique. Le pruning tient compte des documents,
+undo/redo, signature en attente et presse-papiers. L'historique de session est borné
+à 100 snapshots. Le crop normalisé `{x,y,width,height}` est non destructif.
+Les documents ouverts par identifiant natif et les destinations Tauri ne sont
+pas restaurés depuis IndexedDB.
+
+Compatibilité à préserver lors d'une évolution :
+
+- v1/v2 sans edits complets : reprise des champs historiques texte natif/formulaires ;
+- crop absent : image entière ; aspect-lock absent : ratio historique ;
+- plans absents : ordre stable historique ; anciennes formes/signatures conservées ;
+- payload `schemaVersion: 2` émis actuellement ; backend accepte aussi v1,
+  sans version/options : defaults historiques ; petits assets dataURL encore acceptés.
+
+Avant modification de ces formats, rejouer `storage-upgrade.spec.ts`,
+`persistence.spec.ts` et les tests de stockage/payload/backend concernés.
+Ne recréer `packages/shared` que pour un contrat généré ou indépendant du langage
+avec au moins deux consommateurs ; pas de modèles Python/TypeScript dupliqués.
+
+## Budgets et rendu
+
+Avertissements configurables au build : 50 Mo/PDF, 250 pages/PDF, 8 documents
+ouverts (`VITE_PDF_RECOMMENDED_MAX_SIZE_MB`, `VITE_PDF_RECOMMENDED_MAX_PAGE_COUNT`,
+`VITE_PDF_RECOMMENDED_MAX_OPEN_DOCUMENTS`). Ils ne bloquent pas l'ouverture/export.
+
+Images : PNG/JPEG, 32 Mio compressés/asset, 40 Mpx, 20 000 pixels/axe ; cumul
+192 Mio compressés et 512 Mio RGBA estimés pour les assets uniques, 128 assets
+maximum/export. Les dimensions sont vérifiées avant décodage. Ces budgets
+ne mesurent pas la RAM totale/GPU ; SVG/WebP et rotation image dédiée sont absents.
+Sources : `images/imagePolicy.ts`, `app/image_dimensions.py` et `app/main.py`.
+
+PDF.js conserve le viewport CSS pour les overlays et dimensionne les canvases
+selon le DPR. Continu matérialise les pages visibles plus deux pages de marge ;
+Page unique/Présentation utilisent au maximum deux buffers de page, sans cache
+bitmap des pages visitées. Le swap attend la frame complète et rejette les rendus
+obsolètes. Viewer/toolbar/inspecteur possèdent leurs scrolls ; le shell ne doit
+pas créer de scroll global. Les tests de rendu et responsive sont dans
+[QA_AUTOMATION.md](QA_AUTOMATION.md).
