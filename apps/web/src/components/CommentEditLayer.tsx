@@ -11,7 +11,7 @@ export function CommentEditMarker({ edit, viewport, selected, onSelect }: {
   if (edit.appearanceHidden && !selected) return null;
   return <button
     type="button"
-    className={selected ? "pdf-comment-marker is-selected" : "pdf-comment-marker"}
+    className={`pdf-comment-marker${edit.source === "local" ? " pdf-comment-marker--local" : ""}${selected ? " is-selected" : ""}`}
     data-comment-id={edit.id}
     style={pdfRectToViewportStyle(viewport, edit.rect)}
     aria-label={`Commentaire page ${edit.page}: ${edit.content}`}

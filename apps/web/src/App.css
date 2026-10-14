@@ -183,6 +183,18 @@ body {
   transform: translate(-3px, -3px);
   z-index: 7;
 }
+/* Local comment markers use the PDF geometry/color; source annotations retain UI chrome. */
+.pdf-comment-marker--local {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: #ffffff;
+  background: #2563eb;
+  box-shadow: none;
+  z-index: auto;
+}
 .pdf-comment-marker:hover, .pdf-comment-marker.is-selected { outline: 2px solid var(--selection); outline-offset: 2px; }
 .pdf-comment-marker svg { width: 100%; height: 100%; fill: currentColor; stroke: none; }
 .comment-dialog textarea, .shape-edit-toolbar textarea { width: 100%; resize: vertical; box-sizing: border-box; }

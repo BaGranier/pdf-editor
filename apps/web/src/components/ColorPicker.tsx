@@ -29,16 +29,22 @@ export function ColorPicker({ label, value, onChange, onPickColor, eyedropperAct
       left: Math.min(window.innerWidth - width - 8, Math.max(8, anchor.right - width)),
     });
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsOpen(false);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setIsOpen(false);
+        triggerRef.current?.focus();
+      }
     };
     const closeOnOutsidePointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (target && !triggerRef.current?.contains(target) && !popoverRef.current?.contains(target)) setIsOpen(false);
     };
-    window.addEventListener("keydown", closeOnEscape);
+    popoverRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    window.addEventListener("keydown", closeOnEscape, true);
     window.addEventListener("pointerdown", closeOnOutsidePointerDown);
     return () => {
-      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("keydown", closeOnEscape, true);
       window.removeEventListener("pointerdown", closeOnOutsidePointerDown);
     };
   }, [isOpen]);
@@ -47,7 +53,7 @@ export function ColorPicker({ label, value, onChange, onPickColor, eyedropperAct
     <>
       <div className="color-picker__presets" role="group" aria-label={`Couleurs ${label}`}>
         {ANNOTATION_COLORS.map((color) => (
-          <button key={color} type="button" className="color-picker__swatch" aria-label={`Couleur ${color}`} aria-pressed={value.toLowerCase() === color} disabled={disabled} onClick={() => { onChange(color); setIsOpen(false); }} style={{ "--swatch-color": color } as CSSProperties}><span aria-hidden="true">{value.toLowerCase() === color ? "✓" : ""}</span></button>
+          <button key={color} type="button" className="color-picker__swatch" aria-label={`Couleur ${color}`} aria-pressed={value.toLowerCase() === color} disabled={disabled} onClick={() => { onChange(color); setIsOpen(false); triggerRef.current?.focus(); }} style={{ "--swatch-color": color } as CSSProperties}><span aria-hidden="true">{value.toLowerCase() === color ? "✓" : ""}</span></button>
         ))}
       </div>
       <div className="color-picker__actions">

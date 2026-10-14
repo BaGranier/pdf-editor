@@ -149,9 +149,9 @@ export async function restoreOpenDocument(storedDocument: StoredPdfDocument): Pr
       pdfDocument,
       loadingTask,
       pageCount: pdfDocument.numPages,
-      zoom: storedDocument.zoom,
-      scrollLeft: storedDocument.scrollLeft,
-      scrollTop: storedDocument.scrollTop,
+      zoom: Number.isFinite(storedDocument.zoom) && storedDocument.zoom > 0 ? storedDocument.zoom : 1,
+      scrollLeft: Number.isFinite(storedDocument.scrollLeft) && storedDocument.scrollLeft >= 0 ? storedDocument.scrollLeft : 0,
+      scrollTop: Number.isFinite(storedDocument.scrollTop) && storedDocument.scrollTop >= 0 ? storedDocument.scrollTop : 0,
       error: null,
     };
   } catch (error) {

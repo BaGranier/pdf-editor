@@ -119,7 +119,7 @@ export function buildPdfExportPayload(
   });
   const missingImage = requiredDocumentIds.some((documentId) =>
     getDocumentEditingState(input.editsByDocument, documentId).edits.some((edit) =>
-      edit.type === "image" && exportedPagesByDocument.get(documentId)?.has(edit.page) && !input.signatureImages[edit.imageId]));
+      (edit.type === "image" || edit.type === "signature") && exportedPagesByDocument.get(documentId)?.has(edit.page) && !input.signatureImages[edit.imageId]));
   if (missingImage) return { ok: false, message: "Une image insérée est indisponible. Restaurez-la ou supprimez son objet avant l’export." };
   type ExportedEdit = PdfEdit & { sourceDocumentId: string; order: number };
   const exportedEdits: ExportedEdit[] = requiredDocumentIds.flatMap((documentId) =>

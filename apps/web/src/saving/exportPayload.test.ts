@@ -167,3 +167,8 @@ describe("buildPdfExportPayload", () => {
     ]);
   });
 });
+
+it("blocks a missing signature asset instead of silently dropping the signature",async()=>{
+  const result=await payloadFor([{id:"missing-signature",type:"signature",imageId:"absent",page:1,rect:{x0:0,y0:0,x1:50,y1:30}}]);
+  expect(result.ok).toBe(false);
+});

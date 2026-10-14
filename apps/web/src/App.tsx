@@ -160,6 +160,7 @@ import "./App.css";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+const DOCUMENT_STORAGE_WARNING = "Les PDF ne peuvent pas être conservés durablement dans ce navigateur. Ils resteront ouverts jusqu'à la fermeture de l'onglet.";
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.1;
@@ -2747,6 +2748,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   >(null);
   const [isSignatureDialogOpen, setIsSignatureDialogOpen] = useState(false);
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
+  const fileMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [isAdvancedExportOpen, setIsAdvancedExportOpen] = useState(false);
   const [saveAsDocumentId, setSaveAsDocumentId] = useState<string | null>(null);
   const [pendingCloseDocumentId, setPendingCloseDocumentId] = useState<
@@ -3235,9 +3237,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         imageAssets: [...new Set(getDocumentEditingState(pdfEditsByDocument, document.id).edits.flatMap((edit) => edit.type === "image" || edit.type === "signature" ? [edit.imageId] : []))].flatMap((id) => signatureImages[id] ? [signatureImages[id]] : []),
       }))).then((results) => {
         if (results.some((saved) => !saved)) {
-          setStorageWarning(
-            "Les PDF ne peuvent pas être conservés durablement dans ce navigateur. Ils resteront ouverts jusqu'à la fermeture de l'onglet.",
-          );
+          setStorageWarning(DOCUMENT_STORAGE_WARNING);
+        } else {
+          setStorageWarning((current) => current === DOCUMENT_STORAGE_WARNING ? null : current);
         }
       });
     }, 250);
@@ -4869,6 +4871,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           ? cancelSaveAsDialog
           : isFileMenuOpen || isSignatureDialogOpen || eyedropperTarget !== null || activeEditingTool !== "select" || pendingSignatureImageId !== null || selectedEditId !== null
             ? () => {
+                if (isFileMenuOpen) fileMenuTriggerRef.current?.focus();
                 setIsFileMenuOpen(false);
                 setIsSignatureDialogOpen(false);
                 setActiveEditingTool("select");
@@ -5250,6 +5253,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <div className="insert-menu file-menu">
               <button
                 type="button"
+                ref={fileMenuTriggerRef}
                 onClick={() => setIsFileMenuOpen((isOpen) => !isOpen)}
                 disabled={!activeDocument}
                 aria-haspopup="menu"

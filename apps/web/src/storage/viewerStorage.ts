@@ -421,8 +421,15 @@ async function putStoredDocument(snapshot: ViewerDocumentSnapshot) {
 }
 
 export async function saveStoredDocument(snapshot: ViewerDocumentSnapshot) {
+  const previousFallback = memoryDocuments.get(snapshot.id);
   try {
-    return await putStoredDocument(snapshot);
+    const saved = await putStoredDocument(snapshot);
+    // Release recovered copies, but preserve a newer failure from an overlapping save.
+    if (saved && memoryDocuments.get(snapshot.id) === previousFallback) {
+      memoryDocuments.delete(snapshot.id);
+      pruneMemoryImages();
+    }
+    return saved;
   } catch {
     memoryDocuments.set(snapshot.id, toStoredPdfDocument(snapshot));
     for (const image of snapshot.imageAssets ?? []) memoryImages.set(image.id, image);
@@ -432,6 +439,8 @@ export async function saveStoredDocument(snapshot: ViewerDocumentSnapshot) {
 }
 
 export async function loadStoredDocument(documentId: string) {
+  // A failed write is newer than the last durable version for this session.
+  if (memoryDocuments.has(documentId)) return memoryDocuments.get(documentId)!;
   if (!hasIndexedDb()) {
     return memoryDocuments.get(documentId) ?? null;
   }
@@ -466,6 +475,8 @@ export async function loadStoredDocuments(documentIds: string[]) {
 }
 
 export async function removeStoredDocument(documentId: string) {
+  memoryDocuments.delete(documentId);
+  pruneMemoryImages();
   if (!hasIndexedDb()) {
     memoryDocuments.delete(documentId);
     pruneMemoryImages();
@@ -569,14 +580,18 @@ export async function clearStoredDocuments() {
 }
 
 export async function loadImageAssets(ids: string[]): Promise<Record<string, SignatureImage>> {
-  if (!hasIndexedDb()) return Object.fromEntries(ids.flatMap((id) => memoryImages.has(id) ? [[id, memoryImages.get(id)!]] : []));
-  const database = await openDatabase();
-  if (!database) return {};
+  const fallback = Object.fromEntries(ids.flatMap((id) => memoryImages.has(id) ? [[id, memoryImages.get(id)!]] : []));
+  if (!hasIndexedDb()) return fallback;
+  let database: IDBDatabase | null = null;
   try {
+    database = await openDatabase();
+    if (!database) return fallback;
     const store = database.transaction(IMAGE_STORE, "readonly").objectStore(IMAGE_STORE);
     const images = await Promise.all(ids.map((id) => requestToPromise(store.get(id)) as Promise<SignatureImage | undefined>));
-    return Object.fromEntries(images.flatMap((image) => image ? [[image.id, image]] : []));
-  } finally { database.close(); }
+    return { ...Object.fromEntries(images.flatMap((image) => image ? [[image.id, image]] : [])), ...fallback };
+  } catch {
+    return fallback;
+  } finally { database?.close(); }
 }
 
 function pruneMemoryImages() {
