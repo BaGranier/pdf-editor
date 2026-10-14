@@ -1,5 +1,6 @@
 """Small synthetic encrypted and raster-only OCR corpus; no personal inputs."""
 
+import argparse
 from pathlib import Path
 import fitz
 
@@ -7,13 +8,13 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "apps/web/e2e/fixtures"
 
 
-def generate() -> None:
-    FIXTURES.mkdir(parents=True, exist_ok=True)
+def generate(output: Path = FIXTURES) -> None:
+    output.mkdir(parents=True, exist_ok=True)
     with fitz.open() as doc:
         page = doc.new_page(width=500, height=650)
         page.insert_text((40, 70), "PROTECTED PDF WITNESS", fontsize=20)
         doc.save(
-            FIXTURES / "password-protected.pdf",
+            output / "password-protected.pdf",
             encryption=fitz.PDF_ENCRYPT_AES_256,
             user_pw="synthetic-open",
             owner_pw="synthetic-owner",
@@ -29,7 +30,7 @@ def generate() -> None:
         ("contrast", 0, True, 1),
         ("multipage", 0, False, 3),
     ]:
-        with fitz.open() as output:
+        with fitz.open() as document:
             for index in range(pages):
                 with fitz.open() as text, fitz.open() as raster:
                     page = text.new_page(width=500, height=650)
@@ -53,10 +54,12 @@ def generate() -> None:
                         page.rect, stream=image
                     )
                     width, height = (650, 500) if angle in (90, 270) else (500, 650)
-                    target = output.new_page(width=width, height=height)
+                    target = document.new_page(width=width, height=height)
                     target.show_pdf_page(target.rect, raster, 0, rotate=-angle)
-            output.save(FIXTURES / f"ocr-oriented-{name}.pdf", garbage=2, deflate=True)
+            document.save(output / f"ocr-oriented-{name}.pdf", garbage=2, deflate=True)
 
 
 if __name__ == "__main__":
-    generate()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output-dir", type=Path, default=FIXTURES)
+    generate(parser.parse_args().output_dir)

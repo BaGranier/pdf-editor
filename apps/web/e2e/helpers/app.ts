@@ -146,3 +146,15 @@ export async function clearLocalData(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Réinitialiser les données locales" }).click();
   await expect(page.getByLabel("Aucun PDF ouvert")).toBeVisible();
 }
+
+/** Draw a 220×72 screen-space text box through the current pointer UI. */
+export async function drawTextBox(page: Page, position: { x: number; y: number }): Promise<void> {
+  const layer = page.getByLabel("Couche d'édition de la page 1");
+  await expect(layer).toHaveAttribute("data-active-editing-tool", "add_text");
+  const box = await layer.boundingBox();
+  if (!box) throw new Error("Couche d’édition non mesurable.");
+  await page.mouse.move(box.x + position.x, box.y + position.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + position.x + 220, box.y + position.y + 72, { steps: 5 });
+  await page.mouse.up();
+}

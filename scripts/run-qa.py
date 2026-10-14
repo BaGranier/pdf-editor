@@ -17,7 +17,6 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WEB_DIR = PROJECT_ROOT / "apps" / "web"
 BACKEND_DIR = PROJECT_ROOT / "services" / "pdf-engine"
-GENERATE_SCRIPT = PROJECT_ROOT / "scripts" / "generate-qa-pdfs.py"
 REPORT_SCRIPT = PROJECT_ROOT / "scripts" / "generate-qa-report.py"
 DOCX_QUALITY_SCRIPT = (
     PROJECT_ROOT / "scripts" / "validate-docx-visual-quality.py"
@@ -77,10 +76,12 @@ def generate_fixtures(playwright_args: list[str]) -> None:
         str(BACKEND_DIR),
         "python",
         "-m",
-        "scripts.generate-qa-pdfs",
+        "scripts.prepare-qa-assets",
+        "--mode",
+        "browser",
     ]
-    if not quick_campaign and os.environ.get("QA_SKIP_LARGE") != "1":
-        command.append("--include-large")
+    if quick_campaign or os.environ.get("QA_SKIP_LARGE") == "1":
+        command.append("--skip-large")
     environment = {
         **os.environ,
         "UV_CACHE_DIR": str(PROJECT_ROOT / ".uv-cache"),

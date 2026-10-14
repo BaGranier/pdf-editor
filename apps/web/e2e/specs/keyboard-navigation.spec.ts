@@ -29,10 +29,10 @@ test("QA-E2E-004 @regression centralise et vérifie les raccourcis document", as
   const fileInput = page.locator("input[type='file'][aria-label='Ouvrir un PDF']");
   await fileInput.focus();
   await fileInput.press(DOCUMENT_SHORTCUTS.alternateClose);
-  await expect(page.locator(".document-item")).toHaveCount(3);
+  await expect(page.locator(".document-tab")).toHaveCount(3);
 
   await sidebar.focus();
   await sidebar.press(DOCUMENT_SHORTCUTS.close);
-  await expect(page.locator(".document-item")).toHaveCount(2);
+  await expect(page.locator(".document-tab")).toHaveCount(2);
   await expect(activeDocumentButton(page)).toHaveText(/pdf-landscape-portrait/);
 });

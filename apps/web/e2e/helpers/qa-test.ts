@@ -75,7 +75,7 @@ async function collectPageMetrics(page: Page, browserName: string) {
 
     return {
       browserName: currentBrowserName,
-      openedDocuments: document.querySelectorAll(".document-item").length,
+      openedDocuments: document.querySelectorAll(".document-tab").length,
       renderedPages: document.querySelectorAll(".pdf-page").length,
       organizedPages: document.querySelectorAll("[data-testid='organized-page']").length,
       jsHeap:

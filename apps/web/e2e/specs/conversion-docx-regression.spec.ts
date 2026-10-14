@@ -167,7 +167,7 @@ for (const restored of [false, true]) {
         await validateAndReport(run, mode, restored, testInfo);
       }
 
-      await expect(page.locator(".document-item")).toHaveCount(1);
+      await expect(page.locator(".document-tab")).toHaveCount(1);
     },
   );
 }

@@ -11,13 +11,28 @@ import fitz
 from pypdf import PdfReader
 
 
+def validate_structure(pdf: Path, expected_pages: int | None = None) -> PdfReader:
+    """Shared strict reader for generated inputs and exported QA outputs."""
+    reader = PdfReader(pdf, strict=True)
+    if expected_pages is not None and len(reader.pages) != expected_pages:
+        page_count = len(reader.pages)
+        reader.close()
+        raise ValueError(
+            f"Nombre de pages inattendu: {page_count} != {expected_pages}"
+        )
+    return reader
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("pdf", type=Path)
     parser.add_argument("--expected-pages", type=int)
     args = parser.parse_args()
 
-    reader = PdfReader(args.pdf, strict=True)
+    try:
+        reader = validate_structure(args.pdf, args.expected_pages)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
     with fitz.open(args.pdf) as fitz_document:
         image_count = sum(len(page.get_images(full=True)) for page in fitz_document)
         drawing_count = sum(len(page.get_drawings()) for page in fitz_document)
@@ -51,10 +66,6 @@ def main() -> None:
             for page in reader.pages
         ],
     }
-    if args.expected_pages is not None and result["pageCount"] != args.expected_pages:
-        raise SystemExit(
-            f"Nombre de pages inattendu: {result['pageCount']} != {args.expected_pages}"
-        )
     print(json.dumps(result))
 
 

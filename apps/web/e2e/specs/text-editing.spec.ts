@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "../helpers/qa-test";
 import {
   enterOrganizeMode,
+  drawTextBox,
   fixtures,
   openApp,
   openPdf,
@@ -19,7 +20,7 @@ test("EDIT-TEXT-001 @smoke ajoute, déplace et exporte du texte libre", async ({
   await page.getByRole("button", { name: "Ajouter du texte" }).click();
   const editLayer = page.getByLabel("Couche d'édition de la page 1");
   await expect(editLayer).toBeVisible();
-  await editLayer.click({ position: { x: 80, y: 100 } });
+  await drawTextBox(page, { x: 80, y: 100 });
 
   const textInput = page.getByLabel("Texte ajouté page 1");
   await textInput.fill("Été 2026 : 42,50 !");

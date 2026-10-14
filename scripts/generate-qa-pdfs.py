@@ -17,19 +17,21 @@ FIXTURE_DIR = PROJECT_ROOT / "apps" / "web" / "e2e" / "fixtures"
 LARGE_PAYLOAD_SIZE = 51 * 1024 * 1024
 
 
-def write_pdf(name: str, page_sizes: list[tuple[float, float]]) -> Path:
+def write_pdf(
+    name: str, page_sizes: list[tuple[float, float]], output_dir: Path = FIXTURE_DIR
+) -> Path:
     writer = PdfWriter()
     for index, (width, height) in enumerate(page_sizes, start=1):
         writer.add_blank_page(width=width, height=height)
         writer.add_metadata({f"/QaPage{index}": f"{name}:{index}:{width}x{height}"})
 
-    output_path = FIXTURE_DIR / name
+    output_path = output_dir / name
     with output_path.open("wb") as output:
         writer.write(output)
     return output_path
 
 
-def write_large_pdf() -> Path:
+def write_large_pdf(output_dir: Path = FIXTURE_DIR) -> Path:
     writer = PdfWriter()
     for index in range(250):
         writer.add_blank_page(width=300 + index, height=700)
@@ -37,7 +39,7 @@ def write_large_pdf() -> Path:
     pattern = b"PDF-EDITOR-QA-LARGE-FIXTURE\n"
     payload = (pattern * (LARGE_PAYLOAD_SIZE // len(pattern) + 1))[:LARGE_PAYLOAD_SIZE]
     writer.add_attachment("deterministic-qa-payload.bin", payload)
-    output_path = FIXTURE_DIR / "pdf-large.pdf"
+    output_path = output_dir / "pdf-large.pdf"
     with output_path.open("wb") as output:
         writer.write(output)
 
@@ -46,8 +48,10 @@ def write_large_pdf() -> Path:
     return output_path
 
 
-def save_fitz_fixture(name: str, document: fitz.Document) -> Path:
-    output_path = FIXTURE_DIR / name
+def save_fitz_fixture(
+    name: str, document: fitz.Document, output_dir: Path = FIXTURE_DIR
+) -> Path:
+    output_path = output_dir / name
     document.save(
         output_path,
         garbage=4,
@@ -67,7 +71,7 @@ def create_scan_image(text: str) -> bytes:
     return image
 
 
-def create_french_scan_fixture() -> Path:
+def create_french_scan_fixture(output_dir: Path = FIXTURE_DIR) -> Path:
     """Image-only French witness; no invisible source text can satisfy OCR QA."""
     source = fitz.open()
     page = source.new_page(width=612, height=792)
@@ -83,7 +87,7 @@ def create_french_scan_fixture() -> Path:
     scan = fitz.open()
     page = scan.new_page(width=612, height=792)
     page.insert_image(page.rect, stream=image)
-    return save_fitz_fixture("conversion-scan-french.pdf", scan)
+    return save_fitz_fixture("conversion-scan-french.pdf", scan, output_dir=output_dir)
 
 
 def create_transparent_logo() -> bytes:
@@ -123,7 +127,7 @@ def create_transparent_logo() -> bytes:
     )
 
 
-def create_docx_fidelity_fixture() -> Path:
+def create_docx_fidelity_fixture(output_dir: Path = FIXTURE_DIR) -> Path:
     logo = create_transparent_logo()
     document = fitz.open()
     for page_index in range(3):
@@ -230,10 +234,12 @@ def create_docx_fidelity_fixture() -> Path:
                 fontname="hebo",
             )
 
-    return save_fitz_fixture("conversion-docx-fidelity.pdf", document)
+    return save_fitz_fixture(
+        "conversion-docx-fidelity.pdf", document, output_dir=output_dir
+    )
 
 
-def create_native_text_fixture() -> Path:
+def create_native_text_fixture(output_dir: Path = FIXTURE_DIR) -> Path:
     document = fitz.open()
     page = document.new_page(width=612, height=792)
     font_path = PROJECT_ROOT / "apps" / "web" / "public" / "fonts" / "NotoSans-Regular.ttf"
@@ -248,10 +254,10 @@ def create_native_text_fixture() -> Path:
         color=(1, 1, 1),
     )
     page.insert_text((72, 220), "Référence : EDIT-TEXT-NATIVE-001", fontsize=12, fontname="helv")
-    return save_fitz_fixture("pdf-native-text.pdf", document)
+    return save_fitz_fixture("pdf-native-text.pdf", document, output_dir=output_dir)
 
 
-def create_acroform_fixture() -> Path:
+def create_acroform_fixture(output_dir: Path = FIXTURE_DIR) -> Path:
     """Small deterministic AcroForm coverage fixture, independent from user files."""
     document = fitz.open()
     page = document.new_page(width=612, height=792)
@@ -274,10 +280,10 @@ def create_acroform_fixture() -> Path:
     add_widget("options.newsletter", fitz.PDF_WIDGET_TYPE_CHECKBOX, fitz.Rect(50, 250, 68, 268), "Yes")
     add_widget("person.country", fitz.PDF_WIDGET_TYPE_COMBOBOX, fitz.Rect(50, 330, 280, 356), "France", choices=["France", "Belgique", "Suisse"])
     add_widget("person.interests", fitz.PDF_WIDGET_TYPE_LISTBOX, fitz.Rect(320, 330, 560, 390), "PDF", choices=["PDF", "OCR", "Desktop"])
-    return save_fitz_fixture("pdf-acroform.pdf", document)
+    return save_fitz_fixture("pdf-acroform.pdf", document, output_dir=output_dir)
 
 
-def generate_conversion_fixtures() -> list[Path]:
+def generate_conversion_fixtures(output_dir: Path = FIXTURE_DIR) -> list[Path]:
     generated: list[Path] = []
 
     simple = fitz.open()
@@ -294,7 +300,9 @@ def generate_conversion_fixtures() -> list[Path]:
         "English digital document - second page.",
         fontsize=18,
     )
-    generated.append(save_fitz_fixture("conversion-simple-text.pdf", simple))
+    generated.append(
+        save_fitz_fixture("conversion-simple-text.pdf", simple, output_dir=output_dir)
+    )
 
     columns = fitz.open()
     page = columns.new_page(width=612, height=792)
@@ -308,7 +316,9 @@ def generate_conversion_fixtures() -> list[Path]:
         "Right column\nFirst paragraph\nSecond paragraph",
         fontsize=14,
     )
-    generated.append(save_fitz_fixture("conversion-two-columns.pdf", columns))
+    generated.append(
+        save_fitz_fixture("conversion-two-columns.pdf", columns, output_dir=output_dir)
+    )
 
     table = fitz.open()
     page = table.new_page(width=612, height=792)
@@ -328,37 +338,47 @@ def generate_conversion_fixtures() -> list[Path]:
     page.insert_text((75, 215), "Livre", fontsize=11)
     page.insert_text((245, 215), "2", fontsize=11)
     page.insert_text((415, 215), "24 €", fontsize=11)
-    generated.append(save_fitz_fixture("conversion-table.pdf", table))
+    generated.append(
+        save_fitz_fixture("conversion-table.pdf", table, output_dir=output_dir)
+    )
 
     image_bytes = create_scan_image("SYNTHETIC IMAGE")
     images = fitz.open()
     page = images.new_page(width=612, height=792)
     page.insert_text((60, 70), "Document avec image intégrée", fontsize=22)
     page.insert_image(fitz.Rect(60, 120, 500, 650), stream=image_bytes)
-    generated.append(save_fitz_fixture("conversion-images.pdf", images))
+    generated.append(
+        save_fitz_fixture("conversion-images.pdf", images, output_dir=output_dir)
+    )
 
     scan = fitz.open()
     page = scan.new_page(width=612, height=792)
     page.insert_image(page.rect, stream=create_scan_image("SCANNED OCR WITNESS"))
-    generated.append(save_fitz_fixture("conversion-scan.pdf", scan))
-    generated.append(create_french_scan_fixture())
+    generated.append(
+        save_fitz_fixture("conversion-scan.pdf", scan, output_dir=output_dir)
+    )
+    generated.append(create_french_scan_fixture(output_dir=output_dir))
 
     mixed = fitz.open()
     page = mixed.new_page(width=612, height=792)
     page.insert_text((60, 140), "DIGITAL MIXED WITNESS", fontsize=24)
     page = mixed.new_page(width=612, height=792)
     page.insert_image(page.rect, stream=create_scan_image("SCANNED MIXED WITNESS"))
-    generated.append(save_fitz_fixture("conversion-mixed.pdf", mixed))
+    generated.append(
+        save_fitz_fixture("conversion-mixed.pdf", mixed, output_dir=output_dir)
+    )
 
     landscape = fitz.open()
     page = landscape.new_page(width=792, height=612)
     page.insert_text((60, 120), "Landscape conversion witness", fontsize=24)
-    generated.append(save_fitz_fixture("conversion-landscape.pdf", landscape))
-    generated.append(create_docx_fidelity_fixture())
+    generated.append(
+        save_fitz_fixture("conversion-landscape.pdf", landscape, output_dir=output_dir)
+    )
+    generated.append(create_docx_fidelity_fixture(output_dir=output_dir))
     return generated
 
 
-def generate_editor_feature_fixtures() -> list[Path]:
+def generate_editor_feature_fixtures(output_dir: Path = FIXTURE_DIR) -> list[Path]:
     """Small synthetic assets for image insertion and 20 presentation swaps."""
     samples = bytes(
         channel
@@ -369,7 +389,7 @@ def generate_editor_feature_fixtures() -> list[Path]:
     pixmap = fitz.Pixmap(fitz.csRGB, 160, 80, samples, False)
     generated = []
     for extension in ("png", "jpg"):
-        path = FIXTURE_DIR / f"editor-image.{extension}"
+        path = output_dir / f"editor-image.{extension}"
         path.write_bytes(pixmap.tobytes(extension))
         generated.append(path)
     # JPEG with orientation 6: the editor must materialize the browser's rotation.
@@ -379,7 +399,7 @@ def generate_editor_feature_fixtures() -> list[Path]:
         + struct.pack("<HHIHHI", 0x112, 3, 1, 6, 0, 0)
     )
     jpeg = pixmap.tobytes("jpg")
-    oriented = FIXTURE_DIR / "editor-image-oriented.jpg"
+    oriented = output_dir / "editor-image-oriented.jpg"
     oriented.write_bytes(
         jpeg[:2] + b"\xff\xe1" + struct.pack(">H", len(exif) + 2) + exif + jpeg[2:]
     )
@@ -393,48 +413,53 @@ def generate_editor_feature_fixtures() -> list[Path]:
         page.insert_text(
             (60, 100), f"Synthetic slide {index + 1}", fontsize=32, color=(1, 1, 1)
         )
-    generated.append(save_fitz_fixture("editor-slides-20.pdf", slides))
+    generated.append(
+        save_fitz_fixture("editor-slides-20.pdf", slides, output_dir=output_dir)
+    )
     return generated
 
 
-
-def generate(include_large: bool) -> list[Path]:
-    FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
+def generate(include_large: bool, output_dir: Path = FIXTURE_DIR) -> list[Path]:
+    output_dir.mkdir(parents=True, exist_ok=True)
     generated = [
-        write_pdf("pdf-small-1-page.pdf", [(320, 460)]),
-        write_pdf("pdf-text-position.pdf", [(612, 792)]),
-        create_native_text_fixture(),
-        create_acroform_fixture(),
+        write_pdf("pdf-small-1-page.pdf", [(320, 460)], output_dir=output_dir),
+        write_pdf("pdf-text-position.pdf", [(612, 792)], output_dir=output_dir),
+        create_native_text_fixture(output_dir=output_dir),
+        create_acroform_fixture(output_dir=output_dir),
         write_pdf(
             "pdf-small-5-pages.pdf",
             [(300 + index * 25, 500) for index in range(5)],
+            output_dir=output_dir,
         ),
         write_pdf(
             "pdf-landscape-portrait.pdf",
             [(320, 520), (720, 360), (360, 600), (800, 400)],
+            output_dir=output_dir,
         ),
         write_pdf(
             "pdf-long.pdf",
             [(320 + index, 520 + (index % 3) * 20) for index in range(30)],
+            output_dir=output_dir,
         ),
     ]
-    corrupted_path = FIXTURE_DIR / "pdf-corrupted.pdf"
+    corrupted_path = output_dir / "pdf-corrupted.pdf"
     corrupted_path.write_bytes(
         b"%PDF-1.7\n% deterministic fixture intentionally corrupted\n"
         b"1 0 obj << /Type /Catalog >> endobj\n%% missing xref and trailer"
     )
     generated.append(corrupted_path)
-    generated.extend(generate_conversion_fixtures())
-    generated.extend(generate_editor_feature_fixtures())
+    generated.extend(generate_conversion_fixtures(output_dir=output_dir))
+    generated.extend(generate_editor_feature_fixtures(output_dir=output_dir))
 
     if include_large:
-        generated.append(write_large_pdf())
+        generated.append(write_large_pdf(output_dir=output_dir))
 
     return generated
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--output-dir", type=Path, default=FIXTURE_DIR)
     parser.add_argument("--french-only", action="store_true")
     parser.add_argument(
         "--include-large",
@@ -442,13 +467,14 @@ def main() -> None:
         help="Génère aussi le PDF de robustesse de plus de 50 Mo et 250 pages.",
     )
     args = parser.parse_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
     fixtures = (
-        [create_french_scan_fixture()]
+        [create_french_scan_fixture(output_dir=args.output_dir)]
         if args.french_only
-        else generate(args.include_large)
+        else generate(args.include_large, output_dir=args.output_dir)
     )
     for fixture in fixtures:
-        print(f"{fixture.relative_to(PROJECT_ROOT)} ({fixture.stat().st_size} octets)")
+        print(f"{fixture} ({fixture.stat().st_size} octets)")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { expect, test } from "../helpers/qa-test";
 import {
   enterOrganizeMode,
+  drawTextBox,
   fixtures,
   openApp,
   openPdf,
@@ -19,8 +20,9 @@ test("EDIT-INTERACT-001 redimensionne, annule et copie un bloc texte", async ({
   await openPdf(page, fixtures.onePage);
 
   await page.getByRole("button", { name: "Ajouter du texte" }).click();
-  const editLayer = page.getByLabel("Couche d'édition de la page 1");
-  await editLayer.click({ position: { x: 20, y: 100 } });
+  await drawTextBox(page, { x: 20, y: 100 });
+  // Drag creation derives font size from height; these overflow probes use 18pt.
+  await page.getByLabel("Taille du texte").fill("18");
   const input = page.getByLabel("Texte ajouté page 1").first();
   await input.fill(text);
   await input.evaluate((element) => element.blur());
@@ -173,9 +175,8 @@ test("EDIT-TEXT-OVERFLOW-001 retire le warning après agrandissement", async ({
   await openPdf(page, fixtures.onePage);
 
   await page.getByRole("button", { name: "Ajouter du texte" }).click();
-  await page.getByLabel("Couche d'édition de la page 1").click({
-    position: { x: 30, y: 120 },
-  });
+  await drawTextBox(page, { x: 30, y: 120 });
+  await page.getByLabel("Taille du texte").fill("18");
   const input = page.getByLabel("Texte ajouté page 1");
   await input.fill(
     "Ce texte devient trop long dans une petite zone, puis doit tenir après son agrandissement vertical et horizontal.",

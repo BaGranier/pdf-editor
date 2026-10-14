@@ -14,7 +14,7 @@ test("QA-E2E-003 @smoke navigue et ferme plusieurs documents de façon cohérent
   await openPdf(page, fixtures.onePage);
   await openPdf(page, fixtures.fivePages);
   await openPdf(page, fixtures.mixed);
-  await expect(page.locator(".document-item")).toHaveCount(3);
+  await expect(page.locator(".document-tab")).toHaveCount(3);
 
   await qa.measure("switch-document", async () => {
     await page.getByRole("button", { name: "pdf-small-1-page.pdf", exact: true }).click();
@@ -22,10 +22,10 @@ test("QA-E2E-003 @smoke navigue et ferme plusieurs documents de façon cohérent
   });
   await expect(page.getByRole("button", { name: "Fermer pdf-small-5-pages.pdf" })).toBeVisible();
   await page.getByRole("button", { name: "Fermer pdf-small-5-pages.pdf" }).click();
-  await expect(page.locator(".document-item")).toHaveCount(2);
+  await expect(page.locator(".document-tab")).toHaveCount(2);
   await expect(activeDocumentButton(page)).toHaveText(/pdf-small-1-page\.pdf/);
 
   await page.getByRole("button", { name: "Fermer pdf-small-1-page.pdf" }).click();
-  await expect(page.locator(".document-item")).toHaveCount(1);
+  await expect(page.locator(".document-tab")).toHaveCount(1);
   await expect(activeDocumentButton(page)).toHaveText(/pdf-landscape-portrait\.pdf/);
 });

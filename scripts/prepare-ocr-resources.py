@@ -19,12 +19,17 @@ FILES = {
 }
 
 
-def prepare() -> Path:
-    tessdata = DESTINATION / "tessdata"
+def prepare(*, download: bool = True, destination: Path = DESTINATION) -> Path:
+    tessdata = destination / "tessdata"
     tessdata.mkdir(parents=True, exist_ok=True)
     manifest = {"revision": REVISION, "files": {}}
     for name, expected in FILES.items():
         target = tessdata / name
+        if not target.is_file() and not download:
+            raise RuntimeError(
+                f"Missing pinned OCR resource: {target}. "
+                "Run scripts.prepare-qa-assets --download-ocr explicitly."
+            )
         content = (
             target.read_bytes()
             if target.is_file()
@@ -33,13 +38,17 @@ def prepare() -> Path:
         digest = hashlib.sha256(content).hexdigest()
         if digest != expected:
             raise RuntimeError(f"OCR resource checksum mismatch: {name}")
-        target.write_bytes(content)
+        if not target.exists():
+            target.write_bytes(content)
         manifest["files"][name] = {"sha256": digest, "bytes": len(content)}
-    (DESTINATION / "manifest.json").write_text(
-        json.dumps(manifest, indent=2), encoding="utf-8"
-    )
-    print(json.dumps(manifest, indent=2))
-    return DESTINATION
+    manifest_path = destination / "manifest.json"
+    if manifest_path.exists():
+        if json.loads(manifest_path.read_text()) != manifest:
+            raise RuntimeError(f"OCR manifest mismatch: {manifest_path}")
+    else:
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    print(f"OCR resources validated: {len(FILES)} pinned files")
+    return destination
 
 
 if __name__ == "__main__":

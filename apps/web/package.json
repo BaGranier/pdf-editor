@@ -12,6 +12,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "preview": "vite preview",
+    "qa:prepare": "uv run --directory ../.. --project services/pdf-engine python -m scripts.prepare-qa-assets",
     "qa:e2e": "uv run --directory ../.. --project services/pdf-engine python -m scripts.run-qa",
     "qa:e2e:quick": "uv run --directory ../.. --project services/pdf-engine python -m scripts.run-qa --grep-invert @slow",
     "qa:e2e:chromium": "uv run --directory ../.. --project services/pdf-engine python -m scripts.run-qa --project=chromium",

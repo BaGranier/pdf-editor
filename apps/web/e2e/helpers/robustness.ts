@@ -1,5 +1,5 @@
 import path from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { expect, type Page, type TestInfo } from "@playwright/test";
 import type { PdfEdit, SignatureImage } from "../../src/editing/types";
@@ -8,7 +8,7 @@ export const root = path.resolve(process.cwd(), "../..");
 export const corpus = path.join(root, "data/output/editor-robustness-008");
 export const python = path.join(root, "services/pdf-engine/.venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
 export function ensureCorpus() {
-  if (!existsSync(path.join(corpus, "manifest.json"))) execFileSync(python, ["-m", "scripts.editor-robustness-fixtures"], { cwd: root });
+  execFileSync(python, ["-m", "scripts.prepare-qa-assets", "--mode", "browser", "--skip-large"], { cwd: root });
 }
 export function scene() {
   return JSON.parse(readFileSync(path.join(corpus, "scene.json"), "utf8")) as { edits: PdfEdit[]; assets: SignatureImage[] };

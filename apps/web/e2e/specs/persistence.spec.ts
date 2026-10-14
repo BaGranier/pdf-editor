@@ -45,7 +45,7 @@ test("QA-E2E-008 @smoke restaure IndexedDB, préférences, scroll et plan sans d
     .not.toBeNull();
 
   await page.reload();
-  await expect(page.locator(".document-item")).toHaveCount(2);
+  await expect(page.locator(".document-tab")).toHaveCount(2);
   await expect(
     page.getByRole("button", { name: "pdf-small-5-pages.pdf, document actif" }),
   ).toBeVisible();
@@ -61,7 +61,7 @@ test("QA-E2E-008 @smoke restaure IndexedDB, préférences, scroll et plan sans d
   await enterOrganizeMode(page);
   await expect(organizedPages(page)).toHaveCount(5);
   await expect(organizedPages(page).first()).toHaveAttribute("data-rotation", "90");
-  await expect(page.locator(".document-item")).toHaveCount(2);
+  await expect(page.locator(".document-tab")).toHaveCount(2);
 });
 
 test("QA-E2E-009 @smoke efface les données locales et conserve un état initial fonctionnel", async ({
@@ -89,7 +89,7 @@ test("QA-E2E-009 @smoke efface les données locales et conserve un état initial
 
   const resetTheme = await page.evaluate(() => document.documentElement.dataset.theme);
   await page.reload();
-  await expect(page.locator(".document-item")).toHaveCount(0);
+  await expect(page.locator(".document-tab")).toHaveCount(0);
   await expect(page.getByLabel("Aucun PDF ouvert")).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => document.documentElement.dataset.theme))

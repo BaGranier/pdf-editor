@@ -155,11 +155,11 @@ def scene() -> tuple[bytes, list[dict], list[dict]]:
     return source, edits, assets
 
 
-def generate() -> None:
-    OUTPUT.mkdir(parents=True, exist_ok=True)
+def generate(output: Path = OUTPUT) -> None:
+    output.mkdir(parents=True, exist_ok=True)
     source, edits, scene_assets = scene()
-    (OUTPUT / "scene.pdf").write_bytes(source)
-    (OUTPUT / "scene.json").write_text(
+    (output / "scene.pdf").write_bytes(source)
+    (output / "scene.json").write_text(
         json.dumps(dict(edits=edits, assets=scene_assets)), encoding="utf-8"
     )
     assets = []
@@ -182,7 +182,7 @@ def generate() -> None:
         extension = "png" if index % 2 == 0 else "jpeg"
         binary = pix.tobytes(extension)
         name = f"asset-{index:02}.{extension}"
-        (OUTPUT / name).write_bytes(binary)
+        (output / name).write_bytes(binary)
         assets.append(
             dict(
                 fileName=name,
@@ -203,7 +203,7 @@ def generate() -> None:
             for x in [60, 100, 140, 180, 210, 250, 285]
         ],
     )
-    (OUTPUT / "manifest.json").write_text(
+    (output / "manifest.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"
     )
     print(json.dumps(dict(assets=len(assets), bytes=manifest["totalBytes"])))
@@ -272,8 +272,9 @@ def compare(pdf: Path, viewer: Path) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compare", nargs=2, metavar=("PDF", "VIEWER_PNG"), type=Path)
+    parser.add_argument("--output-dir", type=Path, default=OUTPUT)
     options = parser.parse_args()
     if options.compare:
         compare(*options.compare)
     else:
-        generate()
+        generate(options.output_dir)

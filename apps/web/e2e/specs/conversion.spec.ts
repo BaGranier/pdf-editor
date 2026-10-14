@@ -99,7 +99,7 @@ test("QA-CONV-001 @smoke convertit réellement en DOCX et conserve la source", a
       name: "conversion-simple-text.pdf, document actif",
     }),
   ).toBeVisible();
-  await expect(page.locator(".document-item")).toHaveCount(1);
+  await expect(page.locator(".document-tab")).toHaveCount(1);
   const customResult = await qa.measure("conversion-docx-custom-name", () =>
     runConversion(page, "docx", async (dialog) => {
       await dialog.getByLabel("Nom du fichier").fill("rapport client");
@@ -146,7 +146,7 @@ test("QA-CONV-002 @smoke convertit en TXT UTF-8 puis en HTML autonome", async ({
   expect(html.validation.valid).toBe(true);
   expect(html.validation.pageSections).toBe(2);
   expect(html.validation.externalResourceCount).toBe(0);
-  await expect(page.locator(".document-item")).toHaveCount(1);
+  await expect(page.locator(".document-tab")).toHaveCount(1);
 });
 
 test("QA-CONV-DOCX-002 @regression produit un Word fidèle visuellement", async ({
@@ -187,7 +187,7 @@ test("QA-CONV-DOCX-002 @regression produit un Word fidèle visuellement", async 
       (ratio) => ratio > 0.002,
     ),
   ).toBe(true);
-  await expect(page.locator(".document-item")).toHaveCount(1);
+  await expect(page.locator(".document-tab")).toHaveCount(1);
 });
 
 test("QA-CONV-003 @regression convertit plusieurs pages PNG dans un ZIP", async ({
