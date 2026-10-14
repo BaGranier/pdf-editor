@@ -1,6 +1,6 @@
 # Next steps
 
-Dernière revue : 2026-10-13
+Dernière revue : 2026-10-14
 
 Seule roadmap opérationnelle du dépôt. La dette structurelle est définie dans
 [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md), les procédures dans
@@ -48,23 +48,21 @@ nécessiter une qualification native ; les items ci-dessous distinguent les deux
 
 ## P2 — Qualité / robustesse
 
-- [ ] Profiler un stress natif prolongé : au moins 20 assets distincts, grandes
-  images, crop/undo/redo, exports ouverts/fermés, gros PDF et OCR répétés.
-  Mesurer private bytes, RAM/GPU, CPU, handles et récupération après fermeture ;
-  établir une baseline reproductible avant seuils. Optimiser seulement les
-  rétentions inutiles identifiées, selon la dette documentaire mémoire.
-- [ ] Compléter la composition globale : les tests actuels couvrent des paires
-  markup/image/forme/trait/flèche/dessin et les commentaires séparément.
-  Ajouter une scène unique texte/highlight/images/formes/traits/flèches/commentaires,
-  plans/alpha/crop, puis comparer viewer et PDF rouvert sans perdre le texte sélectionnable.
-- [ ] Qualifier les sorties dans des lecteurs tiers : DOCX éditable/visuel sous
-  Word et LibreOffice, compression sur corpus photo/scan synthétique, AcroForms
-  et annotations conservées/aplaties sous Acrobat ; documenter les écarts de fidélité.
-- [ ] Revalider les exports extrêmes Firefox et les quotas/restaurations Web :
-  les anciens constats intermittents ne prouvent pas un bug actuel. Utiliser
-  un corpus synthétique et ne créer un correctif qu'après reproduction.
-- [ ] Mesurer le contraste sombre et le focus clavier sur les contrôles actuels ;
-  compléter la couverture accessible sans reprendre les anciens chiffres de campagne.
+- [ ] Requalifier le stress prolongé sur l’artefact WebView2 Windows final :
+  reprendre le corpus et les cycles 20 assets de la QA Web, puis mesurer private
+  bytes, GPU/RAM, CPU et handles natifs, avec OCR répétés et récupération après
+  fermeture. Les profils Chromium/Firefox Linux ne mesurent pas ces ressources.
+- [ ] Isoler/corriger la croissance native de recompression PyMuPDF 1.26.3 :
+  reproduction autonome sans exporteur applicatif et métriques dans
+  [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md#croissance-native-pendant-la-recompression-dimages).
+  Qualifier une correction amont ou une isolation bornée avant d’annoncer des
+  sessions natives longues sans croissance mémoire ; ne pas masquer avec un
+  vidage forcé d’allocateur dans le runtime.
+- [ ] Compléter les lecteurs tiers et corpus de compression : QA Linux synthétique
+  PyMuPDF/pypdf et DOCX LibreOffice acquise ; Word et Acrobat restent à exercer
+  (édition DOCX, AcroForms et annotations conservées/aplaties). Étendre aux photos
+  et scans représentatifs autorisés ; les profils ne garantissent pas un fichier
+  toujours plus petit pour les scans/transparences déjà compressibles.
 - [ ] Planifier une extraction frontend ciblée selon la dette d'orchestration ;
   préserver comportement/styles et rejouer les sentinelles du domaine déplacé.
 - [ ] Automatiser la précondition des assets QA d'intégration sur clone neuf,

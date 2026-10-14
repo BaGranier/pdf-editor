@@ -152,6 +152,86 @@ OCR packagé eng/fra/mixte et rotations offline, ressources absentes, fermeture
 pendant traitement, crash du worker/backend puis retry. Le prompt de mot de passe
 est React ; Playwright ne qualifie pas les dialogues natifs de fichiers.
 
+## Composition globale, assets et robustesse Web
+
+Corpus synthétique borné, généré sous `data/output/editor-robustness-008` et ignoré :
+20 PNG/JPEG distincts (≈19,2 Mo), deux images de plus de 2 Mpx, transparence,
+scène PDF/JSON avec texte source, highlight, deux images dont crop, rectangles
+opaque/alpha, ellipse, trait, flèche, dessin, commentaire, signature et AcroForm.
+Aucun asset volumineux n’est versionné.
+
+```bash
+# Racine du dépôt
+uv run --project services/pdf-engine python -m scripts.editor-robustness-fixtures
+uv run --project services/pdf-engine python -m scripts.profile-editor-robustness
+uv run --project services/pdf-engine python -m scripts.qualify-editor-compression
+uv run --project services/pdf-engine python -m scripts.qualify-docx-linux
+```
+
+Depuis `apps/web`, exécuter dans les deux navigateurs, sans retry :
+
+```bash
+PLAYWRIGHT_BROWSERS_PATH=../../.playwright-browsers npx playwright test \
+  e2e/specs/global-composition.spec.ts e2e/specs/asset-stress.spec.ts \
+  e2e/specs/web-storage-robustness.spec.ts e2e/specs/web-restoration-extremes.spec.ts \
+  e2e/specs/accessibility-robustness.spec.ts e2e/specs/storage-upgrade.spec.ts \
+  e2e/specs/shortcuts-audit.spec.ts e2e/specs/viewer-page-transition.spec.ts \
+  --project=chromium --project=firefox --retries=0
+```
+
+Les helpers préparent le petit corpus d’assets si absent. Le scénario gros PDF
+requiert aussi `scripts.generate-qa-pdfs --include-large` (250 pages / 51 Mio).
+Le stress, marqué `@slow`, effectue trois cycles comparables : 20 assets, 26
+instances par copie/réimport dédupliqué, 20 déplacements, 20 redimensionnements,
+10 crops, 30 undo/redo, plans, suppression/undo, deux exports puis
+fermeture des résultats et de la source, dans la même instance React sans reload
+entre cycles. Les exports ouverts servent aussi de
+changements de document ; zoom/scroll sont exercés après retour à la source.
+
+La composition vérifie quatre déplacements de plan et alpha 0/25/50/75/100 %.
+42 sondes de couleur en coordonnées PDF comparent chaque capture du viewer au
+rendu PyMuPDF de la sortie (écart maximal de 18 par canal pour les rasteriseurs).
+Les sorties sont aussi rouvertes avec PDF.js et pypdf ; texte sélectionnable,
+vecteurs, commentaire masqué/métadonnées et AcroForm sont contrôlés. Les objets
+ajoutés suivent `PdfEdit[]` ; texte natif/formulaires restent dans leurs couches
+source. Le marqueur local du commentaire utilise la même géométrie et couleur
+fixe dans le viewer et le PDF ; les annotations importées gardent leur UI dédiée.
+
+Les tests stockage injectent `QuotaExceededError` et abortent la transaction ;
+le remplissage durable est borné à 2 Mio, sans saturer le disque. Ils vérifient
+version de repli la plus récente, assets, avertissement/récupération et absence
+de copie fantôme après fermeture. Une fermeture réelle de navigateur avec profil
+isolé contrôle deux documents, crop, dirty state et assets partagés ; les cas
+métadonnées de viewport absentes, asset manquant et migration v1→v2 sont séparés.
+Une signature dont l’asset manque bloque l’export comme une image manquante.
+
+Les pièces jointes Playwright consignent assets/instances, taille logique des
+assets, estimation de stockage du navigateur, canvases, exports et heap JS.
+Chromium expose aussi les mesures CDP après GC ; le heap de la page exclut
+workers PDF.js, GPU et mémoire native. Firefox conserve `null` pour le heap
+indisponible. `backend-cycles.json` mesure RSS courant, pic RSS, CPU et descripteurs
+Linux sur six cycles ; ce ne sont pas des métriques Windows. Le diagnostic
+`profile-editor-robustness --native-rewrite-only` reproduit la croissance native
+sans exporteur applicatif ; `--diagnose-native --quality balanced --no-render`
+isole recompression/allocateur. Ces nettoyages sont uniquement diagnostiques.
+La limite encore active est détaillée dans [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
+
+Contraste sombre : couleurs calculées avec composition des fonds, ratios de
+luminance ciblés toolbar, menu, palette, inspector, dialogue et erreur ; seuil
+texte 4,5:1, anneau de focus 3:1. L’opacité et le contraste des états désactivés
+sont consignés séparément. Références : [contraste du texte](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html)
+et [contraste non textuel](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast).
+Les tests couvrent Tab/Shift+Tab, Enter/Space, Escape,
+sliders, retour au déclencheur et présentation ; aucun redesign global.
+
+Compression : cinq corpus (texture photographique synthétique, scan, texte,
+vecteurs et transparence), trois profils, tailles, rendu échantillonné, texte,
+vecteurs et masques alpha vérifiés. Un profil peut agrandir un scan déjà très
+compressible : aucune garantie de taille décroissante pour tout PDF. DOCX :
+LibreOffice headless contrôle accents, images, tableau simple et multipage ;
+`scripts.validate-docx-visual-quality --required` complète la comparaison visuelle.
+Word/Acrobat, impression produite et mémoire/handles WebView2 restent à qualifier.
+
 ## Résultats et contrôle visuel
 
 Artefacts ignorés : `apps/web/test-results/results.json`, `playwright-report/`,

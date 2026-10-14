@@ -27,6 +27,25 @@ pas des seuils de mémoire totale. Toute optimisation doit distinguer une réfé
 encore utile d'une fuite et préserver undo/redo. Le protocole de mesure est dans
 [QA_AUTOMATION.md](QA_AUTOMATION.md).
 
+## Croissance native pendant la recompression d’images
+
+Le runtime verrouillé PyMuPDF 1.26.3 présente une croissance RSS reproductible
+sur exports Équilibré/Taille réduite répétés, avec heap Python presque stable
+et quatre descripteurs Linux. Sur le corpus de 20 assets, six cycles Équilibré
+isolés sans rendu donnent ≈116→197 Mo après GC, vidage du store et diagnostic
+`malloc_trim` ; Qualité maximale reste ≈114 Mo. Un appel direct
+`Document.rewrite_images` sur une seule image, sans exporteur applicatif,
+reproduit ≈0,38 Mo supplémentaires par itération. Ce constat ne prouve pas une
+rétention de `PdfEdit[]`, ni un problème de handles Windows.
+
+Reproduire avec `scripts.profile-editor-robustness --native-rewrite-only` et les
+options documentées dans [QA_AUTOMATION.md](QA_AUTOMATION.md). `TOOLS.store_size()`
+retourne `None` dans ce wheel : aucune taille de cache n’est inventée. Isoler la
+rétention dans le code natif amont puis qualifier une correction/version compatible
+ou une isolation par processus. Aucun vidage forcé d’allocateur, changement de
+bibliothèque ou workaround navigateur n’est appliqué au runtime sur ce seul constat.
+Les métriques et PDF synthétiques restent dans les sorties ignorées.
+
 ## Contrats interlangages
 
 Les clients TypeScript et schémas Pydantic sont maintenus séparément, avec un
