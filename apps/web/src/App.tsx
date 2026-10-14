@@ -59,11 +59,9 @@ import { OcrDialog } from "./components/OcrDialog";
 import { validateImageSession } from "./images/imagePolicy";
 import { ConversionDialog } from "./components/ConversionDialog";
 import {
-  downloadConversionFile,
-  requestConversion,
-  type ConversionOptions,
-} from "./conversion/conversion";
-import { requestOcrPdf, type OcrOptions } from "./ocr/ocr";
+  useDocumentProcessing,
+  type ProcessingFeedback as ExportFeedback,
+} from "./hooks/useDocumentProcessing";
 import {
   renderPdfTextLayer,
   type PdfTextLayerRenderTask,
@@ -175,10 +173,6 @@ const PDFJS_DISPLAY_ANNOTATION_MODES = {
 type RenderState = "idle" | "loading" | "ready" | "error";
 type WorkspaceMode = "read" | "organize";
 type ViewerMode = PersistedViewerMode | "presentation";
-type ExportFeedback = {
-  kind: "success" | "warning" | "error";
-  message: string;
-};
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -2769,10 +2763,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     stage: PrintPreviewStage;
   } | null>(null);
   const printCleanupRef = useRef<(() => void) | null>(null);
-  const [isOcrDialogOpen, setIsOcrDialogOpen] = useState(false);
-  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
-  const [isConversionDialogOpen, setIsConversionDialogOpen] = useState(false);
-  const [isConverting, setIsConverting] = useState(false);
   const [status, setStatus] = useState("Sélectionnez un PDF local.");
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
   const [viewerFocusRequest, setViewerFocusRequest] = useState(0);
@@ -4030,59 +4020,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setActiveDocumentId(documentId);
   }, []);
 
-  const clearLocalData = useCallback(() => {
-    if (!window.confirm("Effacer toutes les données locales de ce viewer ?")) {
-      return;
-    }
-
-    pendingFocusTargetRef.current = "file-input";
-    setDocuments((currentDocuments) => {
-      currentDocuments.forEach(releasePdfDocument);
-      return [];
-    });
-    setActiveDocumentId(null);
-    setOrganizationPlans({});
-    setSelectedPageIdsByDocument({});
-    activePageByDocumentRef.current = {};
-    setActivePageByDocument({});
-    setPageNavigationRequest(null);
-    dispatchPdfEdits({ type: "clear" });
-    setSelectedEditId(null);
-    setEyedropperTarget(null);
-    setActiveEditingTool("select");
-    setSignatureImages({});
-    setPendingSignatureImageId(null);
-    setIsSignatureDialogOpen(false);
-    setIsFileMenuOpen(false);
-    setPendingCloseDocumentId(null);
-    setCloseAfterSaveDocumentId(null);
-    setOutputName("");
-    setSaveToOutputDir(false);
-    setIsExporting(false);
-    setExportFeedback(null);
-    setIsOcrDialogOpen(false);
-    setIsOcrProcessing(false);
-    setIsConversionDialogOpen(false);
-    setIsConverting(false);
-    setStorageWarning(null);
-    setWorkspaceMode("read");
-    setStatus("Sélectionnez un PDF local.");
-    setIsSidebarVisible(true);
-    setIsRestoringDocuments(false);
-    setTheme(getSystemTheme());
-    nextDocumentId.current = 1;
-    nextTextEditId.current = 1;
-    nextShapeEditId.current = 1;
-    nextSignatureImageId.current = 1;
-    nextSignatureEditId.current = 1;
-    documentButtonRefs.current.clear();
-    void clearViewerStorage().then((cleared) => {
-      if (!cleared) {
-        setStorageWarning("Certaines données locales n'ont pas pu être effacées. Fermez puis rouvrez l'application avant de réessayer.");
-      }
-    });
-  }, []);
-
   const handleSidebarKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
       if (isEditableKeyboardTarget(event.target)) {
@@ -4391,6 +4328,73 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     },
     [backendUrl, documents, loadOpenPdfDocument],
   );
+
+  const {
+    isOcrDialogOpen,
+    setIsOcrDialogOpen,
+    isOcrProcessing,
+    isConversionDialogOpen,
+    setIsConversionDialogOpen,
+    isConverting,
+    runOcrOnActiveDocument,
+    convertActiveDocument,
+    resetDocumentProcessing,
+  } = useDocumentProcessing({
+    activeDocument,
+    backendUrl,
+    openGeneratedPdfDocument,
+    onFeedback: setExportFeedback,
+  });
+
+  const clearLocalData = useCallback(() => {
+    if (!window.confirm("Effacer toutes les données locales de ce viewer ?")) {
+      return;
+    }
+
+    pendingFocusTargetRef.current = "file-input";
+    setDocuments((currentDocuments) => {
+      currentDocuments.forEach(releasePdfDocument);
+      return [];
+    });
+    setActiveDocumentId(null);
+    setOrganizationPlans({});
+    setSelectedPageIdsByDocument({});
+    activePageByDocumentRef.current = {};
+    setActivePageByDocument({});
+    setPageNavigationRequest(null);
+    dispatchPdfEdits({ type: "clear" });
+    setSelectedEditId(null);
+    setEyedropperTarget(null);
+    setActiveEditingTool("select");
+    setSignatureImages({});
+    setPendingSignatureImageId(null);
+    setIsSignatureDialogOpen(false);
+    setIsFileMenuOpen(false);
+    setPendingCloseDocumentId(null);
+    setCloseAfterSaveDocumentId(null);
+    setOutputName("");
+    setSaveToOutputDir(false);
+    setIsExporting(false);
+    setExportFeedback(null);
+    resetDocumentProcessing();
+    setStorageWarning(null);
+    setWorkspaceMode("read");
+    setStatus("Sélectionnez un PDF local.");
+    setIsSidebarVisible(true);
+    setIsRestoringDocuments(false);
+    setTheme(getSystemTheme());
+    nextDocumentId.current = 1;
+    nextTextEditId.current = 1;
+    nextShapeEditId.current = 1;
+    nextSignatureImageId.current = 1;
+    nextSignatureEditId.current = 1;
+    documentButtonRefs.current.clear();
+    void clearViewerStorage().then((cleared) => {
+      if (!cleared) {
+        setStorageWarning("Certaines données locales n'ont pas pu être effacées. Fermez puis rouvrez l'application avant de réessayer.");
+      }
+    });
+  }, [resetDocumentProcessing]);
 
   const openPdfFromUser = useCallback(async () => {
     if (!isDesktopRuntime()) {
@@ -4923,101 +4927,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     workspaceMode,
     activeSearch.isOpen,
   ]);
-
-  const runOcrOnActiveDocument = useCallback(
-    async (options: OcrOptions) => {
-      if (!activeDocument || isOcrProcessing) {
-        return;
-      }
-
-      const sourceDocument = activeDocument;
-      const sourceFile = sourceDocument.file;
-
-      setIsOcrDialogOpen(false);
-      setIsOcrProcessing(true);
-      setExportFeedback(null);
-
-      try {
-        const returnedFile = await requestOcrPdf(
-          backendUrl,
-          sourceFile,
-          options,
-        );
-        let usageWarnings: string[];
-        try {
-          ({ usageWarnings } = await openGeneratedPdfDocument(returnedFile));
-        } catch {
-          throw new Error("Le serveur n'a pas produit un PDF valide.");
-        }
-
-        setExportFeedback({
-          kind: usageWarnings.length > 0 ? "warning" : "success",
-          message: `OCR terminé. Le document OCR a été ouvert.${usageWarnings
-            .map((warning) => ` Avertissement: ${warning}`)
-            .join("")}`,
-        });
-      } catch (error) {
-        setExportFeedback({
-          kind: "error",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Le traitement OCR a échoué.",
-        });
-      } finally {
-        setIsOcrProcessing(false);
-      }
-    },
-    [activeDocument, backendUrl, isOcrProcessing, openGeneratedPdfDocument],
-  );
-
-  const convertActiveDocument = useCallback(
-    async (options: ConversionOptions) => {
-      if (!activeDocument || isConverting) {
-        return;
-      }
-
-      const sourceDocument = activeDocument;
-      setIsConversionDialogOpen(false);
-      setIsConverting(true);
-      setExportFeedback(null);
-
-      try {
-        const conversion = await requestConversion(
-          backendUrl,
-          sourceDocument.file,
-          options,
-          sourceDocument.fileName,
-        );
-        downloadConversionFile(conversion.file);
-        const pageSummary =
-          conversion.metadata.pages.length > 0
-            ? `${conversion.metadata.pages.length} page${conversion.metadata.pages.length > 1 ? "s" : ""}`
-            : "pages demandées";
-        const ocrSummary = conversion.metadata.ocrUsed
-          ? " OCR automatique utilisé."
-          : "";
-        const warnings = conversion.metadata.warnings
-          .map((warning) => ` Avertissement : ${warning}`)
-          .join("");
-        setExportFeedback({
-          kind: warnings ? "warning" : "success",
-          message: `Conversion réussie : ${conversion.file.name} (${pageSummary}).${ocrSummary}${warnings}`,
-        });
-      } catch (error) {
-        setExportFeedback({
-          kind: "error",
-          message:
-            error instanceof Error
-              ? error.message
-              : "La conversion du document a échoué.",
-        });
-      } finally {
-        setIsConverting(false);
-      }
-    },
-    [activeDocument, backendUrl, isConverting],
-  );
 
   const removeMissingSourcePages = useCallback(() => {
     if (!activeDocument) {
