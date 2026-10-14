@@ -6,10 +6,14 @@ qualifications et gates de release sont uniquement dans [NEXT_STEPS.md](NEXT_STE
 ## Orchestration frontend et styles
 
 `apps/web/src/App.tsx` et `App.css` concentrent encore l'orchestration des outils,
-dialogues, sauvegarde/export, OCR/conversion et layout. Les modules documentaires,
+dialogues, sauvegarde/export et layout. Les états et traitements OCR/conversion
+sont isolés dans `hooks/useDocumentProcessing.ts`, avec entrées explicites
+(document source, URL moteur, ouverture du résultat et feedback). Les modules documentaires,
 recherche et composants extraits ne suppriment pas ce couplage.
 
-Extraire progressivement un domaine à la fois, avec ses styles, sans changement
+La restauration/persistance est le prochain candidat identifié : effets de
+restauration et snapshots restent mêlés au cycle de vie des documents. Extraire
+progressivement un domaine à la fois, avec ses styles, sans changement
 fonctionnel ni visuel associé. Conserver les tests du domaine et la gate
 transverse de [QA_AUTOMATION.md](QA_AUTOMATION.md). Le découpage du bundle et
 le poids du worker PDF.js demandent une mesure avant optimisation.
@@ -64,15 +68,6 @@ Un export avec une famille intégrée peut donc échouer alors que l'aperçu Web
 fonctionne. Qualifier sans dépôt source ; définir ensuite une ressource packagée
 et sa résolution explicite, avec notices et test du sidecar. Aucun correctif
 fonctionnel apporté par l'audit documentaire.
-
-## Génération des fixtures d'intégration QA
-
-`scripts/run-qa.py` appelle `generate-qa-pdfs`, mais pas
-`generate-clean-integration-fixtures`. Les tests `clean-integration.spec.ts`
-attendent des assets ignorés sous `data/output/windows-qa-004/fixtures`.
-Une campagne sur clone neuf nécessite donc une préparation manuelle documentée
-dans [QA_AUTOMATION.md](QA_AUTOMATION.md). Rendre cette précondition automatique
-dans un chantier distinct, sans versionner les gros assets.
 
 ## Fidélité du texte natif
 

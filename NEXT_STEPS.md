@@ -63,10 +63,9 @@ nécessiter une qualification native ; les items ci-dessous distinguent les deux
   (édition DOCX, AcroForms et annotations conservées/aplaties). Étendre aux photos
   et scans représentatifs autorisés ; les profils ne garantissent pas un fichier
   toujours plus petit pour les scans/transparences déjà compressibles.
-- [ ] Planifier une extraction frontend ciblée selon la dette d'orchestration ;
-  préserver comportement/styles et rejouer les sentinelles du domaine déplacé.
-- [ ] Automatiser la précondition des assets QA d'intégration sur clone neuf,
-  selon la dette du runner, pour rendre la campagne complète reproductible.
+- [ ] Stabiliser les sentinelles Web transverses encore rouges : requêtes natives,
+  origine verticale du texte et intermittences restauration/scroll décrites dans
+  [QA_AUTOMATION.md](QA_AUTOMATION.md), sans assouplir les assertions sans mesure.
 
 ## P3 — Plus tard
 

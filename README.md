@@ -98,7 +98,9 @@ uv run pytest
 uv run ruff check .
 ```
 
-La QA navigateur demande Playwright et la toolchain OCR locale.
+La préparation sur clone neuf et les dépendances QA sont décrites dans
+[QA_AUTOMATION.md](QA_AUTOMATION.md). Le runner prépare automatiquement les
+fixtures synthétiques manquantes et valide celles déjà présentes.
 Les commandes desktop et les gates de release sont dans les documents suivants.
 
 ## Documentation de référence
