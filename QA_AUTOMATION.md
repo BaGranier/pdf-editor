@@ -36,7 +36,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows-clean-qa
 
 L'option `--installed <installation QA sous data/output>` ajoute les fichiers
 effectivement installés et leurs SHA-256 à l'inventaire. Inspecter avant
-désinstallation. `PDF_STUDIO_QA_OUTPUT` isole aussi les preuves lifecycle et les
+désinstallation. Relever séparément l'exécutable installé et celui de
+`target/release` : le build Tauri modifie l'information de type de bundle.
+`PDF_STUDIO_QA_OUTPUT` isole aussi les preuves lifecycle et les
 cinq répétitions de `windows-qa-performance.ps1` ; son option `-Executable`
 doit pointer vers cette même installation. Ne pas réutiliser des rapports
 anciens comme résultats de l'artefact final.
@@ -48,6 +50,16 @@ sur le fichier réellement sauvegardé. Son échantillon n'est pas la scène
 seul le dialogue Windows suivi de Microsoft Print to PDF et d'une réouverture
 du résultat peut fermer ce scénario. DPI/portrait/multi-écran nécessitent des
 mesures Windows réelles ; aucun viewport navigateur ne les remplace.
+
+L'essai natif du gate 006 a identifié une CSP bloquant les frames PDF `blob:`
+avant tout dialogue d'impression. La configuration autorise désormais ces
+frames locales par `frame-src 'self' blob:`. L'absence de violation CSP ne vaut
+pas validation du fichier imprimé. Les rejets fichier Tauri sous forme de chaîne
+sont aussi convertis en `Error` pour conserver le détail readonly/dossier absent
+dans le message affiché, avec couverture Vitest.
+Le retest du package final charge les PDF sans violation CSP observée, mais
+n'obtient pas le dialogue Windows ni un fichier imprimé : impression `KO`.
+Le résultat du helper `print` reste limité à l'aperçu et à la demande.
 
 Le gate 006 a reproduit un défaut de compression : après `rewrite_images`,
 `garbage>=2` pouvait renuméroter incorrectement une police partagée et altérer

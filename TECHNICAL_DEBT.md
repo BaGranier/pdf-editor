@@ -126,6 +126,28 @@ cumulée des images restent à traiter. Le deskew relève des P1, la mémoire
 extrême des P2 ; ils ne deviennent pas des P0 de ce gate. La baseline n'est pas
 un seuil de release.
 
+## WINDOWS-SAVE-LARGE-006 — Transport d'un export volumineux
+
+Une candidate intermédiaire du gate 006 produisait 25 327 909 octets après
+compression d'images répétées. L'API répondait, mais le dialogue Save As natif
+n'apparaissait pas et la session restait occupée. La correction de compression
+produit désormais des fichiers beaucoup plus petits pour cette scène ; elle ne
+qualifie pas le transport IPC d'un autre PDF de taille comparable. Reproduire
+avec une fixture synthétique indépendante avant de déclarer ce parcours fermé.
+Les preuves restent sous `data/output/release-gate-006/`.
+
+## WINDOWS-PRINT-006 — Dialogue Windows non obtenu
+
+Sur l'installation finale du gate 006 (WebView2 155.0.4283.62), Ctrl+P ouvre
+l'aperçu. La CSP bloquait les PDF `blob:` ; sa correction permet leur chargement
+et supprime les erreurs observées. L'appel d'impression n'a cependant produit
+ni dialogue Windows ni fichier Microsoft Print to PDF : statut `KO`, cause
+résiduelle non isolée. Les snapshots des fenêtres de l'application, descendants
+et dialogues possédés n'ont pas identifié de dialogue d'impression. Ne pas
+confondre le message « dialogue demandé » avec un résultat imprimé. Requalifier
+portrait multipage et paysage après correction ; aucune dépendance externe ni
+rasterisation de remplacement n'est ajoutée dans ce gate.
+
 ## DESKTOP-LINUX-001 — QA native et bundle Linux
 
 Le sidecar FastAPI local est supervisé en développement Linux et le workflow

@@ -1,30 +1,119 @@
-# Shell desktop et packaging
+# DESKTOP-RELEASE-001 — shell Tauri et préparation de release
 
-## Architecture et support
+Gate Windows 006 : **NOT READY**. La VM clean est indisponible (confirmation
+utilisateur) ; les résultats du poste de développement ne la remplacent pas.
+Les blockers actifs sont dans [NEXT_STEPS.md](NEXT_STEPS.md).
 
-`apps/desktop` est le shell Tauri v2/Rust du frontend `apps/web`. Il supervise
-FastAPI : backend source en debug, sidecar PyInstaller en release. Le nom
-PDF Studio Local et l'identifiant `com.local.pdfstudio` déterminent les chemins
-applicatifs ; changer l'identifiant nécessite une décision de migration.
+La campagne complémentaire est dans
+[WINDOWS_NATIVE_QUALIFICATION_002.md](WINDOWS_NATIVE_QUALIFICATION_002.md).
+Le backend Windows utilise maintenant un Job Object : la disparition forcée
+du shell termine aussi ses descendants PyInstaller. Un dossier temporaire peut
+subsister après crash brutal. Le MSI est construit, mais son installation sur
+le poste QA est empêchée par les privilèges administrateur. DPI/multi-écran,
+impression produite et smoke test de VM clean restent à qualifier. Le package
+Windows inclut désormais l'OCR ; sa portée est décrite dans le rapport 004.
 
-| Plateforme | État de qualification |
-| --- | --- |
-| Windows x64 | Build MSVC et bundles NSIS/MSI produits ; NSIS installé, exécuté et désinstallé sur poste dev. Sauvegarde native, OCR eng/fra avec PATH isolé et crash/retry exercés. VM sans outils dev, MSI installé et matrice native complète restent à qualifier. |
-| Linux | Bootstrap dev et lancement d'un `.deb` extrait exercés ; dialogues interactifs, installation réelle et parcours fonctionnels restent à qualifier. |
-| macOS | Configuration prévue ; build, installation et runtime natifs non qualifiés. |
+L’audit natif Windows 11 et ses limites sont détaillés dans
+[WINDOWS_STABILIZATION_AUDIT_001.md](WINDOWS_STABILIZATION_AUDIT_001.md).
+Build MSVC, bundles MSI/NSIS et parcours depuis une installation NSIS ont été
+exécutés ; la qualification des autres DPI et du multi-écran reste ouverte.
 
-Aucune plateforme n'a une qualification complète de release grand public.
-Les travaux restants sont priorisés dans [NEXT_STEPS.md](NEXT_STEPS.md).
+## Architecture retenue
 
-## Prérequis de build
+L’intégration native vit dans `apps/desktop`, tandis que `apps/web` reste le
+frontend React/Vite utilisable seul et `services/pdf-engine` reste le backend
+FastAPI. Cette séparation garde les cycles de développement, les dépendances et
+les responsabilités de packaging indépendants.
 
-- Node 22, npm, Python >= 3.11 et uv.
-- Rust >= **1.88**, MSRV déclaré dans `src-tauri/Cargo.toml` et vérifié par la CI
-  desktop Linux ; les dépendances indirectes verrouillées imposent ce minimum.
-- Windows : Rust MSVC, Visual Studio Build Tools avec Desktop development with
-  C++, Windows SDK et WebView2. Utiliser le Developer PowerShell pour diagnostiquer
-  `link.exe` hors PATH ; `npm.cmd` évite le blocage éventuel de `npm.ps1`.
-- Linux : WebKitGTK 4.1, GTK et bibliothèques Tauri ; macOS : outils Xcode.
+Le devcontainer général est décrit dans [DEVELOPMENT.md](DEVELOPMENT.md). Il ne
+contient pas actuellement la toolchain Rust/Tauri nécessaire à ce workspace.
+
+```text
+apps/web (React/Vite)
+        │ commande Tauri get_backend_status
+        ▼
+apps/desktop (Tauri v2 / fenêtre native)
+        │ processus contrôlé, port dynamique 127.0.0.1
+        ▼
+services/pdf-engine (FastAPI / OCR / conversion locale)
+```
+
+Le nom **PDF Studio Local** et l’identifiant `com.local.pdfstudio` sont
+provisoires. Un changement d’identifiant changera également les répertoires OS
+de l’application.
+
+## Frontières Web / Desktop pour les fichiers
+
+Le frontend reste volontairement utilisable dans un navigateur sans accès au
+système de fichiers. Le flux réellement livré est donc actuellement le suivant :
+
+| Action | Web | Desktop |
+| --- | --- | --- |
+| Ouvrir depuis l'interface | sélecteur de fichiers du navigateur | dialogue système limité aux PDF |
+| Exporter | téléchargement navigateur | dialogue système Save As, puis nouvel onglet lié à la destination choisie |
+| Enregistrer sous | dialogue applicatif de nom, puis téléchargement | dialogue système avec nom PDF proposé |
+| Premier Enregistrer après ouverture | dialogue de nom puis téléchargement | Save As, source préservée |
+| Enregistrer après un Save As réussi | téléchargement navigateur | écriture atomique vers la copie choisie pendant la session |
+
+Il n'existe toujours aucune permission filesystem dans la capability de la
+WebView. Les commandes Rust `open_pdf`, `save_pdf` et `save_pdf_as` affichent
+les dialogues natifs et conservent le chemin réel dans le processus Rust. React
+ne reçoit que le contenu PDF, son nom et un identifiant de destination opaque :
+il ne peut donc ni lire ni écrire un chemin arbitraire. `save_pdf` écrit dans
+un fichier temporaire du même répertoire, synchronise ce fichier, puis le
+renomme sur la destination ; sous Linux, cette substitution est atomique.
+
+Le premier `Ctrl+S` ouvre Save As pour tout document ouvert, y compris une
+source native. Seul un Save As réussi établit la destination de sauvegarde de
+la session. Annulation et erreur laissent le document modifié ; Save As explicite
+reste disponible pour une autre copie. L'identifiant de la source et celui de
+la copie ont des rôles distincts, et aucun chemin de sauvegarde n'est persisté.
+IndexedDB ne réplique pas les documents Desktop : il reste le mécanisme de
+restauration des documents Web, sans devenir une seconde source de vérité pour
+un fichier natif.
+
+Le manifeste Tauri déclare désormais `.pdf` / `application/pdf` comme type que
+l'application peut éditer. Cette déclaration prépare les installateurs et
+« Ouvrir avec ». Les arguments PDF de démarrage sont consommés par Rust puis
+transmis à React après disponibilité du backend ; ce parcours a été testé sous
+Windows depuis l’installation. Le double-clic reste à qualifier et un second
+lancement n’est pas routé vers la fenêtre existante.
+
+## Requalification après EDITOR-FEATURES-EXPORT-PRESENTATION-003
+
+Validation WSL : logique frontend/backend et contrôles statiques portables ;
+voir [QA_EDITOR_EXPORT_PRESENTATION_003.md](QA_EDITOR_EXPORT_PRESENTATION_003.md).
+**Validation Windows native : PARTIAL au gate 006, sur poste dev uniquement.**
+
+Le gate 006 a rejoué les sauvegardes usuelles et erreurs, l'OCR eng/fra/mixte,
+une scène d'images avec trois profils, un minimum de formulaires, AES-256,
+présentation et lifecycle depuis NSIS. La couverture n'est pas exhaustive :
+chemins longs en Save As, Save volumineux, intégration OS, impression produite,
+affichage cible/DPI et VM clean restent des gates ouverts. La matrice courante
+est ignorée sous `data/output/release-gate-006/`. Les rapports historiques
+Windows ne sont pas modifiés. Aucune release Windows qualifiée n'est déclarée.
+
+## Prérequis de développement et de compilation
+
+Les éléments de cette section concernent les personnes qui développent,
+contrôlent ou construisent l'application. Ils ne constituent pas une liste de
+prérequis destinée à l'utilisateur final : un installateur publié devra prendre
+en charge la WebView et le sidecar nécessaires sans demander Node.js, npm,
+Rust/Cargo, un compilateur C/C++ ou un Python de développement.
+
+- Node.js 22 et npm ;
+- Python 3.11 et [uv](https://docs.astral.sh/uv/) ;
+- Rust stable **>= 1.88** (`rustc`, `cargo`). Tauri v2 et le plugin shell
+  annoncent un minimum 1.77.2, mais les versions indirectes verrouillées de
+  `time` et `serde_with` portent le MSRV effectif à 1.88. Le projet le déclare
+  dans `src-tauri/Cargo.toml` et la CI le vérifie avec Rust 1.88.0 ;
+- les dépendances système Tauri v2 de la plateforme (WebView2 sous Windows,
+  WebKitGTK 4.1 et les bibliothèques de build sous Linux, outils Xcode sous
+  macOS) ;
+- pour développer et tester les fonctions OCR : OCRmyPDF, Tesseract,
+  Ghostscript et QPDF, avec les langues voulues ;
+- LibreOffice est nécessaire aux validations visuelles DOCX qui l’utilisent,
+  mais pas à la conversion DOCX exécutée par l'application.
 
 Exemple Debian/Ubuntu :
 
@@ -210,7 +299,10 @@ bibliothèques statiques du wheel MuPDF : codecs JPEG/PNG/OpenJPEG/JBIG2,
 FreeType/HarfBuzz, etc. Le rapprochement de leurs versions et notices avec ce
 wheel doit être fermé. Les notices des dépendances Rust liées et npm intégrées
 dans les bundles web doivent aussi être contrôlées et installées. La collecte
-Python seule ne vaut pas validation transitive globale. Ces obligations restent
+Python seule ne vaut pas validation transitive globale. Les DLL MSVC CRT
+effectivement gelées doivent aussi être rapprochées des droits de redistribution
+et de la liste REDIST Microsoft ; leur présence n'est pas une approbation de
+ces conditions. Ces obligations restent
 des blockers de redistribution ; aucune autorisation publique/propriétaire
 n'est déduite de la seule présence des textes.
 
@@ -219,6 +311,7 @@ Sources officielles : [PyMuPDF : double licence](https://pymupdf.readthedocs.io/
 [MuPDF 1.26.3 COPYING](https://github.com/ArtifexSoftware/mupdf/blob/1.26.3/COPYING),
 [MuPDF : bibliothèques tierces](https://github.com/ArtifexSoftware/mupdf/blob/1.26.3/Makethird),
 [CPython 3.11.9 : dépendances Windows](https://github.com/python/cpython/blob/v3.11.9/PCbuild/get_externals.bat),
+[Microsoft : redistribution Visual C++](https://learn.microsoft.com/en-us/cpp/windows/redistributing-visual-cpp-files),
 [Tauri : installation WebView2](https://v2.tauri.app/distribute/windows-installer/#webview2-installation-options).
 
 Les artefacts PyInstaller, `target/`, `src-tauri/gen/` et tous les sidecars
