@@ -48,8 +48,8 @@ def compress_export_images(document: fitz.Document, quality: str) -> None:
     target, threshold, jpeg_quality = (
         (180, 225, 85) if quality == "balanced" else (100, 125, 65)
     )
-    images: dict[int, tuple[int, tuple, float, float]] = {}
-    for page_index, page in enumerate(document):
+    images: dict[int, tuple[tuple, float, float]] = {}
+    for page in document:
         for image in page.get_images(full=True):
             xref, mask, width, height, bits, colorspace = image[:6]
             if (
@@ -69,10 +69,10 @@ def compress_export_images(document: fitz.Document, quality: str) -> None:
             vertical = max((math.hypot(m.c, m.d) for _, m in uses), default=0)
             previous = images.get(xref)
             if previous:
-                horizontal = max(horizontal, previous[2])
-                vertical = max(vertical, previous[3])
-            images[xref] = (page_index, image, horizontal, vertical)
-    for xref, (page_index, image, horizontal, vertical) in images.items():
+                horizontal = max(horizontal, previous[1])
+                vertical = max(vertical, previous[2])
+            images[xref] = (image, horizontal, vertical)
+    for xref, (image, horizontal, vertical) in images.items():
         width, height = image[2:4]
         if not horizontal or not vertical:
             continue
@@ -94,9 +94,17 @@ def compress_export_images(document: fitz.Document, quality: str) -> None:
         resized = fitz.Pixmap(pixels, pixel_width, pixel_height, None)
         if resized.alpha:
             resized = fitz.Pixmap(resized, 0)
-        document[page_index].replace_image(
-            xref, stream=resized.tobytes("jpeg", jpg_quality=jpeg_quality)
+        jpeg = resized.tobytes("jpeg", jpg_quality=jpeg_quality)
+        color_name = "DeviceRGB" if resized.colorspace.n == 3 else "DeviceGray"
+        # Update the existing opaque 8-bit image stream directly. Page.replace_image
+        # also adds an unused resource alias via a temporary drawing operation.
+        document.update_object(
+            xref,
+            f"<< /Type /XObject /Subtype /Image /Width {pixel_width} "
+            f"/Height {pixel_height} /BitsPerComponent 8 /ColorSpace /{color_name} >>",
         )
+        document.update_stream(xref, jpeg, compress=False)
+        document.xref_set_key(xref, "Filter", "/DCTDecode")
 
 
 def finalize_export(source: bytes, options: ExportOptions | None) -> bytes:

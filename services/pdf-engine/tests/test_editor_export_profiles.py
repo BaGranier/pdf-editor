@@ -115,6 +115,7 @@ def test_controlled_image_fixture_profiles_preserve_text_and_reduce_size() -> No
     for quality, output in results.items():
         with fitz.open(stream=output) as doc:
             assert "Selectable vector text" in doc[0].get_text()
+            assert len(doc[0].get_images()) == 1
             dimensions[quality] = max(image[2] for image in doc[0].get_images())
         assert len(PdfReader(io.BytesIO(output)).pages) == 1
     assert len(results["small"]) < len(results["balanced"]) < len(results["maximum"])
