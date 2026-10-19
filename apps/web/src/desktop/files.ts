@@ -20,6 +20,12 @@ export type DesktopPdfSave = {
   fileName: string;
 };
 
+function desktopFileError(error: unknown): Error {
+  return error instanceof Error
+    ? error
+    : new Error(typeof error === "string" ? error : "L’opération fichier Desktop a échoué.");
+}
+
 function toDesktopPdfFile(response: NativePdfResponse): DesktopPdfFile {
   return {
     documentId: response.documentId,
@@ -50,7 +56,7 @@ export async function saveDesktopPdf(
   return invoke<DesktopPdfSave>("save_pdf", {
     documentId,
     content: new Uint8Array(await content.arrayBuffer()),
-  });
+  }).catch((error: unknown) => { throw desktopFileError(error); });
 }
 
 export async function saveDesktopPdfAs(
@@ -60,5 +66,5 @@ export async function saveDesktopPdfAs(
   return invoke<DesktopPdfSave | null>("save_pdf_as", {
     suggestedName,
     content: new Uint8Array(await content.arrayBuffer()),
-  });
+  }).catch((error: unknown) => { throw desktopFileError(error); });
 }

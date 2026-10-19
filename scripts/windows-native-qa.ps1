@@ -70,8 +70,19 @@ public static class PdfStudioNativeQa {
         return result;
     }
     public static void TypeFilename(IntPtr handle, string path) {
+        if (path.Length >= 250) {
+            // Setting the native control value supports folder paths beyond
+            // its per-character entry limit, without changing that limit.
+            SendMessage(handle, 0x000C, IntPtr.Zero, path);
+            return;
+        }
         SendValue(handle, 0x00B1, IntPtr.Zero, new IntPtr(-1)); // EM_SETSEL
         foreach (char character in path) SendValue(handle, 0x0102, new IntPtr(character), IntPtr.Zero);
+    }
+    public static bool FilenameMatches(IntPtr handle, string path) {
+        var actual = new System.Text.StringBuilder(path.Length + 1);
+        GetWindowText(handle, actual, actual.Capacity);
+        return actual.ToString() == path;
     }
 }
 '@
@@ -150,6 +161,9 @@ if ($Action -in @('Open','Save')) {
             [PdfStudioNativeQa]::SendMessage($nativeEdit, 0x000C, [IntPtr]::Zero, $destination) | Out-Null
         } else {
             [PdfStudioNativeQa]::TypeFilename($nativeEdit, $destination)
+        }
+        if ($Action -eq 'Save' -and $destination.Length -ge 250 -and ![PdfStudioNativeQa]::FilenameMatches($nativeEdit, $destination)) {
+            throw 'QA filename control truncated or changed the requested path; save/open was not submitted.'
         }
         $nativeButton = [PdfStudioNativeQa]::NamedButton($nativeWindow, $(if ($Action -eq 'Open') { 'Ouvrir' } else { 'Enregistrer' }))
         if ($nativeButton -eq [IntPtr]::Zero) { throw 'Native action button not found.' }

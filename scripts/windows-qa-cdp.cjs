@@ -207,8 +207,8 @@ async function check(name, action) {
         return { httpStatus: response.status(), error, message: await page.locator('.export-read-feedback').innerText() };
       });
     }
-    if (scenario === 'ocr-eng' || scenario === 'ocr-fra' || scenario === 'ocr-invalid-prefix' || scenario === 'ocr-multipage') {
-      const language = scenario === 'ocr-invalid-prefix' || scenario === 'ocr-multipage' ? 'eng' : scenario.slice(4);
+    if (scenario === 'ocr-eng' || scenario === 'ocr-fra' || scenario === 'ocr-mixed' || scenario === 'ocr-invalid-prefix' || scenario === 'ocr-multipage') {
+      const language = scenario === 'ocr-mixed' ? 'fra+eng' : scenario === 'ocr-invalid-prefix' || scenario === 'ocr-multipage' ? 'eng' : scenario.slice(4);
       await check(`installed application OCR ${language}`, async () => {
         await page.getByRole('button', { name: 'OCR', exact: true }).click();
         const dialog = page.getByRole('dialog', { name: 'Reconnaissance de texte (OCR)' });

@@ -51,6 +51,14 @@ describe("desktop file bridge", () => {
     }));
   });
 
+  it.each(["save", "save_as"])("preserves native string error details for %s", async (operation) => {
+    invokeMock.mockRejectedValue("Le répertoire de destination n’est pas disponible.");
+    const save = operation === "save"
+      ? saveDesktopPdf("desktop-pdf-1", new Blob(["%PDF"]))
+      : saveDesktopPdfAs("copy.pdf", new Blob(["%PDF"]));
+    await expect(save).rejects.toThrow("Le répertoire de destination n’est pas disponible.");
+  });
+
   it("materializes every PDF supplied at application startup", async () => {
     invokeMock.mockResolvedValue([{ documentId: "desktop-pdf-2", fileName: "launch.pdf", bytes: [37] }]);
     const files = await getDesktopStartupPdfs();
