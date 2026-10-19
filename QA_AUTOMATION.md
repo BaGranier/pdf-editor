@@ -1,12 +1,80 @@
-# QA opérationnelle
+# Campagne QA navigateur automatisée
 
-Ce document décrit les procédures actuelles, sans conserver les résultats de
-campagnes passées. Utiliser des fixtures synthétiques ; documents et artefacts
-locaux restent ignorés. Les gates ouvertes sont dans [NEXT_STEPS.md](NEXT_STEPS.md).
+## Gate release Windows 006
 
-## Installation et tests de base
+Décision : **NOT READY**. Voie AGPL approuvée ; notices transitives et livraison
+des sources restent incomplètes. VM clean indisponible, confirmée par
+l'utilisateur. Les résultats 002/004 restent historiques. Les nouvelles preuves
+sont ignorées sous `data/output/release-gate-006/` : inventaire, hashes,
+environnement, logs et matrice. `NEXT_STEPS.md` conserve seulement les blockers.
 
-Depuis la racine :
+Statuts de cette campagne : `OK` (exécuté nativement, environnement indiqué),
+`KO`, `R`, `NT`, `ENV`, `AUTO`, `PARTIAL`. `AUTO` ne vaut jamais `OK` natif ;
+un `OK` sur poste dev n'est pas un `OK` VM clean. Le bootstrapper WebView2 absent
+et le réseau coupé doivent être éprouvés sur VM ; isoler le PATH ne suffit pas.
+
+Le build `desktop:build` nettoie l'analyse PyInstaller puis collecte les notices
+depuis les chemins des modules/extensions réellement gelés, dans le **même**
+environnement `uv --with pyinstaller==6.16.0`. Les noms de fichiers homonymes sont
+conservés. L'inventaire compare les données/DLL de l'archive aux entrées PKG et
+les noms PYZ/bootstrap/base_library à Analysis ; une incohérence arrête la commande. Ce contrôle ne
+remplace pas l'identification des bibliothèques statiques natives/Rust/npm.
+
+```powershell
+# Depuis la racine, après desktop:build, avec le même Python verrouillé :
+$env:UV_CACHE_DIR=Join-Path $PWD '.uv-cache'
+uv run --locked --with pyinstaller==6.16.0 --project services/pdf-engine python -m scripts.release-inventory
+
+# QA installée isolée sur poste dev ; ne pas appeler ceci une VM clean :
+$env:PDF_STUDIO_QA_OUTPUT='data/output/release-gate-006'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows-clean-qa.ps1 -Action Install
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows-clean-qa.ps1 -Action Launch
+node scripts/windows-qa-cdp.cjs files
+node scripts/windows-qa-cdp.cjs idle-004
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows-clean-qa.ps1 -Action Close
+```
+
+L'option `--installed <installation QA sous data/output>` ajoute les fichiers
+effectivement installés et leurs SHA-256 à l'inventaire. Inspecter avant
+désinstallation. `PDF_STUDIO_QA_OUTPUT` isole aussi les preuves lifecycle et les
+cinq répétitions de `windows-qa-performance.ps1` ; son option `-Executable`
+doit pointer vers cette même installation. Ne pas réutiliser des rapports
+anciens comme résultats de l'artefact final.
+
+`editor-004` utilise maintenant deux mots de passe aléatoires en mémoire,
+sans les écrire dans les preuves, et vérifie bon/mauvais mot de passe et AES-256
+sur le fichier réellement sauvegardé. Son échantillon n'est pas la scène
+éditeur exhaustive du gate. `print` ne produit toujours aucun fichier imprimé :
+seul le dialogue Windows suivi de Microsoft Print to PDF et d'une réouverture
+du résultat peut fermer ce scénario. DPI/portrait/multi-écran nécessitent des
+mesures Windows réelles ; aucun viewport navigateur ne les remplace.
+
+Le gate 006 a reproduit un défaut de compression : après `rewrite_images`,
+`garbage>=2` pouvait renuméroter incorrectement une police partagée et altérer
+les accents. Les profils Équilibré/Taille réduite utilisent `garbage=1` ; les
+tests vérifient texte exact, pixels du texte/vecteurs et dictionnaires de police
+après réouverture, avec un second lecteur pypdf. Un nouveau sidecar/installateur
+et un rejeu natif des trois profils sont obligatoires après cette correction.
+
+La campagne Playwright couvre les parcours navigateur, un OCR réel sur scan et
+les conversions locales dans Chromium et Firefox. Elle génère ses propres PDF
+non confidentiels et ne lit aucun document personnel. Les observations humaines
+historiques restent dans `QA_BROWSER_REPORT.md`.
+
+`QA_AUTOMATION.md` décrit le protocole ; ce n'est pas un résultat de campagne.
+Seuls `QA_AUTOMATED_REPORT.md` et les fichiers sous `apps/web/test-results/`
+produits par la dernière commande représentent une exécution. Ils sont ignorés
+par Git et remplacés au début de chaque campagne afin qu'aucun résultat ancien
+ne puisse être mélangé au résultat courant.
+
+La campagne rapide inclut l’OCR réel ainsi que les smoke tests de conversion
+DOCX et TXT. Les artefacts sont inspectés côté test. Le résumé Markdown consigne
+le texte témoin OCR et, pour les conversions, les durées, tailles, utilisation
+de l’OCR, pages, avertissements et validité technique.
+
+## Installation
+
+Depuis un clone neuf :
 
 ```bash
 uv sync --directory services/pdf-engine --locked

@@ -1,9 +1,32 @@
 # PDF Studio Local
 
-Éditeur PDF local-first, utilisable dans un navigateur ou dans un shell desktop
-Tauri. Les documents sont traités sur la machine, sans compte ni stockage distant.
-Windows est la cible de la première release ; sa qualification reste incomplète.
-Linux et macOS nécessitent une qualification propre.
+Éditeur PDF local-first disponible dans un navigateur ou dans une application
+desktop Tauri. Les documents restent sur la machine : le frontend communique
+uniquement avec le moteur FastAPI local.
+
+La voie de distribution **AGPL-3.0** a été approuvée pour la campagne Windows
+006 ; le texte est dans [LICENSE](LICENSE). Les composants tiers conservent leurs
+licences. La release Windows reste **NOT READY** : VM clean indisponible,
+qualification native incomplète et obligations de redistribution encore à fermer.
+La politique et les exigences de sources/notices sont dans
+[DESKTOP.md](DESKTOP.md#distribution-windows-et-licences).
+
+## Structure
+
+- `apps/web`: Vite + React + TypeScript frontend
+- `apps/desktop`: Tauri v2 native shell and local backend lifecycle
+- `services/pdf-engine`: FastAPI backend
+- `apps/web/e2e/fixtures`: fixtures QA synthétiques et versionnées
+- `data/input`: documents d'entrée locaux, entièrement ignorés par Git
+- `data/output`: documents générés localement, entièrement ignorés par Git
+
+Le développement et le packaging natifs sont documentés dans
+[DESKTOP.md](DESKTOP.md).
+
+Le shell de développement Linux a été démarré avec WebView et sidecar sur Ubuntu
+22.04.5 LTS. Le bundle, les dialogues interactifs de fichiers et l'association
+système `.pdf` restent explicitement à qualifier avant de présenter Linux comme
+supporté en production.
 
 ## Capacités actuelles
 
@@ -103,13 +126,113 @@ La préparation sur clone neuf et les dépendances QA sont décrites dans
 fixtures synthétiques manquantes et valide celles déjà présentes.
 Les commandes desktop et les gates de release sont dans les documents suivants.
 
-## Documentation de référence
+### Sauvegarder, exporter et finaliser
 
-- [DESKTOP.md](DESKTOP.md) : runtime, build, OCR packagé et support par OS.
-- [DEVELOPMENT.md](DEVELOPMENT.md) : environnement, contrats et compatibilité persistée.
-- [CONVERSION.md](CONVERSION.md) : formats, options et limites de conversion.
-- [NATIVE_TEXT_EDITING.md](NATIVE_TEXT_EDITING.md) : spans natifs et registre de polices.
-- [QA_AUTOMATION.md](QA_AUTOMATION.md) : tests, scripts et qualification native.
-- [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md) : dette structurelle active.
-- [NEXT_STEPS.md](NEXT_STEPS.md) : seule roadmap opérationnelle priorisée.
-- [SIGNATURE_NUMERIQUE_004.md](SIGNATURE_NUMERIQUE_004.md) : signatures avec certificat, chantier différé.
+Le premier **Enregistrer / Ctrl+S** d'un document ouvert lance **Enregistrer
+sous…** en Desktop. Après réussite, les prochains Ctrl+S écrivent atomiquement
+vers cette copie pendant la session. La destination d'ouverture n'est jamais
+choisie implicitement ; les destinations natives ne sont pas restaurées depuis
+IndexedDB. **Ctrl+Shift+S** permet de choisir une autre destination, même sans
+modification. Annulation et erreur conservent l'état modifié.
+
+En web, ces actions proposent un nom puis téléchargent une copie. Le navigateur
+ne permet pas de réécrire directement une destination déjà choisie.
+`data/output` reste une sortie de développement facultative. Le shell Tauri
+possède ses dialogues natifs et identifiants de fichiers opaques ; leur statut
+par plateforme est détaillé dans [DESKTOP.md](DESKTOP.md).
+
+**Image** insère un PNG ou JPEG local. Les dimensions sont vérifiées avant
+décodage : 40 millions de pixels et 20 000 pixels par axe. Le budget de lecture
+compressée est 32 Mio par asset, avec 192 Mio compressés et 512 Mio RGBA estimés
+pour les assets uniques de la session ; aucune limite de champ multipart à
+1 Mio ne s'applique aux nouveaux imports. Les originaux ne sont pas dégradés
+systématiquement. L'image est centrée, bornée à 60 % de la page et librement
+redimensionnable ; Shift ou **Conserver les proportions** verrouille son ratio.
+**Rogner l’image** permet de déplacer/redimensionner un cadre, valider, annuler
+avec Escape ou rétablir l'image entière, avec undo/redo. Le crop est non destructif
+et persiste avec les documents web restaurables. Les documents natifs ouverts
+par identifiant Tauri restent volontairement limités à la session.
+Le panneau **Plans des objets ajoutés** permet de
+sélectionner un objet couvert et de le placer devant/derrière les autres edits.
+Le contenu PDF original reste la base. Carré et cercle gardent une géométrie 1:1 ;
+les extrémités du trait/flèche sont déplaçables. Les markups locaux participent
+au même ordre que les formes et sont exportés comme vecteurs ; les annotations
+déjà présentes dans le PDF source conservent leur comportement PDF.
+Les images n'ont pas d'outil de
+rotation dédié ; SVG et WebP ne sont pas acceptés.
+
+**Exporter / Finaliser…** propose :
+
+| Profil | Politique |
+| --- | --- |
+| Qualité maximale | optimisation des flux/objets sans recompression destructive des images |
+| Équilibré | images à haute résolution : cible 180 DPI, seuil 225 DPI, qualité 85 |
+| Taille réduite | images à haute résolution : cible 100 DPI, seuil 125 DPI, qualité 65 |
+
+Les images source et ajoutées peuvent être recompressées ; MuPDF choisit le
+sous-échantillonnage effectif. Le texte reste sélectionnable et les vecteurs
+restent vectoriels. Aucune réduction de taille universelle n'est garantie.
+Le rapport affiche les tailles source/export et le profil sans promettre un gain.
+Les profils Équilibré/Taille réduite évitent la renumérotation des objets après
+réécriture des images : le gate 006 a reproduit et corrigé une corruption des
+références de police partagées avec MuPDF 1.26.3 (accents modifiés à la réouverture).
+
+Les edits ajoutés sont déjà intégrés au PDF. L'aplatissement des **formulaires**
+et celui des **annotations** sont deux options explicites : ils conservent leur
+apparence et suppriment leur interactivité ; celui des annotations peut perdre
+commentaires et pièces jointes. Les annotations sont conservées par défaut.
+La protection utilise AES-256, un mot de passe d'ouverture facultatif et des
+permissions d'impression/modification avec mot de passe propriétaire distinct.
+Ces permissions peuvent être ignorées par d'autres logiciels. Les secrets ne
+sont ni persistés ni journalisés. Une sortie chiffrée est enregistrée/téléchargée
+sans réouverture automatique : l'éditeur n'offre pas encore le dialogue de
+mot de passe à l'ouverture d'un PDF protégé.
+
+Une signature graphique est une image manuscrite. **La signature numérique avec
+certificat n'est pas livrée** : audit et critères sont dans
+[SIGNATURE_NUMERIQUE_004.md](SIGNATURE_NUMERIQUE_004.md).
+
+Validation WSL : voir [le rapport du ticket 003](QA_EDITOR_EXPORT_PRESENTATION_003.md).
+La requalification Windows installée et ses limites clean/1080×1900 sont dans
+[le rapport 004](QA_WINDOWS_CLEAN_INTEGRATION_004.md).
+Les rapports Windows précédents restent des photographies historiques.
+
+### Limites d'usage recommandées
+
+Le frontend avertit sans bloquer l'ouverture ou l'export au-delà de **50 Mo** par
+PDF, **250 pages** par PDF ou **8 documents ouverts**. Ces valeurs sont des
+recommandations de mémoire et de quota navigateur, configurables au build par
+`VITE_PDF_RECOMMENDED_MAX_SIZE_MB`, `VITE_PDF_RECOMMENDED_MAX_PAGE_COUNT` et
+`VITE_PDF_RECOMMENDED_MAX_OPEN_DOCUMENTS`. En cas d'échec IndexedDB, les PDF
+peuvent rester ouverts pour la session mais ne seront pas forcément restaurés
+après fermeture de l'onglet.
+
+Les fixtures reproductibles versionnées sont dans `apps/web/e2e/fixtures`. Les
+documents complémentaires placés dans `data/input` restent locaux et ignorés par
+Git. La campagne manuelle est décrite dans
+[QA_BROWSER_CHECKLIST.md](QA_BROWSER_CHECKLIST.md).
+
+Limites actuelles : pas de split avancé ni d'édition arbitraire des objets PDF
+existants. L'édition ajoute des blocs de texte et des signatures lors de
+l'export ; elle ne remplace pas une suite PAO complète. La conversion DOCX
+reconstruit un document éditable sans garantir une reproduction parfaite des
+mises en page complexes.
+
+## Application desktop
+
+```bash
+cd apps/desktop
+npm ci
+npm run desktop:dev
+```
+
+Le shell Tauri démarre le frontend et un backend FastAPI sur un port loopback
+dynamique. La configuration, les prérequis système, le build du sidecar et les
+limites de packaging sont détaillés dans [DESKTOP.md](DESKTOP.md).
+
+Pour valider la configuration desktop :
+
+```bash
+cd apps/desktop
+npm run desktop:check
+```

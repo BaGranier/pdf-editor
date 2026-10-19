@@ -11,11 +11,13 @@ import argparse
 import ast
 import hashlib
 import importlib.metadata
+import io
 import json
 import shutil
 import subprocess
 import sys
 import urllib.request
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -157,6 +159,7 @@ def frozen_packages() -> list[dict]:
 def collect_notices() -> list[dict]:
     # This directory is exclusively generated. Clearing it avoids stale notices
     # for packages removed from the frozen artifact.
+    NOTICES.resolve().relative_to(ROOT.resolve())
     if NOTICES.exists():
         shutil.rmtree(NOTICES)
     NOTICES.mkdir(parents=True)
@@ -192,9 +195,24 @@ def inventory(output: Path, installed: Path | None) -> dict:
     expected_modules = {
         name for name, _, kind in entries(analysis) if kind.startswith("PYMODULE")
     }
-    if expected_modules != set(pyz.toc):
-        raise RuntimeError("The frozen PYZ module list does not match Analysis-00.toc")
+    bootstrap_modules = {
+        name for name, entry in archive.toc.items() if entry[-1] in {"m", "M"}
+    }
+    with zipfile.ZipFile(io.BytesIO(archive.extract("base_library.zip"))) as library:
+        base_modules = {
+            name[:-4].replace("/", ".").removesuffix(".__init__")
+            for name in library.namelist()
+            if name.endswith(".pyc")
+        }
+    if expected_modules != set(pyz.toc) | base_modules | (
+        expected_modules & bootstrap_modules
+    ):
+        raise RuntimeError("The frozen module lists do not match Analysis-00.toc")
     artifacts = [record(sidecar)]
+    version = json.loads(
+        (ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text("utf-8")
+    )["version"]
+    excluded = []
     release = ROOT / "apps/desktop/src-tauri/target/release"
     for path in [
         release / "pdf-studio-local.exe",
@@ -202,7 +220,10 @@ def inventory(output: Path, installed: Path | None) -> dict:
         *sorted((release / "bundle").rglob("*.msi")),
     ]:
         if path.is_file():
-            artifacts.append(record(path))
+            if path.parent == release or f"_{version}_" in path.name:
+                artifacts.append(record(path))
+            else:
+                excluded.append(record(path))
     packages = json.loads((NOTICES / "frozen-packages.json").read_text("utf-8"))
     # Byte comparison ties the TOC-based package attribution to this executable.
     pkg = ast.literal_eval((BUILD / "PKG-00.toc").read_text("utf-8"))
@@ -226,13 +247,14 @@ def inventory(output: Path, installed: Path | None) -> dict:
         "sourceStatus": subprocess.check_output(
             ["git", "status", "--short"], cwd=ROOT, text=True
         ).splitlines(),
-        "version": json.loads(
-            (ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text("utf-8")
-        )["version"],
+        "version": version,
         "artifacts": artifacts,
+        "excludedHistoricalArtifacts": excluded,
         "archive": {
             "entries": payload,
             "pythonModules": sorted(pyz.toc),
+            "bootstrapPythonModules": sorted(bootstrap_modules),
+            "baseLibraryModules": sorted(base_modules),
             "sourceByteComparisons": compared,
         },
         "pythonPackages": packages,

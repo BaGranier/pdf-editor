@@ -282,6 +282,8 @@ async function check(name, action) {
       }
     }
     if (scenario === 'editor-004') {
+      const qaOpenPassword = require('node:crypto').randomBytes(16).toString('hex');
+      const qaOwnerPassword = require('node:crypto').randomBytes(16).toString('hex');
       const native = (destination) => execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(root, 'scripts/windows-native-qa.ps1'), '-Action', 'Save', '-Path', destination], { windowsHide: true, timeout: 30000 });
       const sourceName = await page.locator('.document-tab.is-active .document-select').getAttribute('title');
       const shape = async (name, start, end) => {
@@ -329,16 +331,21 @@ async function check(name, action) {
         if (encrypted) {
           await page.getByLabel('Finaliser les annotations', { exact: true }).check();
           await page.getByLabel('Finaliser les champs de formulaire', { exact: true }).check();
-          await page.getByLabel('Mot de passe d’ouverture', { exact: true }).fill('synthetic-open-004');
-          await page.getByLabel('Confirmer le mot de passe d’ouverture', { exact: true }).fill('synthetic-open-004');
-          await page.getByLabel('Mot de passe propriétaire', { exact: true }).fill('synthetic-owner-004');
-          await page.getByLabel('Confirmer le mot de passe propriétaire', { exact: true }).fill('synthetic-owner-004');
+          await page.getByLabel('Mot de passe d’ouverture', { exact: true }).fill(qaOpenPassword);
+          await page.getByLabel('Confirmer le mot de passe d’ouverture', { exact: true }).fill(qaOpenPassword);
+          await page.getByLabel('Mot de passe propriétaire', { exact: true }).fill(qaOwnerPassword);
+          await page.getByLabel('Confirmer le mot de passe propriétaire', { exact: true }).fill(qaOwnerPassword);
           await page.getByLabel('Autoriser l’impression', { exact: true }).uncheck(); await page.getByLabel('Autoriser les modifications', { exact: true }).uncheck();
         }
         const pending = page.waitForResponse(r => r.url().endsWith('/pdf/export/organize'));
         await page.getByRole('button', { name: 'Exporter', exact: true }).click(); expect((await pending).status()).toBe(200);
         const destination = path.join(output, encrypted ? 'native-encrypted.pdf' : 'native-vectors.pdf');
         await page.waitForTimeout(500); native(destination); await expect.poll(() => fs.existsSync(destination)).toBe(true);
+        if (encrypted) {
+          execFileSync(path.join(root, 'services/pdf-engine/.venv/Scripts/python.exe'), ['-c',
+            'import os,sys,pymupdf; d=pymupdf.open(sys.argv[1]); assert d.needs_pass; assert d.authenticate("invalid-qa-password")==0; assert d.authenticate(os.environ["PDF_STUDIO_QA_PASSWORD"])>0; assert "256-bit AES" in d.metadata["encryption"]; d.close()', destination],
+          { windowsHide: true, env: { ...process.env, PDF_STUDIO_QA_PASSWORD: qaOpenPassword } });
+        }
         if (encrypted) { await expect(page.locator('.document-tab.is-active .document-select')).toHaveAttribute('title', sourceName); await expect(page.locator('.export-read-feedback')).toContainText(/chiffr/); }
         else { await expect(page.locator('.document-tab.is-active .document-select')).not.toHaveAttribute('title', sourceName); await page.locator(`.document-select[title="${sourceName}"]`).click(); }
         return { file: path.basename(destination), bytes: fs.statSync(destination).size, encrypted };

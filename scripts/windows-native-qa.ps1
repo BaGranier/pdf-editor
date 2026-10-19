@@ -1,7 +1,7 @@
 # Native QA helper for a single PDF Studio Local instance on French Windows.
 # Document paths are restricted to the repository; no desktop-wide input is sent.
 param(
-    [ValidateSet('Inspect', 'Open', 'Save', 'Cancel', 'Overwrite', 'Close', 'Maximize', 'Restore', 'Resize')]
+    [ValidateSet('Inspect', 'Open', 'Save', 'Cancel', 'Overwrite', 'OverwriteNo', 'Close', 'Maximize', 'Restore', 'Resize')]
     [string]$Action = 'Inspect',
     [string]$Path
 )
@@ -25,7 +25,7 @@ public static class PdfStudioNativeQa {
                 string title = name.ToString();
                 bool match = action == "Open" ? title == "Ouvrir un PDF"
                     : action == "Save" ? title == "Enregistrer le PDF sous"
-                    : action == "Overwrite" ? title.StartsWith("Confirmer")
+                    : action.StartsWith("Overwrite") ? title.StartsWith("Confirmer")
                     : action == "Cancel" ? title.StartsWith("Confirmer") || title == "Enregistrer le PDF sous" || title == "Ouvrir un PDF"
                     : action == "Inspect" ? title == "Ouvrir un PDF" || title == "Enregistrer le PDF sous" || title == "PDF Studio Local"
                     : title == "PDF Studio Local";
@@ -78,6 +78,8 @@ public static class PdfStudioNativeQa {
 $applications = @(Get-Process pdf-studio-local -ErrorAction SilentlyContinue)
 if ($applications.Count -ne 1) { throw 'Exactly one PDF Studio Local QA instance is required.' }
 $application = $applications[0]
+$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+if (!$application.Path.StartsWith($repositoryRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Application must be a repository QA installation.' }
 $nativeWindow = [PdfStudioNativeQa]::WindowForAction($application.Id, $Action)
 for ($attempt = 0; $nativeWindow -eq [IntPtr]::Zero -and $attempt -lt 20; $attempt++) {
     Start-Sleep -Milliseconds 250
@@ -85,14 +87,15 @@ for ($attempt = 0; $nativeWindow -eq [IntPtr]::Zero -and $attempt -lt 20; $attem
 }
 if ($nativeWindow -eq [IntPtr]::Zero) { throw "No application window for $Action." }
 $root = [System.Windows.Automation.AutomationElement]::FromHandle($nativeWindow)
-if ($Action -eq 'Overwrite') {
+if ($Action -in @('Overwrite', 'OverwriteNo')) {
+    $answer = if ($Action -eq 'OverwriteNo') { 'Non' } else { 'Oui' }
     $popup = $nativeWindow
-    $confirm = [PdfStudioNativeQa]::NamedButton($popup, 'Oui')
+    $confirm = [PdfStudioNativeQa]::NamedButton($popup, $answer)
     if ($confirm -eq [IntPtr]::Zero) {
         $dialogs = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
         foreach ($dialog in $dialogs) {
             if ($dialog.Current.Name -like 'Confirmer*' -and $dialog.Current.NativeWindowHandle) {
-                $confirm = [PdfStudioNativeQa]::NamedButton([IntPtr]$dialog.Current.NativeWindowHandle, 'Oui')
+                $confirm = [PdfStudioNativeQa]::NamedButton([IntPtr]$dialog.Current.NativeWindowHandle, $answer)
                 if ($confirm -ne [IntPtr]::Zero) { break }
             }
         }

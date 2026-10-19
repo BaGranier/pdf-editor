@@ -38,6 +38,7 @@ def main() -> None:
         for name in SOURCES
         if (DESTINATION / name).is_file()
     }
+    DESTINATION.resolve().relative_to(ROOT.resolve())
     if DESTINATION.exists():
         shutil.rmtree(DESTINATION)
     DESTINATION.mkdir(parents=True, exist_ok=True)

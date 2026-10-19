@@ -37,9 +37,76 @@ sudo apt-get install build-essential curl wget file libssl-dev \
 Depuis la racine :
 
 ```bash
-npm ci --prefix apps/web
-npm ci --prefix apps/desktop
-uv sync --directory services/pdf-engine --locked
+cd apps/web && npm ci
+cd ../desktop && npm ci
+cd ../../services/pdf-engine && uv sync --locked
+```
+
+### Windows 11
+
+Installer Visual Studio Build Tools 2022 avec « Desktop development with C++ »
+(MSVC x64/x86 et Windows SDK), Rust stable MSVC >= 1.88, Node 22, Python 3.11 et
+uv. `link.exe` peut être hors PATH d’un PowerShell ordinaire : le build Rust de
+l’audit l’a trouvé via l’installation Visual Studio. Pour un diagnostic explicite,
+utiliser le Developer PowerShell de Visual Studio et `where.exe link`.
+
+```powershell
+node --version
+npm.cmd --version
+py -3.11 --version
+uv --version
+rustc -vV
+cargo -V
+rustup show
+where.exe link
+
+cd apps/web
+npm.cmd ci
+cd ../desktop
+npm.cmd ci
+cd ../../services/pdf-engine
+uv sync --locked
+uv run python -m pytest
+uv run python -m ruff check .
+cd ../../apps/desktop
+npm.cmd run desktop:check
+npm.cmd run desktop:dev
+npm.cmd run desktop:build
+```
+
+`npm.cmd` évite le script `npm.ps1` lorsque la politique PowerShell le bloque,
+sans modifier cette politique. Les scripts Python du projet sont lancés par uv
+en mode module ; aucun alias `python3` Windows n’est nécessaire.
+
+Le développement web historique utilise Tesseract, OCRmyPDF et Ghostscript
+(`gswin64c`) système. QPDF CLI reste un outil de QA. Le sidecar Windows gelé
+utilise son propre moteur MuPDF/Tesseract et ses langues eng/fra/osd, indépendamment
+du PATH et de `TESSDATA_PREFIX`. Vérifier les versions et `tesseract --list-langs`
+uniquement pour le parcours web historique.
+`TESSDATA_PREFIX`, s’il est utilisé, doit désigner un dossier contenant les
+langues **et** les configurations Tesseract (`configs`, `tessconfigs`). L’audit
+a d’abord reproduit l’erreur explicite de langue `fra` absente, puis exécuté
+l’OCR `eng`/`fra` avec un dossier QA complet. LibreOffice reste réservé à la QA.
+
+Les bundles se trouvent dans `src-tauri/target/release/bundle/msi` et `nsis`.
+WebView2 installé a été testé ; le bundle conserve le bootstrapper Tauri par
+défaut pour le runtime manquant. Ce cas et l’installation hors ligne restent
+à qualifier sur VM clean. Les langues OCR et notices sont incluses dans ces
+installateurs ; aucun exécutable Ghostscript/QPDF/OCRmyPDF n'y est ajouté.
+
+La configuration déclare explicitement `downloadBootstrapper`, silencieux :
+WebView2 est une dépendance utilisateur prise en charge par l'installateur,
+téléchargée si absente. **Une première installation sans WebView2 nécessite le
+réseau.** Aucun runtime WebView2 fixe n'est embarqué. L'OCR embarqué fonctionne
+localement une fois l'installation et le runtime disponibles ; cela ne promet
+pas une installation initiale offline. L'absence online/offline et la lisibilité
+de l'erreur offline restent `ENV`, sans désinstaller le runtime du poste de QA.
+
+## Développement
+
+Depuis le workspace desktop :
+
+```bash
 cd apps/desktop
 npm run desktop:dev
 ```
@@ -49,19 +116,161 @@ Vite écoute strictement sur `127.0.0.1:5173`. Le debug lance
 `externalBin` n'est pas exécuté. Le devcontainer général ne fournit pas Rust
 ni WebKitGTK : voir [DEVELOPMENT.md](DEVELOPMENT.md).
 
-## Runtime et diagnostics
+## Build et sidecar
 
-Rust choisit un port dynamique sur `127.0.0.1`, transmet les chemins au moteur et
-attend une réponse valide de `/health` (timeout de démarrage : 20 secondes).
-React reçoit l'URL par `get_backend_status`. Une erreur affiche le diagnostic
-et le journal ; `restart_backend` relance le moteur en conservant la session
-éditeur en mémoire. La surveillance continue après Réessayer.
+```bash
+cd apps/desktop
+npm run desktop:build
+```
 
-Stdout/stderr alimentent `appLogDir/pdf-engine.log` ; les erreurs de lancement
-portent le marqueur `BACKEND_START_ERROR`. Les journaux restent locaux et doivent
-être examinés/anonymisés avant partage, notamment les messages de bibliothèques.
+Cette commande :
 
-| Usage | Chemin résolu par Tauri |
+1. construit un exécutable Python `pdf-engine` avec PyInstaller 6.16.0 via un
+   environnement éphémère `uv --with` ;
+2. lance ce binaire sur `127.0.0.1` et vérifie `/health` ;
+3. détecte le target triple Rust ;
+4. le copie sous
+   `src-tauri/binaries/pdf-engine-<target-triple>[.exe]`, conformément à
+   `bundle.externalBin: ["binaries/pdf-engine"]` ;
+5. construit le frontend puis le bundle Tauri de la plateforme courante.
+
+Le sidecar PyInstaller embarque l'interpréteur Python et les modules Python du
+moteur. `prepare-ocr-resources.py` télécharge les langues eng/fra/osd d'une
+révision tessdata_fast verrouillée, contrôle leurs SHA-256 et produit un manifest.
+PyInstaller les embarque sous `ocr/` ; `sys._MEIPASS/ocr` est résolu à chaque
+exécution, sans chemin d'installation fixe ni dépendance au dépôt. Les notices
+sont également installées sous `licenses/ocr/`. Les bundles multi-plateformes
+ne sont pas tous qualifiés : voir le rapport Windows 004.
+
+### Stratégie des dépendances OCR et conversion
+
+Le sidecar gelé lance un worker `--ocr-worker` dans le même exécutable Python
+packagé. Il utilise `Pixmap.pdfocr_tobytes` et le moteur OCR intégré au wheel
+PyMuPDF 1.26.3 ; aucun nouveau package Python majeur n'est ajouté. Les langues
+sont validées avant OCR, y compris par checksum. Une ressource absente/corrompue
+produit une erreur contrôlée, sans fallback vers un Tesseract utilisateur.
+Le développement non gelé conserve le parcours système historique, ou utilise
+explicitement `PDF_ENGINE_OCR_RUNTIME` vers les ressources préparées pour la QA.
+Le worker est isolé, borné à 40 millions de pixels par page avant allocation et
+supervisé avec timeout/annulation ; les descendants appartiennent au Job Object.
+Le mode intégré ne redresse pas les pages inclinées. `osd` est inclus, sans
+promesse d'orientation automatique. Force OCR rasterise les pages à 200 DPI et
+ajoute une couche texte ; skip-text conserve les pages déjà numériques.
+
+| Outil / donnée | Utilisation réelle | Windows | macOS | Linux | Décision de release actuelle |
+| --- | --- | --- | --- | --- | --- |
+| MuPDF/Tesseract/Leptonica | OCR du sidecar gelé | intégré au wheel PyMuPDF | non qualifié | non qualifié | Voie AGPL approuvée au ticket 006 ; obligations sources et notices encore à fermer. |
+| `tessdata` `eng`, `fra`, `osd` | langues locales | ressources verrouillées embarquées | non qualifié | non qualifié | Apache-2.0, notice incluse ; SHA et versions exactes dans le rapport 004. |
+| OCRmyPDF | OCR web historique | développement seulement | parcours historique | parcours historique | Pas de redistribution dans le package 004. |
+| Ghostscript | dépendance du parcours OCRmyPDF | développement seulement | parcours historique | parcours historique | Pas de redistribution dans le package 004 ; licence AGPL/commerciale reste pertinente pour d'autres stratégies. |
+| QPDF CLI | contrôle PDF de QA ; aucun appel CLI direct dans le moteur applicatif | outil système QA | outil système QA | outil système QA | Pas de bundle ; distinguer ce CLI des bibliothèques PDF utilisées par les dépendances OCR. |
+| LibreOffice | validation visuelle DOCX, pas la conversion applicative courante | non requis au runtime | non requis au runtime | non requis au runtime | Réservé à la QA, non distribué avec l'application. |
+
+Ce tableau décrit une stratégie technique, non une autorisation de
+redistribution. Toute décision d'empaquetage doit inclure les licences exactes
+des versions retenues, les notices, les dépendances transitives et une
+validation juridique/distribution par plateforme.
+
+### Distribution Windows et licences
+
+Décision utilisateur au ticket 006 : **A — distribution sous AGPL approuvée,
+avec obligations identifiées**. La voie propriétaire avec ce wheel n'est pas
+retenue ; une licence commerciale Artifex serait à examiner si cette politique
+changeait. Le choix AGPL ferme la décision de politique, pas la conformité du
+package. Il ne constitue pas un avis juridique.
+
+- PyMuPDF **1.26.3**, verrouillé dans `pyproject.toml`/`uv.lock` ; MuPDF
+  **1.26.3**, mesuré via `pymupdf.version`, DLL `mupdfcpp64.dll` incluse.
+  `_mupdf.pyd`, `_extra.pyd` et modules Python sont gelés en PyInstaller
+  **6.16.0 onefile**, avec Python **3.11.9**, eng/fra/osd tessdata_fast.
+- Le fichier `COPYING` du wheel PyMuPDF indique seulement la double licence.
+  Le texte AGPL complet de MuPDF 1.26.3 est inclus sous
+  `licenses/application-AGPL-3.0.txt` et `licenses/ocr/MuPDF-COPYING`.
+- `licenses/runtime/` conserve les licences des distributions **effectivement
+  référencées par Analysis PyInstaller**, avec leur chemin complet (aucun
+  écrasement de deux `LICENSE` homonymes). La collecte utilise le même
+  environnement éphémère que le gel. Les licences du runtime Python, OpenSSL
+  **3.0.13**, zlib **1.3.1**, Expat **2.6.0**, libxml2 **2.11.9** et libxslt
+  **1.1.45** sont ajoutées avec sources officielles et SHA-256 contrôlés.
+  Un changement de ces versions Windows impose une nouvelle revue des notices.
+- Tesseract/Leptonica et tessdata ont leurs textes upstream verrouillés dans
+  `licenses/ocr/`. Les licences des fontes web sont dans les ressources web
+  `/fonts/`. Ghostscript, OCRmyPDF et QPDF CLI ne sont pas redistribués.
+
+Avant diffusion, préparer les sources correspondant **exactement** aux binaires
+(application, dépendances AGPL, changements et scripts de construction), les
+conditions de licence et notices d'absence de garantie, ainsi qu'un moyen
+conforme d'obtenir ces sources avec la distribution. Déterminer les mentions
+accessibles dans l'interface et les informations d'installation applicables
+selon les sections 4–6 de l'AGPL. Aucun emplacement public de sources ni offre
+de sources n'a été publié par cette campagne (aucun push).
+
+**Notices : PARTIAL.** L'inventaire de fichiers/DLL ne prouve pas la liste des
+bibliothèques statiques du wheel MuPDF : codecs JPEG/PNG/OpenJPEG/JBIG2,
+FreeType/HarfBuzz, etc. Le rapprochement de leurs versions et notices avec ce
+wheel doit être fermé. Les notices des dépendances Rust liées et npm intégrées
+dans les bundles web doivent aussi être contrôlées et installées. La collecte
+Python seule ne vaut pas validation transitive globale. Ces obligations restent
+des blockers de redistribution ; aucune autorisation publique/propriétaire
+n'est déduite de la seule présence des textes.
+
+Sources officielles : [PyMuPDF : double licence](https://pymupdf.readthedocs.io/en/latest/about.html#license-and-copyright),
+[PyMuPDF 1.26.3 COPYING](https://github.com/pymupdf/PyMuPDF/blob/1.26.3/COPYING),
+[MuPDF 1.26.3 COPYING](https://github.com/ArtifexSoftware/mupdf/blob/1.26.3/COPYING),
+[MuPDF : bibliothèques tierces](https://github.com/ArtifexSoftware/mupdf/blob/1.26.3/Makethird),
+[CPython 3.11.9 : dépendances Windows](https://github.com/python/cpython/blob/v3.11.9/PCbuild/get_externals.bat),
+[Tauri : installation WebView2](https://v2.tauri.app/distribute/windows-installer/#webview2-installation-options).
+
+Les artefacts PyInstaller, `target/`, `src-tauri/gen/` et tous les sidecars
+générés sont ignorés par Git. On peut préparer manuellement un binaire déjà
+construit :
+
+```bash
+uv run --project services/pdf-engine python -m scripts.prepare-tauri-sidecars \
+  --source /chemin/vers/pdf-engine \
+  --target-triple x86_64-unknown-linux-gnu
+```
+
+La convention de suffixe et la résolution par le seul nom `pdf-engine` suivent
+la [documentation sidecar Tauri v2](https://v2.tauri.app/develop/sidecar/).
+
+Le cache Rust `apps/desktop/src-tauri/target` peut occuper plusieurs gigaoctets.
+Il peut être supprimé sans toucher aux sources ; la compilation suivante le
+recréera :
+
+```bash
+cd apps/desktop/src-tauri
+cargo clean
+```
+
+## Cycle de vie et stockage
+
+Le processus Rust possède le handle du backend. Il capture stdout/stderr dans
+`pdf-engine.log`, impose un timeout de démarrage de 20 secondes, expose
+`get_backend_status` et `restart_backend`, puis tue le processus et nettoie le
+répertoire temporaire à la fermeture de l’application.
+
+Sous Windows, l’arrêt normal ou la relance termine l’arbre enfant : uv et
+PyInstaller onefile peuvent chacun posséder un second processus Python.
+Cet arrêt forcé de l’arbre n’est pas un SIGTERM gracieux. Le crash brutal du
+processus Rust termine les descendants via le Windows Job Object ; les
+temporaires après crash sont traités au prochain démarrage selon les leases.
+L’éditeur conserve sa session en mémoire pendant une panne du backend ; la
+surveillance continue après Réessayer. Les erreurs de démarrage sont aussi
+écrites dans le journal avec `BACKEND_START_ERROR`.
+
+La géométrie est calculée avant d’afficher la fenêtre, à partir de la work area
+physique du moniteur, des décorations et de son facteur DPI. Les tailles cible
+et minimale logiques sont limitées à l’espace disponible. Le déplacement vers
+un autre moniteur ou un changement de DPI déclenche un clamp, sans interdire
+le resize manuel ni imposer le fullscreen. Aucune persistance de géométrie
+n’a été ajoutée. Les matrices natives et mathématiques sont distinguées dans
+le rapport Windows.
+
+Les chemins viennent du résolveur Tauri et sont transmis explicitement au
+lanceur Python :
+
+| Usage | Résolution |
 | --- | --- |
 | Données et sorties | `appLocalDataDir` |
 | Cache | `appCacheDir` |
