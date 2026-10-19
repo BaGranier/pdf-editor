@@ -169,13 +169,15 @@ rotation dédié ; SVG et WebP ne sont pas acceptés.
 | Équilibré | images à haute résolution : cible 180 DPI, seuil 225 DPI, qualité 85 |
 | Taille réduite | images à haute résolution : cible 100 DPI, seuil 125 DPI, qualité 65 |
 
-Les images source et ajoutées peuvent être recompressées ; MuPDF choisit le
-sous-échantillonnage effectif. Le texte reste sélectionnable et les vecteurs
+Les images RGB/gris source et ajoutées peuvent être recompressées, une fois par
+ressource et selon leur plus grand placement. Masques/transparence, couleurs
+complexes et images de plus de 40 millions de pixels conservent leurs données.
+Le texte reste sélectionnable et les vecteurs
 restent vectoriels. Aucune réduction de taille universelle n'est garantie.
 Le rapport affiche les tailles source/export et le profil sans promettre un gain.
-Les profils Équilibré/Taille réduite évitent la renumérotation des objets après
-réécriture des images : le gate 006 a reproduit et corrigé une corruption des
-références de police partagées avec MuPDF 1.26.3 (accents modifiés à la réouverture).
+Les profils Équilibré/Taille réduite remplacent les images par référence PDF,
+sans réécrire les flux de page : le gate 006 a reproduit une corruption des
+polices et un sous-échantillonnage répété avec `rewrite_images` de MuPDF 1.26.3.
 
 Les edits ajoutés sont déjà intégrés au PDF. L'aplatissement des **formulaires**
 et celui des **annotations** sont deux options explicites : ils conservent leur

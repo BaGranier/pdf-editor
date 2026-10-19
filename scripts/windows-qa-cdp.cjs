@@ -54,6 +54,8 @@ async function check(name, action) {
       report.pdfCanvasObservedAt = new Date().toISOString();
     }
     if (scenario === 'print') {
+      await expect(page.locator('.document-tab.is-active')).toBeVisible({ timeout: 30000 });
+      await expect(page.locator('.pdf-canvas').first()).toBeVisible({ timeout: 30000 });
       await check('Ctrl+P opens PDF print preview', async () => {
         await page.keyboard.press('Control+p');
         const preview = page.getByRole('dialog', { name: 'Aperçu avant impression' });

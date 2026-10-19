@@ -51,10 +51,18 @@ mesures Windows réelles ; aucun viewport navigateur ne les remplace.
 
 Le gate 006 a reproduit un défaut de compression : après `rewrite_images`,
 `garbage>=2` pouvait renuméroter incorrectement une police partagée et altérer
-les accents. Les profils Équilibré/Taille réduite utilisent `garbage=1` ; les
-tests vérifient texte exact, pixels du texte/vecteurs et dictionnaires de police
+les accents. Le contournement `garbage=1` préservait le texte mais conservait
+des variantes d'image réécrites plusieurs fois, jusqu'à 25,3 Mo dans le témoin
+natif. Les profils remplacent désormais chaque référence d'image une seule
+fois selon le plus grand placement, sans utiliser `rewrite_images`. Les masques,
+couleurs complexes et images hors budget sont conservés. Les tests vérifient
+déduplication, texte exact, pixels du texte/vecteurs et dictionnaires de police
 après réouverture, avec un second lecteur pypdf. Un nouveau sidecar/installateur
 et un rejeu natif des trois profils sont obligatoires après cette correction.
+Les anomalies upstream correspondantes sont
+[polices/xrefs](https://github.com/pymupdf/PyMuPDF/issues/4896) et
+[images partagées](https://github.com/pymupdf/PyMuPDF/issues/4918) ; leur existence
+ne remplace pas les reproductions synthétiques du dépôt.
 
 La campagne Playwright couvre les parcours navigateur, un OCR réel sur scan et
 les conversions locales dans Chromium et Firefox. Elle génère ses propres PDF

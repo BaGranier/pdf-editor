@@ -163,6 +163,36 @@ def test_profiles_preserve_accented_text_and_font_references(
     )
 
 
+@pytest.mark.parametrize("quality", ["maximum", "balanced", "small"])
+def test_profiles_deduplicate_repeated_image_placements(quality: str) -> None:
+    with fitz.open(stream=source_pdf(image_heavy=True)) as document:
+        page = document[0]
+        image_xref = page.get_images()[0][0]
+        for _ in range(9):
+            page.insert_image(fitz.Rect(0, 0, 200, 200), xref=image_xref)
+        source = document.tobytes()
+    output = export(source, exportOptions={"quality": quality})
+    with fitz.open(stream=output) as result:
+        assert len(result[0].get_image_info()) == 10
+        assert len({image[0] for image in result[0].get_images()}) == 1
+        assert "Selectable vector text" in result[0].get_text()
+
+
+@pytest.mark.parametrize("quality", ["balanced", "small"])
+def test_compression_preserves_complex_cmyk_image(quality: str) -> None:
+    with fitz.open() as document:
+        page = document.new_page(width=200, height=200)
+        pix = fitz.Pixmap(
+            fitz.csCMYK, 600, 600, bytes([40, 160, 80, 20]) * 600 * 600, False
+        )
+        page.insert_image(fitz.Rect(20, 20, 120, 120), pixmap=pix)
+        expected = page.get_pixmap().samples
+        source = document.tobytes()
+    output = export(source, exportOptions={"quality": quality})
+    with fitz.open(stream=output) as document:
+        assert document[0].get_pixmap().samples == expected
+
+
 @pytest.mark.parametrize("image_heavy", [False, True])
 def test_maximum_profile_is_lossless_for_images(image_heavy: bool) -> None:
     source = source_pdf(image_heavy=image_heavy)

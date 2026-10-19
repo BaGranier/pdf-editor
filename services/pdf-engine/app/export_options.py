@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+import math
 from typing import Literal
 
 import fitz
@@ -37,6 +38,67 @@ class ExportOptions(BaseModel):
         return self
 
 
+def compress_export_images(document: fitz.Document, quality: str) -> None:
+    """Replace each safe image xref once, preserving every placement and font.
+
+    MuPDF 1.26.3 rewrite_images corrupts shared font references and repeatedly
+    downsamples shared images. Avoid that page-stream rewriter entirely.
+    Complex colour spaces, masks and oversized images retain their source data.
+    """
+    target, threshold, jpeg_quality = (
+        (180, 225, 85) if quality == "balanced" else (100, 125, 65)
+    )
+    images: dict[int, tuple[int, tuple, float, float]] = {}
+    for page_index, page in enumerate(document):
+        for image in page.get_images(full=True):
+            xref, mask, width, height, bits, colorspace = image[:6]
+            if (
+                not xref
+                or mask
+                or bits != 8
+                or width * height > 40_000_000
+                or colorspace not in {"DeviceRGB", "DeviceGray", "ICCBased"}
+                or document.xref_get_key(xref, "Mask")[0] != "null"
+                or document.xref_get_key(xref, "SMask")[0] != "null"
+            ):
+                continue
+            # Measure the largest use across all pages before changing any xref.
+            # Matrix axis lengths also cover rotation and free aspect ratios.
+            uses = page.get_image_rects(xref, transform=True)
+            horizontal = max((math.hypot(m.a, m.b) for _, m in uses), default=0)
+            vertical = max((math.hypot(m.c, m.d) for _, m in uses), default=0)
+            previous = images.get(xref)
+            if previous:
+                horizontal = max(horizontal, previous[2])
+                vertical = max(vertical, previous[3])
+            images[xref] = (page_index, image, horizontal, vertical)
+    for xref, (page_index, image, horizontal, vertical) in images.items():
+        width, height = image[2:4]
+        if not horizontal or not vertical:
+            continue
+        if min(width * 72 / horizontal, height * 72 / vertical) <= threshold:
+            continue
+        scale = max(
+            horizontal * target / (72 * width), vertical * target / (72 * height)
+        )
+        pixel_width = max(1, math.ceil(width * scale))
+        pixel_height = max(1, math.ceil(height * scale))
+        pixels = fitz.Pixmap(document, xref)
+        if not pixels.colorspace or pixels.colorspace.n not in {1, 3}:
+            continue
+        # Convert ICC RGB/gray to the matching standard space before JPEG output;
+        # never keep a source CMYK/Indexed declaration around RGB JPEG bytes.
+        pixels = fitz.Pixmap(
+            fitz.csRGB if pixels.colorspace.n == 3 else fitz.csGRAY, pixels
+        )
+        resized = fitz.Pixmap(pixels, pixel_width, pixel_height, None)
+        if resized.alpha:
+            resized = fitz.Pixmap(resized, 0)
+        document[page_index].replace_image(
+            xref, stream=resized.tobytes("jpeg", jpg_quality=jpeg_quality)
+        )
+
+
 def finalize_export(source: bytes, options: ExportOptions | None) -> bytes:
     if options is None:
         return source  # Historical payloads retain their previous output policy.
@@ -44,12 +106,7 @@ def finalize_export(source: bytes, options: ExportOptions | None) -> bytes:
         with fitz.open(stream=source, filetype="pdf") as document:
             page_count = document.page_count
             if options.quality != "maximum":
-                target, threshold, quality = (
-                    (180, 225, 85) if options.quality == "balanced" else (100, 125, 65)
-                )
-                document.rewrite_images(
-                    dpi_threshold=threshold, dpi_target=target, quality=quality
-                )
+                compress_export_images(document, options.quality)
             if options.flatten_forms or options.flatten_annotations:
                 document.bake(
                     widgets=options.flatten_forms, annots=options.flatten_annotations
@@ -68,10 +125,7 @@ def finalize_export(source: bytes, options: ExportOptions | None) -> bytes:
                 )
             encrypted = bool(user or owner)
             output = document.tobytes(
-                # MuPDF 1.26.3 can renumber a shared font resource twice after
-                # rewrite_images, making its reference point at a page object.
-                # Remove unused objects without renumbering the remaining xrefs.
-                garbage=1 if options.quality != "maximum" else 4,
+                garbage=4,
                 deflate=True,
                 deflate_images=True,
                 deflate_fonts=True,

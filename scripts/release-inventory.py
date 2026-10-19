@@ -171,6 +171,19 @@ def collect_notices() -> list[dict]:
         (NOTICES / "Python-LICENSE.txt").write_bytes(python_license.read_bytes())
     if sys.platform == "win32":
         collect_native_notices()
+    import pymupdf
+
+    (NOTICES / "runtime-versions.json").write_text(
+        json.dumps(
+            {
+                "python": sys.version,
+                "pymupdf": pymupdf.version[0],
+                "mupdf": pymupdf.version[1],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     (NOTICES / "frozen-packages.json").write_text(
         json.dumps(packages, ensure_ascii=False, indent=2), encoding="utf-8"
     )

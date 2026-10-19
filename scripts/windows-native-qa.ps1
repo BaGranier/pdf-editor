@@ -81,7 +81,9 @@ $application = $applications[0]
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (!$application.Path.StartsWith($repositoryRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Application must be a repository QA installation.' }
 $nativeWindow = [PdfStudioNativeQa]::WindowForAction($application.Id, $Action)
-for ($attempt = 0; $nativeWindow -eq [IntPtr]::Zero -and $attempt -lt 20; $attempt++) {
+# IPC serialization of a large export can outlast five seconds on the QA VM.
+# Poll the actual native dialog; do not infer readiness from the HTTP response.
+for ($attempt = 0; $nativeWindow -eq [IntPtr]::Zero -and $attempt -lt 80; $attempt++) {
     Start-Sleep -Milliseconds 250
     $nativeWindow = [PdfStudioNativeQa]::WindowForAction($application.Id, $Action)
 }
