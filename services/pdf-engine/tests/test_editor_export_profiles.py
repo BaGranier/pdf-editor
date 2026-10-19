@@ -121,6 +121,48 @@ def test_controlled_image_fixture_profiles_preserve_text_and_reduce_size() -> No
     assert dimensions["maximum"] > dimensions["balanced"] > dimensions["small"]
 
 
+@pytest.mark.parametrize("quality", ["maximum", "balanced", "small"])
+@pytest.mark.parametrize("with_image", [False, True])
+def test_profiles_preserve_accented_text_and_font_references(
+    quality: str, with_image: bool
+) -> None:
+    with fitz.open() as source:
+        page = source.new_page(width=400, height=400)
+        page.insert_text((20, 30), "Été, élève, Noël, évaluation française.")
+        page.draw_line((20, 60), (200, 60), color=(0, 0, 1))
+        if with_image:
+            pix = fitz.Pixmap(
+                fitz.csRGB, 600, 600, bytes([170, 80, 30]) * 600 * 600, False
+            )
+            page.insert_image(fitz.Rect(20, 100, 120, 200), pixmap=pix)
+        expected_text = page.get_text()
+        text_pixels = page.get_pixmap(clip=fitz.Rect(0, 0, 400, 80)).samples
+        source.new_page(width=400, height=400).insert_text(
+            (20, 30), "Second page, shared Helvetica"
+        )
+        content = source.tobytes(garbage=4, deflate=True)
+    output = main.export_organized_pdf(
+        {"source": content},
+        main.OrganizeExportPlan.model_validate(
+            {
+                "pages": [{"sourcePageIndex": 0}, {"sourcePageIndex": 1}],
+                "exportOptions": {"quality": quality},
+            }
+        ),
+    )
+    with fitz.open(stream=output) as result:
+        page = result[0]
+        assert page.get_text() == expected_text
+        assert page.get_pixmap(clip=fitz.Rect(0, 0, 400, 80)).samples == text_pixels
+        assert len(page.get_drawings()) == 1
+        for font in page.get_fonts():
+            assert result.xref_get_key(font[0], "Type") == ("name", "/Font")
+    assert (
+        PdfReader(io.BytesIO(output)).pages[0].extract_text().strip()
+        == expected_text.strip()
+    )
+
+
 @pytest.mark.parametrize("image_heavy", [False, True])
 def test_maximum_profile_is_lossless_for_images(image_heavy: bool) -> None:
     source = source_pdf(image_heavy=image_heavy)

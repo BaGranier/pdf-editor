@@ -68,7 +68,10 @@ def finalize_export(source: bytes, options: ExportOptions | None) -> bytes:
                 )
             encrypted = bool(user or owner)
             output = document.tobytes(
-                garbage=4,
+                # MuPDF 1.26.3 can renumber a shared font resource twice after
+                # rewrite_images, making its reference point at a page object.
+                # Remove unused objects without renumbering the remaining xrefs.
+                garbage=1 if options.quality != "maximum" else 4,
                 deflate=True,
                 deflate_images=True,
                 deflate_fonts=True,
