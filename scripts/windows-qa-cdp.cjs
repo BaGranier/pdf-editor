@@ -255,7 +255,7 @@ async function check(name, action) {
       return;
     }
     if (scenario === 'ocr-errors-004') {
-      const qaTemp = path.join(root, 'data/output/windows-qa-004/temp');
+      const qaTemp = path.join(output, 'temp');
       const runtimes = fs.readdirSync(qaTemp, { withFileTypes: true }).filter(e => e.isDirectory() && e.name.startsWith('_MEI')).map(e => path.join(qaTemp, e.name, 'ocr')).filter(p => fs.existsSync(path.join(p, 'manifest.json'))).sort((a, b) => fs.statSync(b).birthtimeMs - fs.statSync(a).birthtimeMs);
       if (!runtimes.length) throw Error('No QA-local extracted OCR resources');
       const runtime = runtimes[0];

@@ -7,7 +7,9 @@ $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $binary = [IO.Path]::GetFullPath((Join-Path $repository $Executable))
 if (!$binary.StartsWith($repository + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'QA executable must be inside the repository.' }
 if (@(Get-Process pdf-studio-local -ErrorAction SilentlyContinue).Count) { throw 'Close existing application before performance QA.' }
-$output = Join-Path $repository 'data/output/windows-qa-002/performance'
+$qaOutput = if ($env:PDF_STUDIO_QA_OUTPUT) { $env:PDF_STUDIO_QA_OUTPUT } else { 'data/output/windows-qa-002' }
+$output = [IO.Path]::GetFullPath((Join-Path $repository (Join-Path $qaOutput 'performance')))
+if (!$output.StartsWith((Join-Path $repository 'data/output') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'QA output must remain under repository data/output.' }
 New-Item -ItemType Directory -Force -Path $output | Out-Null
 $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222'
 $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $output 'webview-profile'
@@ -27,7 +29,7 @@ for ($iteration = 0; $iteration -lt $Repetitions; $iteration++) {
         $windowObserved = [DateTime]::UtcNow
         & node (Join-Path $PSScriptRoot 'windows-qa-cdp.cjs') startup
         if ($LASTEXITCODE -ne 0) { throw 'CDP startup failed.' }
-        $cdp = Get-Content -Raw -LiteralPath (Join-Path $repository 'data/output/windows-qa-002/reports/startup.json') | ConvertFrom-Json
+        $cdp = Get-Content -Raw -LiteralPath (Join-Path $repository (Join-Path $qaOutput 'reports/startup.json')) | ConvertFrom-Json
         Start-Sleep -Seconds 2
         # Parent PIDs can be reused by Windows. Exclude processes older than
         # this launch before walking the tree (e.g. an unrelated OneDrive child).

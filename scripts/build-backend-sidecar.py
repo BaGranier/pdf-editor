@@ -56,6 +56,21 @@ def build() -> Path:
     executable = BUILD_ROOT / "dist" / EXECUTABLE_NAME
     if not executable.is_file():
         raise RuntimeError(f"PyInstaller n'a pas produit {executable}.")
+    # Use the same ephemeral environment as Analysis: PyInstaller hooks can add
+    # modules (e.g. setuptools) absent from the application's normal venv.
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "--with",
+            "pyinstaller==6.16.0",
+            "python",
+            str(REPOSITORY_ROOT / "scripts/release-inventory.py"),
+            "--collect-notices",
+        ],
+        cwd=BACKEND_ROOT,
+        check=True,
+    )
     return executable
 
 

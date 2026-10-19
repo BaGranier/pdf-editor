@@ -39,8 +39,16 @@
       "binaries/pdf-engine"
     ],
     "resources": {
+      "../../../LICENSE": "licenses/application-AGPL-3.0.txt",
+      "../../../services/pdf-engine/build/runtime-notices/": "licenses/runtime/",
       "../../../services/pdf-engine/build/ocr/notices/": "licenses/ocr/",
       "../../../services/pdf-engine/build/ocr/tessdata/LICENSE": "licenses/ocr/tessdata-LICENSE.txt"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      }
     },
     "fileAssociations": [
       {

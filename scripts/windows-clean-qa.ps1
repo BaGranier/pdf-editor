@@ -4,7 +4,9 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$output = Join-Path $repository 'data/output/windows-qa-004'
+$qaOutput = if ($env:PDF_STUDIO_QA_OUTPUT) { $env:PDF_STUDIO_QA_OUTPUT } else { 'data/output/windows-qa-004' }
+$output = [IO.Path]::GetFullPath((Join-Path $repository $qaOutput))
+if (!$output.StartsWith((Join-Path $repository 'data/output') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'QA output must remain under repository data/output.' }
 # Windows PowerShell 5 reads BOM-less scripts using the ANSI codepage.
 # Construct accents explicitly so the actual installation path stays Unicode.
 $installation = Join-Path $output ('installation ' + [char]0xE9 + 't' + [char]0xE9 + ' QA')

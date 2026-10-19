@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import importlib.metadata
-import sys
+import shutil
 import urllib.request
 from pathlib import Path
 
@@ -32,15 +31,22 @@ HASHES = {
 
 
 def main() -> None:
+    # Only pinned upstream OCR notices belong here. Python runtime notices are
+    # collected from the actual frozen Analysis after PyInstaller has run.
+    cached = {
+        name: (DESTINATION / name).read_bytes()
+        for name in SOURCES
+        if (DESTINATION / name).is_file()
+    }
+    if DESTINATION.exists():
+        shutil.rmtree(DESTINATION)
     DESTINATION.mkdir(parents=True, exist_ok=True)
     manifest = {}
     for name, url in SOURCES.items():
         target = DESTINATION / name
-        content = (
-            target.read_bytes()
-            if target.is_file()
-            else urllib.request.urlopen(url, timeout=30).read()
-        )
+        content = cached.get(name)
+        if content is None:
+            content = urllib.request.urlopen(url, timeout=30).read()
         if hashlib.sha256(content).hexdigest() != HASHES[name]:
             raise RuntimeError(f"Upstream notice checksum mismatch: {name}")
         target.write_bytes(content)
@@ -53,33 +59,6 @@ def main() -> None:
         json.dumps(manifest, indent=2), encoding="utf-8"
     )
     print(json.dumps(manifest, indent=2))
-    # The environment inventory is diagnostic, not a claim that every installed
-    # package is in the frozen artifact. Preserve all supplied license texts.
-    inventory = []
-    for dist in importlib.metadata.distributions():
-        name = dist.metadata["Name"]
-        inventory.append(
-            {
-                "name": name,
-                "version": dist.version,
-                "license": dist.metadata.get("License-Expression")
-                or dist.metadata.get("License"),
-                "scope": "build environment",
-            }
-        )
-        for entry in dist.files or []:
-            if ".dist-info/" in entry.as_posix() and any(
-                word in entry.name.upper() for word in ("LICENSE", "COPYING", "NOTICE")
-            ):
-                content = dist.locate_file(entry).read_bytes()
-                (DESTINATION / f"{name}-{entry.name}").write_bytes(content)
-    (DESTINATION / "python-environment.json").write_text(
-        json.dumps({"python": sys.version, "packages": inventory}, indent=2),
-        encoding="utf-8",
-    )
-    python_license = Path(sys.base_prefix) / "LICENSE.txt"
-    if python_license.is_file():
-        (DESTINATION / "Python-LICENSE.txt").write_bytes(python_license.read_bytes())
 
 
 if __name__ == "__main__":
