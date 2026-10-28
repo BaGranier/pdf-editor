@@ -63,6 +63,12 @@ export async function getStoredDocuments(page: Page) {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
+    // A diagnostic read may precede the app's first durable write. Do not leave
+    // a version-1 connection open and block the application's schema upgrade.
+    if (!database.objectStoreNames.contains("documents")) {
+      database.close();
+      return [];
+    }
     const documents = await new Promise<
       Array<{ fileName: string; zoom: number; scrollLeft: number; scrollTop: number }>
     >((resolve, reject) => {

@@ -312,7 +312,7 @@ export function ConversionDialog({
 
           {hasPendingOrganizationChanges ? (
             <p className="ocr-dialog__warning" role="note">
-              La conversion utilise le PDF source. Les modifications d’organisation non
+              La conversion utilise le PDF source. Les modifications non
               exportées ne seront pas incluses.
             </p>
           ) : null}

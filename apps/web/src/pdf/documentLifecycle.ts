@@ -126,11 +126,16 @@ export function buildViewerSnapshot(document: OpenPdfDocument, nativeTextEdits: 
 
 export async function restoreOpenDocument(storedDocument: StoredPdfDocument): Promise<OpenPdfDocument> {
   if (!(storedDocument.content instanceof Blob) || storedDocument.content.size === 0) {
-    throw new Error("Le document restauré ne contient plus de données PDF valides.");
+    throw new Error("RESTORE_BLOB_ABSENT");
   }
   // Materialize the IndexedDB-backed Blob into memory once. Firefox can
   // otherwise abort a later second read of the restored Blob.
-  const storedBytes = new Uint8Array(await storedDocument.content.arrayBuffer());
+  let storedBytes: Uint8Array<ArrayBuffer>;
+  try {
+    storedBytes = new Uint8Array(await storedDocument.content.arrayBuffer());
+  } catch {
+    throw new Error("RESTORE_BLOB_UNREADABLE");
+  }
   const file = new File([storedBytes], storedDocument.fileName, {
     type: storedDocument.mimeType || "application/pdf",
   });
@@ -156,6 +161,6 @@ export async function restoreOpenDocument(storedDocument: StoredPdfDocument): Pr
     };
   } catch (error) {
     await loadingTask.destroy().catch(() => undefined);
-    throw error;
+    throw new Error("RESTORE_PDFJS_FAILED");
   }
 }

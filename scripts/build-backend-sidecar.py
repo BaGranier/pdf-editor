@@ -44,6 +44,8 @@ def build() -> Path:
         "app",
         "--add-data",
         f"{resources}{os.pathsep}ocr",
+        "--add-data",
+        f"{REPOSITORY_ROOT / 'apps/web/public/fonts'}{os.pathsep}fonts",
         "--distpath",
         str(BUILD_ROOT / "dist"),
         "--workpath",

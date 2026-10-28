@@ -64,6 +64,16 @@ const DOCUMENT_STORE = "documents";
 
 const memoryDocuments = new Map<string, StoredPdfDocument>();
 
+/** Codes only: never log filenames, PDF bytes or exception messages. */
+export function reportStorageFailure(operation: string, error?: unknown) {
+  const name = error instanceof Error || error instanceof DOMException ? error.name : "";
+  const code = name === "QuotaExceededError" ? "STORAGE_QUOTA"
+    : name === "VersionError" || name === "NotFoundError" ? "STORAGE_MIGRATION"
+    : "STORAGE_INDEXEDDB_UNAVAILABLE";
+  console.warn("PDF_STORAGE", { operation, code });
+  return code;
+}
+
 type RawViewerPreferences = {
   theme?: unknown;
   sidebarVisible?: unknown;
@@ -115,6 +125,7 @@ function requestToPromise<T>(request: IDBRequest<T>) {
 
 async function openDatabase() {
   if (!hasIndexedDb()) {
+    reportStorageFailure("open");
     return null;
   }
 
@@ -131,10 +142,20 @@ async function openDatabase() {
 
   return new Promise<IDBDatabase>((resolve, reject) => {
     openRequest.addEventListener("success", () => {
-      resolve(openRequest.result);
+      const database = openRequest.result;
+      database.onversionchange = () => database.close();
+      if (!database.objectStoreNames.contains(DOCUMENT_STORE) || !database.objectStoreNames.contains(IMAGE_STORE)) {
+        database.close();
+        reject(new DOMException("Storage schema unavailable", "VersionError"));
+        return;
+      }
+      resolve(database);
     });
     openRequest.addEventListener("error", () => {
       reject(openRequest.error ?? new Error("Unable to open IndexedDB database."));
+    });
+    openRequest.addEventListener("blocked", () => {
+      reportStorageFailure("upgrade", new DOMException("Storage upgrade blocked", "VersionError"));
     });
   });
 }
@@ -430,7 +451,8 @@ export async function saveStoredDocument(snapshot: ViewerDocumentSnapshot) {
       pruneMemoryImages();
     }
     return saved;
-  } catch {
+  } catch (error) {
+    reportStorageFailure("save", error);
     memoryDocuments.set(snapshot.id, toStoredPdfDocument(snapshot));
     for (const image of snapshot.imageAssets ?? []) memoryImages.set(image.id, image);
     pruneMemoryImages();
@@ -449,7 +471,8 @@ export async function loadStoredDocument(documentId: string) {
 
   try {
     database = await openDatabase();
-  } catch {
+  } catch (error) {
+    reportStorageFailure("load", error);
     return memoryDocuments.get(documentId) ?? null;
   }
 
@@ -462,7 +485,8 @@ export async function loadStoredDocument(documentId: string) {
     const store = transaction.objectStore(DOCUMENT_STORE);
     const result = await requestToPromise<StoredPdfDocument | undefined>(store.get(documentId));
     return result ?? null;
-  } catch {
+  } catch (error) {
+    reportStorageFailure("load", error);
     return memoryDocuments.get(documentId) ?? null;
   } finally {
     database.close();

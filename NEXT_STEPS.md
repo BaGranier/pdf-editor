@@ -1,5 +1,10 @@
 # Blockers Windows avant diffusion
 
+Ce gate historique vise la diffusion générale. Pour la **Preview MVP Windows**,
+le périmètre et les seuls blockers actifs sont dans [MVP_STATUS.md](MVP_STATUS.md).
+L'impression intégrée y est expérimentale ; le parcours supporté est Save/Export
+puis impression dans un lecteur externe. Linux/macOS restent WIP.
+
 Décision du gate 006 : **NOT READY**. Ne retirer un point qu'après preuve de
 fermeture ; un test automatique ou un poste dev ne qualifie pas une VM clean.
 

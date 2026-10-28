@@ -1,5 +1,5 @@
 import { expect, test } from "../helpers/qa-test";
-import { fixtures, openApp, openPdf } from "../helpers/app";
+import { fixtures, getStoredDocuments, openApp, openPdf } from "../helpers/app";
 
 test("QA-E2E-002 @smoke ouvre et rend un PDF valide", async ({ page, qa }) => {
   await openApp(page);
@@ -24,20 +24,7 @@ test("QA-E2E-014 @smoke refuse un PDF corrompu puis accepte un PDF valide", asyn
       .getByText("Impossible d'ouvrir pdf-corrupted.pdf."),
   ).toBeVisible();
   await expect(page.locator(".document-tab")).toHaveCount(0);
-  const persistedAfterFailure = await page.evaluate(async () => {
-    const request = indexedDB.open("pdf-editor-mvp-db");
-    const database = await new Promise<IDBDatabase>((resolve) => {
-      request.onsuccess = () => resolve(request.result);
-    });
-    const count = await new Promise<number>((resolve) => {
-      const transaction = database.transaction("documents", "readonly");
-      const countRequest = transaction.objectStore("documents").count();
-      countRequest.onsuccess = () => resolve(countRequest.result);
-    });
-    database.close();
-    return count;
-  });
-  expect(persistedAfterFailure).toBe(0);
+  expect(await getStoredDocuments(page)).toHaveLength(0);
 
   await openPdf(page, fixtures.onePage);
 });

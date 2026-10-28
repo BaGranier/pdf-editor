@@ -343,7 +343,7 @@ describe("OCR in App", () => {
 
     const dialog = openOcrDialog();
     expect(within(dialog).getByRole("note")).toHaveTextContent(
-      "L’OCR sera appliqué au PDF source. Les modifications d’organisation non exportées ne seront pas incluses.",
+      "L’OCR sera appliqué au PDF source. Les modifications non exportées ne seront pas incluses.",
     );
   });
 

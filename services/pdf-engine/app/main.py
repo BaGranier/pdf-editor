@@ -9,6 +9,7 @@ import logging
 import math
 import re
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import Annotated, Literal
@@ -373,7 +374,11 @@ class ExportWarning(BaseModel):
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 OUTPUT_DIR = PROJECT_ROOT / "data" / "output"
-BUNDLED_FONT_DIR = PROJECT_ROOT / "apps" / "web" / "public" / "fonts"
+BUNDLED_FONT_DIR = (
+    Path(sys._MEIPASS) / "fonts"
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
+    else PROJECT_ROOT / "apps" / "web" / "public" / "fonts"
+)
 FORBIDDEN_OUTPUT_NAME_CHARACTERS = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f]')
 WINDOWS_RESERVED_OUTPUT_NAME = re.compile(
     r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$",

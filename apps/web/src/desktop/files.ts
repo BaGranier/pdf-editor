@@ -20,6 +20,27 @@ export type DesktopPdfSave = {
   fileName: string;
 };
 
+// Raw IPC qualified at 27,011,971 bytes on Windows; round down to whole MiB.
+export const MVP_DESKTOP_SAVE_MAX_BYTES = 25 * 1024 * 1024;
+export const MVP_DESKTOP_SAVE_LIMIT_MESSAGE = "Ce document dépasse la taille validée pour la version Preview (25 Mio). Le fichier source n’a pas été modifié. Cette limitation sera levée dans une prochaine version.";
+export class PreviewSaveLimitError extends Error {
+  constructor() { super(MVP_DESKTOP_SAVE_LIMIT_MESSAGE); this.name = "PreviewSaveLimitError"; }
+}
+
+function validateSaveSize(content: Blob) {
+  markSavePhase("blob", content.size);
+  if (content.size > MVP_DESKTOP_SAVE_MAX_BYTES) {
+    markSavePhase("limited", content.size);
+    throw new PreviewSaveLimitError();
+  }
+}
+
+function markSavePhase(phase: string, bytes: number) {
+  const name = `pdf-save-${phase}`;
+  performance.clearMarks?.(name);
+  performance.mark?.(name, { detail: { bytes } });
+}
+
 function desktopFileError(error: unknown): Error {
   return error instanceof Error
     ? error
@@ -53,9 +74,11 @@ export async function saveDesktopPdf(
   documentId: string,
   content: Blob,
 ): Promise<DesktopPdfSave> {
-  return invoke<DesktopPdfSave>("save_pdf", {
-    documentId,
-    content: new Uint8Array(await content.arrayBuffer()),
+  validateSaveSize(content);
+  const bytes = new Uint8Array(await content.arrayBuffer());
+  markSavePhase("invoke", bytes.byteLength);
+  return invoke<DesktopPdfSave>("save_pdf", bytes, {
+    headers: { "x-document-id": documentId },
   }).catch((error: unknown) => { throw desktopFileError(error); });
 }
 
@@ -63,8 +86,10 @@ export async function saveDesktopPdfAs(
   suggestedName: string,
   content: Blob,
 ): Promise<DesktopPdfSave | null> {
-  return invoke<DesktopPdfSave | null>("save_pdf_as", {
-    suggestedName,
-    content: new Uint8Array(await content.arrayBuffer()),
+  validateSaveSize(content);
+  const bytes = new Uint8Array(await content.arrayBuffer());
+  markSavePhase("invoke", bytes.byteLength);
+  return invoke<DesktopPdfSave | null>("save_pdf_as", bytes, {
+    headers: { "x-pdf-name": encodeURIComponent(suggestedName) },
   }).catch((error: unknown) => { throw desktopFileError(error); });
 }

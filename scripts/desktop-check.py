@@ -27,7 +27,11 @@ def validate_configuration() -> None:
     assert configuration["identifier"] == "com.local.pdfstudio"
     assert configuration["build"]["frontendDist"] == "../../web/dist"
     assert configuration["build"]["devUrl"] == "http://127.0.0.1:5173"
-    assert configuration["bundle"]["externalBin"] == ["binaries/pdf-engine"]
+    assert not configuration["bundle"].get("externalBin")
+    package_configuration = json.loads(
+        (TAURI_ROOT / "tauri.package.conf.json").read_text(encoding="utf-8")
+    )
+    assert package_configuration["bundle"]["externalBin"] == ["binaries/pdf-engine"]
     assert configuration["bundle"]["fileAssociations"] == [
         {
             "ext": ["pdf"],
@@ -77,6 +81,7 @@ def loopback_available() -> bool:
 
 def main(arguments: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--package", action="store_true", help="Require real generated release resources and sidecar before checking sources.")
     parser.add_argument(
         "--skip-cargo",
         action="store_true",
@@ -88,6 +93,14 @@ def main(arguments: list[str] | None = None) -> int:
     )
     try:
         validate_configuration()
+        if options.package:
+            configuration = json.loads((TAURI_ROOT / "tauri.package.conf.json").read_text("utf-8"))
+            for relative in configuration["bundle"]["resources"]:
+                resource = (TAURI_ROOT / relative).resolve()
+                if not resource.exists() or (resource.is_dir() and not any(resource.rglob("*"))):
+                    raise RuntimeError(f"Package resource missing: {relative}; run desktop:build first.")
+            if not any(path.stat().st_size > 0 for path in (TAURI_ROOT / "binaries").glob("pdf-engine-*")):
+                raise RuntimeError("A real sidecar is required; run desktop:build first.")
         sidecar_or_development_mode()
         run(["npm", "run", "build"], REPOSITORY_ROOT / "apps" / "web")
         backend_tests = [

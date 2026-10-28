@@ -1,11 +1,21 @@
 # DESKTOP-RELEASE-001 — shell Tauri et préparation de release
 
+État Preview Windows et limitations assumées : [MVP_STATUS.md](MVP_STATUS.md).
+`desktop:check` / `desktop:check-source` utilisent uniquement la configuration
+source, sans sidecar ni notices générées. `desktop:build` prépare les vrais
+artefacts puis applique `src-tauri/tauri.package.conf.json` ;
+`desktop:check-package` refuse les ressources ou le sidecar manquants.
+Save/Export natifs : transport binaire Tauri et plafond Preview de **25 Mio**
+par PDF généré (27 011 971 octets qualifiés avant application de cette borne).
+L'impression intégrée est expérimentale ; Save/Export puis lecteur externe est
+le parcours supporté. La VM clean reste une qualification ultérieure distincte.
+
 Gate Windows 006 : **NOT READY**. La VM clean est indisponible (confirmation
 utilisateur) ; les résultats du poste de développement ne la remplacent pas.
 Les blockers actifs sont dans [NEXT_STEPS.md](NEXT_STEPS.md).
 
-La campagne complémentaire est dans
-[WINDOWS_NATIVE_QUALIFICATION_002.md](WINDOWS_NATIVE_QUALIFICATION_002.md).
+Les anciennes campagnes natives 002/004 ne sont pas versionnées dans ce checkout.
+La procédure active est dans [QA_AUTOMATION.md](QA_AUTOMATION.md).
 Le backend Windows utilise maintenant un Job Object : la disparition forcée
 du shell termine aussi ses descendants PyInstaller. Un dossier temporaire peut
 subsister après crash brutal. Le MSI est construit, mais son installation sur
@@ -13,8 +23,8 @@ le poste QA est empêchée par les privilèges administrateur. DPI/multi-écran,
 impression produite et smoke test de VM clean restent à qualifier. Le package
 Windows inclut désormais l'OCR ; sa portée est décrite dans le rapport 004.
 
-L’audit natif Windows 11 et ses limites sont détaillés dans
-[WINDOWS_STABILIZATION_AUDIT_001.md](WINDOWS_STABILIZATION_AUDIT_001.md).
+Les limites historiques de l'audit Windows 11 doivent être distinguées des
+preuves courantes de [MVP_STATUS.md](MVP_STATUS.md).
 Build MSVC, bundles MSI/NSIS et parcours depuis une installation NSIS ont été
 exécutés ; la qualification des autres DPI et du multi-écran reste ouverte.
 
@@ -457,9 +467,10 @@ LibreOffice et QPDF CLI sont des outils QA, pas des dépendances runtime du pack
 
 ## Redistribution et WebView2
 
-PyMuPDF/MuPDF sont proposés sous AGPL ou licence commerciale ; aucune politique
-de distribution ni licence commerciale n'est établie dans le dépôt.
-La décision est un P0 de [NEXT_STEPS.md](NEXT_STEPS.md).
+La voie AGPL-3.0 a été approuvée et figure dans `LICENSE`. Les sources
+correspondantes, notices transitives et droits CRT restent à vérifier contre
+l'artefact final ; voir [MVP_STATUS.md](MVP_STATUS.md). La présence d'un inventaire
+ne constitue pas une clôture des obligations de distribution.
 [Source officielle PyMuPDF](https://pymupdf.readthedocs.io/en/latest/about.html#license-and-copyright).
 
 Les notices couvrent aussi Python, PyInstaller (exception bootloader),

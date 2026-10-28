@@ -40,6 +40,7 @@ export function PrintPreviewDialog({
         <header>
           <h2 id={titleId}>Aperçu avant impression</h2>
           <p>{preparing ? "Préparation de l’impression…" : `Document à imprimer : ${documentName}`}</p>
+          <p role="note"><strong>Impression intégrée — Expérimental</strong><br />Selon votre environnement, le dialogue d’impression peut ne pas s’ouvrir. Enregistrez ou exportez le PDF, puis imprimez-le depuis votre lecteur PDF externe.</p>
         </header>
         {previewUrl ? (
           <iframe className="print-preview-dialog__document" title="Aperçu du PDF à imprimer" src={previewUrl} />

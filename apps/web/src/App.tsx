@@ -344,6 +344,7 @@ type PdfPageCanvasProps = {
   activeTool: EditingTool;
   nativeTextRuntimeActive: boolean;
   formRuntimeActive: boolean;
+  formOrganizationUnsupported: boolean;
   formUiLocked: boolean;
   pdfFormLocked: boolean;
   freehandStyle: FreehandStyle;
@@ -389,6 +390,7 @@ function PdfPageCanvas({
   activeTool,
   nativeTextRuntimeActive,
   formRuntimeActive,
+  formOrganizationUnsupported,
   formUiLocked,
   pdfFormLocked,
   freehandStyle,
@@ -902,7 +904,7 @@ function PdfPageCanvas({
             fields={formFields}
             edits={edits.filter((edit): edit is PdfFormEdit => edit.type === "form_field")}
             viewport={viewport}
-            uiLocked={formUiLocked}
+            uiLocked={formUiLocked || formOrganizationUnsupported}
             pdfLocked={pdfFormLocked}
             onChange={(field, value) => {
               const existing = edits.find((edit): edit is PdfFormEdit => edit.type === "form_field" && edit.fieldName === field.name);
@@ -911,13 +913,13 @@ function PdfPageCanvas({
             }}
             onFinish={(field) => onFinishEditCoalescing(`form-${field.pageIndex}-${field.name}`, "value")}
           />
-          <FormLockToolbar
+          {formOrganizationUnsupported ? <p className="native-text-layer__error" role="status">Formulaires après organisation — WIP. L’édition des champs est désactivée. Rétablissez l’organisation source pour modifier le formulaire.</p> : <FormLockToolbar
             uiLocked={formUiLocked}
             pdfLocked={pdfFormLocked}
             onSetUiLocked={onSetFormUiLock}
             onRequestPdfLock={onRequestPdfFormLock}
             onUnlockPdf={onUnlockPdfForm}
-          />
+          />}
           </>
         ) : null}
         {shouldRender && formError && formRuntimeActive ? <p className="native-text-layer__error" role="status">{formError}</p> : null}
@@ -1582,7 +1584,7 @@ function PdfViewer({
             viewerMode !== "presentation" &&
             page.displayPageNumber === activePageNumber;
           const formRuntimeActive =
-            isActiveDocumentSource && viewerMode !== "presentation" && page.displayPageNumber === activePageNumber;
+            viewerMode !== "presentation" && page.displayPageNumber === activePageNumber;
           return (
             <PdfPageCanvas
               key={page.id}
@@ -1605,6 +1607,7 @@ function PdfViewer({
               activeTool={viewerMode === "presentation" ? "select" : isActiveDocumentSource ? activeTool : "select"}
               nativeTextRuntimeActive={nativeTextRuntimeActive}
               formRuntimeActive={formRuntimeActive}
+              formOrganizationUnsupported={isPlanModified(pagePlan, document.pageCount)}
               formUiLocked={formUiLocked}
               pdfFormLocked={pdfFormLocked}
               freehandStyle={freehandStyle}
@@ -2765,6 +2768,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const printCleanupRef = useRef<(() => void) | null>(null);
   const [status, setStatus] = useState("Sélectionnez un PDF local.");
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
+  const [localPersistenceState, setLocalPersistenceState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+  const persistenceGeneration = useRef(0);
   const [viewerFocusRequest, setViewerFocusRequest] = useState(0);
   const nextOrganizedPageId = useRef(1);
   const nextTextEditId = useRef(1);
@@ -2781,6 +2786,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   );
   const [restorationError, setRestorationError] = useState<string | null>(null);
   const [restorationAttempt, setRestorationAttempt] = useState(0);
+  // Keep failed records addressable across reloads; only explicit close/reset deletes data.
+  const unrestoredDocumentIds = useRef<string[]>([]);
   const activeDocument = useMemo(
     () => documents.find((document) => document.id === activeDocumentId) ?? null,
     [activeDocumentId, documents],
@@ -3072,13 +3079,20 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         const restoredDocuments: OpenPdfDocument[] = [];
         let failedCount = 0;
         const storedDocuments = await loadStoredDocuments(storedIds);
+        const diagnostics: string[] = [];
+        const failedIds = storedIds.filter((id) => !storedDocuments.some((document) => document.id === id));
+        if (failedIds.length) diagnostics.push("RESTORE_DOCUMENT_ABSENT");
         failedCount += Math.max(0, storedIds.length - storedDocuments.length);
 
         for (const storedDocument of storedDocuments) {
           try {
             restoredDocuments.push(await restoreOpenDocument(storedDocument));
-          } catch {
+          } catch (error) {
             failedCount += 1;
+            failedIds.push(storedDocument.id);
+            const code = error instanceof Error && error.message.startsWith("RESTORE_") ? error.message : "RESTORE_PDFJS_FAILED";
+            diagnostics.push(code);
+            console.warn("PDF_RESTORE", { code });
           }
         }
 
@@ -3107,7 +3121,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           const hydratedPlan = hydratePlanSourceNames(storedPlan.plan, restoredSourceDocuments);
 
           if (!isValidPagePlanForDocument(hydratedPlan, restoredDocument.id, restoredSourceDocuments)) {
-            removeOrganizationPlan(restoredDocument.id);
+            // Preserve the original plan for recovery; use the source plan in this session.
+            diagnostics.push("RESTORE_PAGE_PLAN_INVALID");
             invalidPlanCount += 1;
             return;
           }
@@ -3123,8 +3138,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         const restoredImages = await loadImageAssets([...new Set(storedDocuments.flatMap((doc) => (doc.edits ?? []).flatMap((edit) => edit.type === "image" || edit.type === "signature" ? [edit.imageId] : [])))]);
         if (isCancelled) { restoredDocuments.forEach(releasePdfDocument); return; }
         setSignatureImages(restoredImages);
+        unrestoredDocumentIds.current = failedIds;
         setDocuments(restoredDocuments);
-        storedDocuments.forEach((storedDocument) => {
+        storedDocuments.filter((stored) => restoredDocuments.some((document) => document.id === stored.id)).forEach((storedDocument) => {
           if (storedDocument.edits) {
             dispatchPdfEdits({ type: "hydrate", documentId: storedDocument.id, edits: storedDocument.edits });
             if (storedDocument.editsDirty) dispatchPdfEdits({ type: "mark_dirty", documentId: storedDocument.id });
@@ -3164,6 +3180,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           );
         }
         setStatus(restorationMessages.join(" "));
+        if (diagnostics.length) setStorageWarning(`Restauration partielle : ${[...new Set(diagnostics)].join(", ")}. Les données locales ont été conservées.`);
         setRestorationError(null);
         setIsRestoringDocuments(false);
       } catch (error) {
@@ -3194,9 +3211,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       theme,
       sidebarVisible: isSidebarVisible,
       activeDocumentId,
-      documentOrder: documents
+      documentOrder: [...new Set([...documents
         .filter((document) => document.source.type === "web")
-        .map((document) => document.id),
+        .map((document) => document.id), ...unrestoredDocumentIds.current])],
       ...(lastCommentAuthor ? { commentAuthor: lastCommentAuthor } : {}),
       viewerMode: viewerMode === "presentation" ? "single-page" : viewerMode,
     });
@@ -3211,10 +3228,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       return;
     }
 
+    const generation = ++persistenceGeneration.current;
+    if (documents.some((document) => document.source.type === "web")) setLocalPersistenceState("saving");
     const saveTimeout = window.setTimeout(() => {
       const restorableDocuments = documents.filter((document) => document.source.type === "web");
       if (restorableDocuments.length === 0) {
-        void clearStoredDocuments();
         return;
       }
 
@@ -3226,6 +3244,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         editsDirty: getDocumentEditingState(pdfEditsByDocument, document.id).isDirty,
         imageAssets: [...new Set(getDocumentEditingState(pdfEditsByDocument, document.id).edits.flatMap((edit) => edit.type === "image" || edit.type === "signature" ? [edit.imageId] : []))].flatMap((id) => signatureImages[id] ? [signatureImages[id]] : []),
       }))).then((results) => {
+        if (generation !== persistenceGeneration.current) return;
+        setLocalPersistenceState(results.every(Boolean) ? "saved" : "failed");
         if (results.some((saved) => !saved)) {
           setStorageWarning(DOCUMENT_STORAGE_WARNING);
         } else {
@@ -4108,6 +4128,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         return;
       }
 
+      const currentPlan = organizationPlans[activeDocument.id] ?? createInitialPagePlan(activeDocument.id, activeDocument.fileName, activeDocument.pageCount);
+      const nextPlan = updatePlan(currentPlan);
+      const sourceIds = new Set([activeDocument.id, ...nextPlan.pages.map((page) => page.sourceDocumentId)]);
+      if (isPlanModified(nextPlan, activeDocument.pageCount) && [...sourceIds].some((id) =>
+        getDocumentEditingState(pdfEditsByDocument, id).edits.some((edit) => edit.type === "form_field" || edit.type === "form_lock"))) {
+        setExportFeedback({ kind: "warning", message: "Formulaires après organisation — WIP. Organisation annulée : annulez d’abord les modifications de formulaire, ou enregistrez puis rouvrez le PDF avant de réorganiser ses pages." });
+        return;
+      }
       setExportFeedback(null);
       if (marksDocumentDirty) {
         dispatchPdfEdits({
@@ -4116,17 +4144,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         });
       }
       setOrganizationPlans((currentPlans) => {
-        const currentPlan =
-          currentPlans[activeDocument.id] ??
-          createInitialPagePlan(activeDocument.id, activeDocument.fileName, activeDocument.pageCount);
-
         return {
           ...currentPlans,
-          [activeDocument.id]: updatePlan(currentPlan),
+          [activeDocument.id]: nextPlan,
         };
       });
     },
-    [activeDocument],
+    [activeDocument, organizationPlans, pdfEditsByDocument],
   );
 
   const moveOrganizedPage = useCallback(
@@ -4269,7 +4293,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const documentId = `pdf-${Date.now()}-${nextDocumentId.current}`;
 
       nextDocumentId.current += 1;
-      return {
+      const openedDocument: OpenPdfDocument = {
         id: documentId,
         fileName: file.name,
         workingSaveName,
@@ -4283,6 +4307,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         scrollTop: 0,
         error: null,
       };
+      // The tab/preferences/plan must never refer to a PDF that only exists in RAM.
+      if (source.type === "web" && !await saveStoredDocument(buildViewerSnapshot(openedDocument))) {
+        setStorageWarning(DOCUMENT_STORAGE_WARNING);
+      }
+      return openedDocument;
     } catch (error) {
       void loadingTask.destroy().catch(() => undefined);
       throw new PdfUnlockError("La copie de travail PDF n’a pas pu être ouverte.");
@@ -4352,6 +4381,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     }
 
     pendingFocusTargetRef.current = "file-input";
+    unrestoredDocumentIds.current = [];
     setDocuments((currentDocuments) => {
       currentDocuments.forEach(releasePdfDocument);
       return [];
@@ -4650,7 +4680,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       }
       return true;
     } catch (error) {
-      const message = error instanceof TypeError
+      const message = error instanceof Error && error.name === "PreviewSaveLimitError" ? error.message : error instanceof TypeError
         ? "Backend indisponible ou erreur réseau. Vérifiez que le service PDF est démarré."
         : error instanceof Error
           ? `Erreur du backend : ${error.message}`
@@ -5129,6 +5159,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   return (
     <main
       ref={presentationContainerRef}
+      data-persistence-state={localPersistenceState}
       className={viewerMode === "presentation" ? "app-shell app-shell--presentation" : "app-shell"}
     >
       <header
@@ -5197,7 +5228,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                     onClick={printActiveDocument}
                     disabled={isExporting}
                   >
-                    Imprimer <span aria-hidden="true">{isDesktopRuntime() ? getAppCommandShortcutLabel("print.document") : ""}</span>
+                    Imprimer (expérimental) <span aria-hidden="true">{isDesktopRuntime() ? getAppCommandShortcutLabel("print.document") : ""}</span>
                   </button>
                 </div>
               ) : null}

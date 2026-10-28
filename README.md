@@ -1,5 +1,7 @@
 # PDF Studio Local
 
+État de la version MVP : voir [MVP_STATUS.md](MVP_STATUS.md).
+
 Éditeur PDF local-first disponible dans un navigateur ou dans une application
 desktop Tauri. Les documents restent sur la machine : le frontend communique
 uniquement avec le moteur FastAPI local.

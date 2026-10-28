@@ -1,5 +1,48 @@
 # Campagne QA navigateur automatisée
 
+## Gate MVP Preview Windows
+
+Périmètre et verdict actif : [MVP_STATUS.md](MVP_STATUS.md). Depuis `apps/web`,
+`npm run qa:mvp` prépare les petites fixtures et les langues OCR verrouillées,
+exécute tests/types/build, backend MVP, worker OCR embarqué, Chromium/Firefox,
+desktop source/package et Rust. Installer d'abord les dépendances verrouillées
+et les navigateurs (`PLAYWRIGHT_BROWSERS_PATH=../../.playwright-browsers`).
+Résultats horodatés : `data/output/mvp-gate/`, résumé `latest.json`.
+Le runner conserve les suites complètes et leurs tolérances : texte natif,
+impression intégrée, OCR système et Linux/macOS restent explicitement WIP.
+Un skip requis devient NON TESTABLE DANS CET ENVIRONNEMENT, jamais PASS.
+Codes de sortie : 0 partageable, 1 échec requis, 2 preuve manquante ou WIP de
+distribution. Un gate technique vert ne ferme pas les obligations AGPL.
+
+Qualification Windows sur une installation QA sous le dépôt :
+
+```powershell
+# Racine ; construire d'abord avec npm --prefix apps/desktop run desktop:build
+$env:PDF_STUDIO_QA_OUTPUT='data/output/mvp-001'
+uv run --project services/pdf-engine python -m scripts.generate-mvp-save-fixtures
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows-clean-qa.ps1 -Action Install
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows-clean-qa.ps1 -Action Launch -Pdf apps/web/e2e/fixtures/conversion-simple-text.pdf
+node scripts/windows-qa-cdp.cjs startup conversion-simple-text.pdf
+node scripts/qualify-mvp-save.cjs installed-boundary --policy
+node scripts/qualify-mvp-installed.cjs
+```
+
+Une seule instance QA est autorisée par les pilotes natifs. Les dialogues sont
+ceux de Windows français. Le helper Save reste asynchrone pour laisser circuler
+les événements CDP pendant le transfert réseau. Chaque label de qualification
+Save doit être nouveau pour conserver les sorties précédentes sans overwrite.
+`native-mvp.json` lie les contrôles à l'exécutable installé et aux hashes des
+assets réellement servis par sa WebView. Le gate refuse une preuve absente ou
+obsolète. Ces résultats sont ceux d'un poste dev, pas d'une VM clean.
+
+Le bridge Save utilise les [corps binaires et métadonnées Tauri](https://tauri.app/reference/javascript/api/namespacecore/#invokeoptions),
+avec `Request::body` côté Rust ; les chemins restent détenus par les commandes
+natives. La borne 25 Mio est arrondie sous le témoin de 27 011 971 octets
+qualifié sur le poste Windows. La sonde de politique contrôle aussi le refus
+avant IPC, l'interactivité de l'UI et le hash intact de la source.
+Les attentes DOM ajoutées au scénario undo/redo conservent ses dimensions et
+tolérances d'origine ; la sentinelle de fidélité native <0,5 px reste inchangée.
+
 ## Gate release Windows 006
 
 Décision : **NOT READY**. Voie AGPL approuvée ; notices transitives et livraison

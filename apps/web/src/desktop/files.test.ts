@@ -4,6 +4,7 @@ import {
   openDesktopPdf,
   saveDesktopPdf,
   saveDesktopPdfAs,
+  MVP_DESKTOP_SAVE_MAX_BYTES,
 } from "./files";
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
@@ -36,19 +37,17 @@ describe("desktop file bridge", () => {
     invokeMock.mockResolvedValue({ documentId: "desktop-pdf-1", fileName: "source.pdf" });
     await saveDesktopPdf("desktop-pdf-1", new Blob(["%PDF"]));
 
-    expect(invokeMock).toHaveBeenCalledWith("save_pdf", expect.objectContaining({
-      documentId: "desktop-pdf-1",
-      content: expect.any(Uint8Array),
-    }));
+    expect(invokeMock).toHaveBeenCalledWith("save_pdf", expect.any(Uint8Array), {
+      headers: { "x-document-id": "desktop-pdf-1" },
+    });
   });
 
   it("uses Save As for a new destination and preserves cancellation", async () => {
     invokeMock.mockResolvedValue(null);
     await expect(saveDesktopPdfAs("copy.pdf", new Blob(["%PDF"]))).resolves.toBeNull();
-    expect(invokeMock).toHaveBeenCalledWith("save_pdf_as", expect.objectContaining({
-      suggestedName: "copy.pdf",
-      content: expect.any(Uint8Array),
-    }));
+    expect(invokeMock).toHaveBeenCalledWith("save_pdf_as", expect.any(Uint8Array), {
+      headers: { "x-pdf-name": "copy.pdf" },
+    });
   });
 
   it.each(["save", "save_as"])("preserves native string error details for %s", async (operation) => {
@@ -66,5 +65,22 @@ describe("desktop file bridge", () => {
     expect(files).toHaveLength(1);
     expect(files[0].file.name).toBe("launch.pdf");
     expect(invokeMock).toHaveBeenCalledWith("get_startup_pdfs");
+  });
+
+  it("rejects an oversized Preview save before reading or invoking native IPC", async () => {
+    const content = new Blob([new Uint8Array(MVP_DESKTOP_SAVE_MAX_BYTES + 1)]);
+    const read = vi.spyOn(content, "arrayBuffer");
+    await expect(saveDesktopPdfAs("large.pdf", content)).rejects.toThrow("25 Mio");
+    await expect(saveDesktopPdf("desktop-1", content)).rejects.toThrow("25 Mio");
+    expect(read).not.toHaveBeenCalled();
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("transports Unicode names as metadata while keeping PDF bytes binary", async () => {
+    invokeMock.mockResolvedValue(null);
+    await saveDesktopPdfAs("été.pdf", new Blob(["%PDF-1.7"]));
+    expect(invokeMock).toHaveBeenCalledWith("save_pdf_as", expect.any(Uint8Array), {
+      headers: { "x-pdf-name": "%C3%A9t%C3%A9.pdf" },
+    });
   });
 });

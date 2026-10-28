@@ -3,23 +3,20 @@
 Le gate Windows 006 reste **NOT READY**. La décision AGPL est approuvée ; les
 obligations de sources et notices transitives restent ouvertes. Les blockers
 P0 actifs sont centralisés dans [NEXT_STEPS.md](NEXT_STEPS.md), sans recopier
-la campagne de QA. La VM clean est indisponible. Le deskew/orientation OCR,
-l'ouverture des PDF protégés et la signature cryptographique restent hors du
-gate P0 et ne sont pas implémentés dans ce ticket.
+la campagne de QA. Le périmètre Preview actif est dans [MVP_STATUS.md](MVP_STATUS.md).
+L'ouverture des PDF protégés et la rotation OCR manuelle sont implémentées.
+Deskew/orientation automatique et signature cryptographique restent hors MVP.
 
 Ce document recense les travaux structurels identifiés mais volontairement
 exclus des tickets de stabilisation fonctionnelle.
 
 ## WEB-RESTORE-006 — Restauration navigateur à requalifier
 
-La campagne ciblée du gate 006 échoue dans `QA-E2E-010` sous Chromium et Firefox
-après rechargement d'une organisation modifiée : l'interface indique qu'un
-document n'a pas pu être restauré. Les fichiers sources restent préservés.
-La migration IndexedDB synthétique distincte réussit ; elle ne ferme pas ce
-défaut. Reproduire le parcours complet et analyser les octets restaurés avant
-toute modification produit. Le desktop ne restaure volontairement pas ses
-sources natives via IndexedDB. Ce sujet web est consigné hors du développement
-P0 Windows ; il ne doit pas être masqué en retirant le rechargement du test.
+Corrigé par MVP-001 : le PDF est écrit avant publication de son onglet et le
+helper QA ferme sa connexion quand le store n'existe pas encore. QA-E2E-008/010
+ont passé trois répétitions par navigateur, sans retirer le reload. Une entrée
+invalide ne bloque pas les documents valides et reste conservée pour récupération.
+Le desktop ne restaure volontairement pas ses sources natives via IndexedDB.
 
 ## Orchestration frontend et styles
 
@@ -110,7 +107,7 @@ contournés par rasterisation, faux style CSS ou remplacement visuel opaque.
 ## WINDOWS-NATIVE-QUALIFICATION-002 — Release Windows encore incomplète
 
 La campagne native est détaillée dans
-[WINDOWS_NATIVE_QUALIFICATION_002.md](WINDOWS_NATIVE_QUALIFICATION_002.md).
+[QA_AUTOMATION.md](QA_AUTOMATION.md), avec l'état actif dans [MVP_STATUS.md](MVP_STATUS.md).
 Le crash forcé du shell termine désormais les descendants backend par Job Object,
 mais son dossier temporaire peut subsister. Le ticket 004 nettoie au démarrage
 les dossiers de plus de 24 h munis d'une lease, seulement si le PID est prouvé
@@ -161,7 +158,7 @@ HiDPI, l'impression, les gros PDF, la signature Windows, la notarisation macOS
 et la mise à jour applicative restent à traiter.
 
 Cette dette est durable car elle conditionne une diffusion desktop générale ;
-elle est détaillée dans `DESKTOP.md` et priorisée dans `PROJECT_REVIEW.md`.
+elle est détaillée dans `DESKTOP.md` ; le périmètre actif est dans `MVP_STATUS.md`.
 
 ## Signature cryptographique après le ticket export 003
 

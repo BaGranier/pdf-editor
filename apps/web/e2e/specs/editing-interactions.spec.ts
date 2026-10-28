@@ -68,10 +68,12 @@ test("EDIT-INTERACT-001 redimensionne, annule et copie un bloc texte", async ({
   );
 
   await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await block.boundingBox())?.width).toBeCloseTo(initialBox.width, 0);
   const undoneBox = await block.boundingBox();
   expect(undoneBox?.width).toBeCloseTo(initialBox.width, 0);
   await expect(block).toHaveAttribute("data-text-overflow", "false");
   await page.keyboard.press("Control+y");
+  await expect.poll(async () => (await block.boundingBox())?.width).toBeCloseTo(smallBox?.width ?? 0, 0);
   const redoneBox = await block.boundingBox();
   expect(redoneBox?.width).toBeCloseTo(smallBox?.width ?? 0, 0);
   expect(redoneBox?.height).toBeCloseTo(smallBox?.height ?? 0, 0);
@@ -139,6 +141,7 @@ test("EDIT-INTERACT-001 redimensionne, annule et copie un bloc texte", async ({
   const movedCopy = await blocks.last().boundingBox();
   expect(movedCopy?.y).toBeGreaterThan(copiedPosition.y + 25);
   await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await blocks.last().boundingBox())?.y).toBeCloseTo(copiedPosition.y, 0);
   const restoredCopy = await blocks.last().boundingBox();
   expect(restoredCopy?.x).toBeCloseTo(copiedPosition.x, 0);
   expect(restoredCopy?.y).toBeCloseTo(copiedPosition.y, 0);

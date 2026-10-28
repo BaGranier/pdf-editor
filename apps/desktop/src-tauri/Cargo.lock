@@ -2427,6 +2427,7 @@ dependencies = [
 name = "pdf-studio-local"
 version = "0.1.0"
 dependencies = [
+ "percent-encoding",
  "rfd",
  "serde",
  "tauri",

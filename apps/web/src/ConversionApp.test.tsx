@@ -306,9 +306,7 @@ describe("PDF conversion in App", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent(
-        "Plage invalide côté serveur.",
-      );
+      expect(screen.getAllByRole("alert").some((alert) => alert.textContent?.includes("Plage invalide côté serveur."))).toBe(true);
     });
     expect(
       screen.getByRole("button", { name: "source.pdf, document actif" }),

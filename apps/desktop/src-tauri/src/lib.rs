@@ -618,14 +618,30 @@ fn open_pdf(files: State<'_, DesktopFileStore>) -> Result<Option<NativePdfFile>,
         .transpose()
 }
 
+// A raw body avoids expanding every PDF byte into a JSON array on the WebView thread.
+fn raw_pdf_body(body: &tauri::ipc::InvokeBody) -> Result<&[u8], String> {
+    match body {
+        tauri::ipc::InvokeBody::Raw(bytes) if bytes.len() > 25 * 1024 * 1024 =>
+            Err("Ce document dépasse la taille validée pour la version Preview (25 Mio). Le fichier source n’a pas été modifié.".to_owned()),
+        tauri::ipc::InvokeBody::Raw(bytes) if bytes.starts_with(b"%PDF-") => Ok(bytes),
+        _ => Err("Le document à enregistrer doit être un PDF binaire valide.".to_owned()),
+    }
+}
+
 #[tauri::command]
 fn save_pdf(
-    document_id: String,
-    content: Vec<u8>,
+    request: tauri::ipc::Request<'_>,
     files: State<'_, DesktopFileStore>,
 ) -> Result<NativePdfSave, String> {
+    let content = raw_pdf_body(request.body())?;
+    let document_id = request
+        .headers()
+        .get("x-document-id")
+        .and_then(|value| value.to_str().ok())
+        .ok_or("Destination PDF absente.")?
+        .to_owned();
     let path = files.path_for(&document_id)?;
-    write_pdf_atomically(&path, &content)?;
+    write_pdf_atomically(&path, content)?;
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -640,11 +656,19 @@ fn save_pdf(
 
 #[tauri::command]
 fn save_pdf_as(
-    suggested_name: String,
-    content: Vec<u8>,
+    request: tauri::ipc::Request<'_>,
     files: State<'_, DesktopFileStore>,
 ) -> Result<Option<NativePdfSave>, String> {
-    let suggested_name = pdf_save_path(PathBuf::from(suggested_name))
+    let content = raw_pdf_body(request.body())?;
+    let suggested_name = request
+        .headers()
+        .get("x-pdf-name")
+        .and_then(|value| value.to_str().ok())
+        .ok_or("Nom PDF absent.")?;
+    let suggested_name = percent_encoding::percent_decode_str(suggested_name)
+        .decode_utf8()
+        .map_err(|_| "Nom PDF invalide.")?;
+    let suggested_name = pdf_save_path(PathBuf::from(suggested_name.as_ref()))
         .file_name()
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
@@ -659,7 +683,7 @@ fn save_pdf_as(
         return Ok(None);
     };
     let path = pdf_save_path(selected_path);
-    write_pdf_atomically(&path, &content)?;
+    write_pdf_atomically(&path, content)?;
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -817,6 +841,27 @@ mod tests {
     use super::{is_pdf_path, pdf_save_path, port_from_base_url, write_pdf_atomically};
     use std::fs;
     use std::path::PathBuf;
+
+    #[test]
+    fn raw_save_requires_pdf_bytes_and_enforces_preview_budget() {
+        use tauri::ipc::InvokeBody;
+        assert_eq!(
+            super::raw_pdf_body(&InvokeBody::Raw(b"%PDF-1.7".to_vec())).unwrap(),
+            b"%PDF-1.7"
+        );
+        assert!(super::raw_pdf_body(&InvokeBody::Raw(b"invalid".to_vec())).is_err());
+        assert!(
+            super::raw_pdf_body(&InvokeBody::Raw(vec![0; 25 * 1024 * 1024 + 1]))
+                .unwrap_err()
+                .contains("25 Mio")
+        );
+        assert_eq!(
+            percent_encoding::percent_decode_str("%C3%A9t%C3%A9.pdf")
+                .decode_utf8()
+                .unwrap(),
+            "été.pdf"
+        );
+    }
 
     fn temporary_directory() -> PathBuf {
         let path = std::env::temp_dir().join(format!(
