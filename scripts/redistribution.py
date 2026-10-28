@@ -175,7 +175,9 @@ def kit() -> dict:
     inventory = json.loads((NOTICES / "inventory.json").read_text("utf-8"))
     target = OUT / f"PDF-Studio-Local_{version}_{commit[:12]}_sources.zip"
     application = subprocess.check_output(["git", "archive", "--format=zip", commit], cwd=ROOT)
-    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as output, zipfile.ZipFile(io.BytesIO(application)) as source:
+    # Cargo registry sources may carry Unix-epoch mtimes, outside ZIP's range.
+    # Clamp only their ZIP metadata; preserve every source byte unchanged.
+    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED, strict_timestamps=False) as output, zipfile.ZipFile(io.BytesIO(application)) as source:
         for member in source.infolist():
             if member.filename.startswith(("data/input/", "data/output/")) or Path(member.filename).name.startswith(".env"):
                 continue
@@ -189,7 +191,7 @@ def kit() -> dict:
                 if path.is_file() and path.suffix.lower() not in {".dll", ".exe", ".lib"} and not any(part in {".git", "target"} for part in path.relative_to(directory).parts):
                     output.write(path, f"third-party/rust/{directory.name}/" + path.relative_to(directory).as_posix())
     notices = OUT / "THIRD_PARTY_NOTICES.zip"
-    with zipfile.ZipFile(notices, "w", zipfile.ZIP_DEFLATED) as output:
+    with zipfile.ZipFile(notices, "w", zipfile.ZIP_DEFLATED, strict_timestamps=False) as output:
         for directory in [NOTICES, ROOT / "services/pdf-engine/build/runtime-notices", ROOT / "services/pdf-engine/build/ocr/notices", ROOT / "apps/web/public/fonts"]:
             for path in directory.rglob("*"):
                 if path.is_file() and (directory.name != "fonts" or path.suffix.lower() in {".txt", ".md"}):
