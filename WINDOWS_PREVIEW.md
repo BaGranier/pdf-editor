@@ -29,7 +29,9 @@ npm --prefix apps/web run qa:mvp
 ```
 
 Le build prépare automatiquement les langues OCR, fontes et notices Python,
-puis collecte les modules frontend émis et les preuves Rust. Les sources tierces
+puis collecte les modules frontend émis. La collecte finale des preuves Rust a
+lieu après compilation et avant création de l'installateur, y compris au premier
+build d'un clone sans cache Cargo. Les sources tierces
 et notices téléchargées sont verrouillées par hash. `release:sources` utilise
 `git archive HEAD`, jamais les fichiers non suivis, puis ajoute les sources
 PyMuPDF/MuPDF/NSIS et celles des crates retenues. Le contenu applicatif conserve

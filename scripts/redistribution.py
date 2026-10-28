@@ -50,7 +50,7 @@ def licenses(directory: Path, destination: Path) -> list[str]:
     return found
 
 
-def prepare() -> dict:
+def prepare(*, final: bool = False) -> dict:
     OUT.mkdir(parents=True, exist_ok=True)
     NOTICES.mkdir(parents=True, exist_ok=True)
     for name, (url, expected) in SOURCES.items():
@@ -122,6 +122,8 @@ def prepare() -> dict:
         rust_sources.append(str(directory))
         add(package["name"], package["version"], "Rust", package.get("license") or "UNKNOWN", package.get("repository"), "target-resolved normal dependency with release .d evidence; conservative linked/generated-code coverage", notices, "included in sources archive", "OK" if notices and package.get("license") else "NEEDS_REVIEW")
 
+    if final and not rust_sources:
+        raise ValueError("Final bundle requires compiled Windows Rust dependency evidence")
     frozen = json.loads((ROOT / "services/pdf-engine/build/runtime-notices/frozen-packages.json").read_text("utf-8"))
     for package in frozen:
         add(package["name"], package["version"], "Python sidecar", package.get("license") or "see bundled license texts", f"https://pypi.org/project/{package['name']}/{package['version']}/", "Analysis paths + byte-compared PyInstaller payload", [n["path"] for n in package["notices"]], "PyMuPDF included; permissive packages retain notices")
@@ -234,7 +236,7 @@ def verify() -> bool:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(__doc__)
-    parser.add_argument("action", choices=["prepare", "kit", "verify"])
+    parser.add_argument("action", choices=["prepare", "prepare-final", "kit", "verify"])
     action = parser.parse_args().action
     if action == "verify":
         try:
@@ -243,5 +245,5 @@ if __name__ == "__main__":
             valid = False
         print("PASS" if valid else "NEEDS_REVIEW: redistribution kit incomplete or native-payload clearance open")
         raise SystemExit(0 if valid else 2)
-    result = prepare() if action == "prepare" else kit()
-    print("Prepared redistribution evidence" if action == "prepare" else json.dumps(result, indent=2))
+    result = prepare(final=action == "prepare-final") if action.startswith("prepare") else kit()
+    print("Prepared redistribution evidence" if action.startswith("prepare") else json.dumps(result, indent=2))
