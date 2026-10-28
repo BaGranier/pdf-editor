@@ -58,7 +58,7 @@ async function validate(file) {
     await page.keyboard.press('Control+o'); await native('Open', saved);
     await expect.poll(async () => (await page.locator('.textLayer').allTextContents()).join('').replace(/\s+/g, '')).toContain('PREVIEWINSTALLEDREVISED');
     evidence.checks['export-reopen'] = 'PASS'; write();
-    const large = JSON.parse(fs.readFileSync(path.join(output, 'save-installed-boundary.json')));
+    const large = JSON.parse(fs.readFileSync(path.join(output, path.basename(process.env.MVP_SAVE_EVIDENCE || 'save-installed-boundary.json'))));
     if (large.cases.length !== 4 || !large.cases.every(item => item.status === 'PASS' && item.sourceIntact) || !large.cases[3].limitation || !large.cases.some(item => item.sourceBytes > 24 * 1024 * 1024 && !item.limitation)) throw Error('Large-save policy not qualified');
     evidence.checks['large-save-policy'] = 'PASS'; write();
     await page.keyboard.press('Control+o');

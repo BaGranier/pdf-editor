@@ -111,8 +111,9 @@ def main() -> int:
         record("windows-installed", "PASS" if valid else "FAIL", str(native_file.relative_to(ROOT)))
     except (OSError, ValueError, KeyError, TypeError):
         record("windows-installed", "NON TESTABLE DANS CET ENVIRONNEMENT", "Exact installed artifact evidence missing/stale; run native qualification")
-    # Deliberately manual: an archive inventory is not a redistribution clearance.
-    record("distribution", "WIP", "Corresponding sources and transitive notices/CRT verification remain to close against the final package")
+    distribution = subprocess.run([sys.executable, "-m", "scripts.redistribution", "verify"], cwd=ROOT, capture_output=True, text=True)
+    (directory / "distribution.log").write_text(distribution.stdout + distribution.stderr, "utf-8")
+    record("distribution", "PASS" if distribution.returncode == 0 else "WIP" if distribution.returncode == 2 else "FAIL", distribution.stdout.strip())
     for name, reason in [
         ("integrated-print", "Windows print dialog unqualified; supported fallback is Save/Export then external reader"),
         ("native-text-fidelity", "Partial native editing; existing <0.5 px sentinel unchanged and outside MVP acceptance"),

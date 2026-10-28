@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "release:sources": "uv run --directory ../.. --project services/pdf-engine python -m scripts.redistribution kit",
+    "release:verify": "uv run --directory ../.. --project services/pdf-engine python -m scripts.redistribution verify",
     "web:dev": "npm --prefix ../web run dev -- --host 127.0.0.1 --port 5173 --strictPort",
     "web:build": "npm --prefix ../web run build",
     "tauri": "tauri",

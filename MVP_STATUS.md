@@ -38,11 +38,15 @@ Candidate NSIS locale : `apps/desktop/src-tauri/target/release/bundle/nsis/PDF S
 
 ## Blockers restants
 
-1. **Redistribution** : livrer les sources correspondantes et fermer les notices transitives MuPDF/codecs, Rust/npm et droits CRT contre l'artefact final. Licences application/Python/OCR/fontes incluses et inventoriées ; conformité globale non déclarée.
+1. **Payload natif Windows — NEEDS_REVIEW** : prouver les composants statiques de `mupdfcpp64.dll` et consigner les droits Microsoft CRT/SDK loader du distributeur. Sources/notices collectées et hashées ; aucune conformité déduite du build. Voir `THIRD_PARTY_NOTICES.md`.
+
+Distribution MVP-002 : NSIS officiel, sources par commit, inventaire et manifest
+générés par `release:sources` ; `release:verify` reste à 2 tant que ce dossier
+natif est ouvert. Signature Authenticode hors MVP. **VM clean : À VALIDER MANUELLEMENT**.
 
 ## Prochains tickets
 
-1. Clôturer la redistribution de l'artefact final, sans élargir le périmètre produit.
+1. Clôturer uniquement le dossier natif MuPDF/CRT/SDK Microsoft, puis rejouer le gate.
 2. Qualification Preview sur une autre machine Windows ; VM clean séparée des preuves du poste dev.
 
 ## Journal MVP
@@ -53,3 +57,10 @@ Candidate NSIS locale : `apps/desktop/src-tauri/target/release/bundle/nsis/PDF S
 - validation : 348 Vitest, 248 backend MVP, 18 OCR ciblés, 72 E2E, 11 Rust ; candidate installée contrôlée ;
 - décision : Windows Preview, Save plafonné à 25 Mio, impression externe supportée ;
 - reste : MVP-002, clôturer sources/notices de redistribution ; aucune nouvelle fonctionnalité requise.
+
+### 2026-10-28 — MVP-002
+
+- fait : collecte automatisée npm/Rust/native, sources applicatives et tierces, manifest/hash liés au commit ;
+- validation : tests anti-faux-PASS du gate ; preuves finales sous `data/output/mvp-002` ;
+- décision : NSIS officiel non signé, WebView2 bootstrap réseau ; statut NON PARTAGEABLE conservé ;
+- reste : unique dossier de redistribution natif MuPDF/Microsoft ; VM clean à valider manuellement ensuite.
