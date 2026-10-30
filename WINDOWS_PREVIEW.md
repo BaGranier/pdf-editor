@@ -46,3 +46,10 @@ pas seulement un lien vers un dépôt privé. Ne pas partager si le manifest por
 
 VM clean : **À VALIDER MANUELLEMENT** par le propriétaire. Aucun résultat du poste
 de développement ne constitue une preuve VM clean.
+
+Revue native MVP-003 : voir [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Le NSIS et l'archive source MVP-002 sont conservés ; le manifest complémentaire
+`data/output/mvp-003/RELEASE_MANIFEST.json` identifie séparément le commit de build
+et celui de revue. Les notices SDK complémentaires sont des matériaux externes,
+sans changement des fichiers installés. Le droit de redistribution du CRT reste
+à établir ; cette candidate ne doit donc pas encore être partagée.

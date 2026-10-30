@@ -215,6 +215,11 @@ def kit() -> dict:
 
 
 def verify() -> bool:
+    review_directory = OUT.parent / "mvp-003"
+    if (review_directory / "RELEASE_MANIFEST.json").exists():
+        from scripts.native_redistribution import verify_review
+
+        return verify_review(review_directory)
     manifest = json.loads((OUT / "RELEASE_MANIFEST.json").read_text("utf-8"))
     if manifest["commit"] != git("rev-parse", "HEAD") or git("diff", "HEAD", "--name-only"):
         return False
@@ -243,7 +248,7 @@ if __name__ == "__main__":
             valid = verify()
         except (OSError, ValueError, KeyError):
             valid = False
-        print("PASS" if valid else "NEEDS_REVIEW: redistribution kit incomplete or native-payload clearance open")
+        print("PASS" if valid else "NEEDS_REVIEW: redistribution evidence incomplete or Microsoft CRT app-local rights unresolved; see data/output/mvp-003")
         raise SystemExit(0 if valid else 2)
     result = prepare(final=action == "prepare-final") if action.startswith("prepare") else kit()
     print("Prepared redistribution evidence" if action.startswith("prepare") else json.dumps(result, indent=2))

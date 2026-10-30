@@ -31,7 +31,7 @@ BACKEND_FILES = [
     "test_shape_export", "test_freehand_export", "test_text_markup_export",
     "test_comments", "test_conversion", "test_conversion_filenames",
     "test_desktop_server", "test_desktop_entrypoint", "test_ocr", "test_ocr_runtime",
-    "test_release_inventory", "test_qa_assets",
+    "test_release_inventory", "test_qa_assets", "test_redistribution",
 ]
 
 

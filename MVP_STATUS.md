@@ -1,21 +1,21 @@
 # PDF Editor — MVP Status
 
-Dernière mise à jour : 2026-10-28
+Dernière mise à jour : 2026-10-30
 Version cible : MVP Preview Windows x64 / Tauri
 
 ## État
 
-MVP : RELEASE CANDIDATE — **NON PARTAGEABLE** tant que la redistribution n'est pas clôturée.
+MVP : RELEASE CANDIDATE — **NON PARTAGEABLE** : droits CRT app-local non établis.
 
-Dernier gate : `cd apps/web && npm run qa:mvp`, 2026-10-28, code **2** (distribution WIP, aucun FAIL technique).
+Gate : `cd apps/web && npm run qa:mvp` ; résultat courant dans `data/output/mvp-gate/latest.json`. Distribution attendue : code **2** tant que les droits CRT restent non établis.
 
 - frontend : PASS, 348 tests, types et build ;
-- backend : PASS, 248 tests MVP ; OCR embarqué : 18 tests ciblés PASS ; OCR système `fra` non qualifié ;
+- backend : périmètre technique MVP-002 PASS (248 tests), complété par les régressions redistribution ; OCR embarqué : 18 tests ciblés PASS ; OCR système `fra` non qualifié ;
 - desktop : PASS, checks source/package, 11 tests Rust, NSIS/MSI construits ;
 - E2E MVP : PASS, 36 Chromium + 36 Firefox, zéro skip/flaky ; restauration répétée 12/12 ;
 - installé Windows : ouverture, Save As/Save, réouverture, OCR eng et politique gros Save PASS sur poste dev (pas VM clean).
 
-Preuves ignorées : `data/output/mvp-gate/20261028T214325Z/` et `data/output/mvp-001/`.
+Preuves : `data/output/mvp-gate/latest.json`, `data/output/mvp-002/` et revue native `data/output/mvp-003/`.
 Candidate NSIS locale : `apps/desktop/src-tauri/target/release/bundle/nsis/PDF Studio Local_0.1.0_x64-setup.exe`.
 
 ## Supporté
@@ -38,16 +38,17 @@ Candidate NSIS locale : `apps/desktop/src-tauri/target/release/bundle/nsis/PDF S
 
 ## Blockers restants
 
-1. **Payload natif Windows — NEEDS_REVIEW** : prouver les composants statiques de `mupdfcpp64.dll` et consigner les droits Microsoft CRT/SDK loader du distributeur. Sources/notices collectées et hashées ; aucune conformité déduite du build. Voir `THIRD_PARTY_NOTICES.md`.
+1. **Microsoft CRT app-local — NEEDS_REVIEW** : `MSVCP140.dll` 14.51 vient de System32 ; les deux `VCRUNTIME` 14.38 viennent de Python. Le propriétaire déclare Build Tools uniquement. Obtenir un fondement Microsoft applicable à leur redistribution. MuPDF et le loader SDK sont désormais reliés aux sources/notices. Voir `THIRD_PARTY_NOTICES.md`.
 
-Distribution MVP-002 : NSIS officiel, sources par commit, inventaire et manifest
-générés par `release:sources` ; `release:verify` reste à 2 tant que ce dossier
-natif est ouvert. Signature Authenticode hors MVP. **VM clean : À VALIDER MANUELLEMENT**.
+Candidate et sources MVP-002 conservées sans rebuild. Revue externe MVP-003 :
+inventaire, notices SDK et manifest séparant commit de build et commit de revue.
+`release:verify` reste à 2 tant que le CRT est ouvert. Signature Authenticode hors MVP.
+**VM clean : À VALIDER MANUELLEMENT** après clôture de ce droit de redistribution.
 
 ## Prochains tickets
 
-1. Clôturer uniquement le dossier natif MuPDF/CRT/SDK Microsoft, puis rejouer le gate.
-2. Qualification Preview sur une autre machine Windows ; VM clean séparée des preuves du poste dev.
+Action restante unique : consigner le droit Microsoft applicable au CRT identifié,
+puis rejouer le gate. Après PASS, seule la qualification manuelle VM clean reste prévue.
 
 ## Journal MVP
 
@@ -64,3 +65,10 @@ natif est ouvert. Signature Authenticode hors MVP. **VM clean : À VALIDER MANUE
 - validation : tests anti-faux-PASS du gate ; preuves finales sous `data/output/mvp-002` ;
 - décision : NSIS officiel non signé, WebView2 bootstrap réseau ; statut NON PARTAGEABLE conservé ;
 - reste : unique dossier de redistribution natif MuPDF/Microsoft ; VM clean à valider manuellement ensuite.
+
+### 2026-10-30 — MVP-003
+
+- fait : provenance wheel/RECORD/runtime MuPDF, 15 composants statiques et sources/notices vérifiés ; loader Microsoft identifié et notices SDK ajoutées aux matériaux externes ;
+- validation : collecte reproductible et régressions du gate ; candidate NSIS et archive source inchangées ;
+- décision : aucune modification fonctionnelle ; Build Tools seul ne démontre pas les droits du CRT app-local ;
+- reste : unique blocker CRT Microsoft ; redistribution maintenue NEEDS_REVIEW, VM clean non exécutée.
