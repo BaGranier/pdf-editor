@@ -19,7 +19,7 @@ import datetime as dt
 import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "data/output/mvp-002"
+OUT = ROOT / "data/output/mvp-004"
 NOTICES = ROOT / "services/pdf-engine/build/redistribution"
 SOURCES = {
     "nsis-v311.tar.gz": ("https://codeload.github.com/kichik/nsis/tar.gz/refs/tags/v311", "6ba0e34576f95282e4c7ab4347c016eaaa929fb5f20c90c6a28fb84ca1e2724e"),
@@ -40,6 +40,16 @@ def record(path: Path) -> dict:
     return {"file": path.name, "bytes": path.stat().st_size, "sha256": sha(path)}
 
 
+def build_identity(provenance: dict) -> str:
+    """A later documentation commit cannot silently change compiled sources."""
+    if provenance["trackedChanges"] or git("diff", "HEAD", "--name-only"):
+        raise ValueError("Release requires committed tracked sources")
+    changes = set(git("diff", "--name-only", provenance["commit"], "HEAD").splitlines())
+    if not changes <= {"MVP_STATUS.md", "THIRD_PARTY_NOTICES.md", "WINDOWS_PREVIEW.md"}:
+        raise ValueError("Compiled sources changed; rebuild from this commit")
+    return provenance["commit"]
+
+
 def licenses(directory: Path, destination: Path) -> list[str]:
     found = []
     for source in directory.iterdir():
@@ -55,6 +65,9 @@ def prepare(*, final: bool = False) -> dict:
     NOTICES.mkdir(parents=True, exist_ok=True)
     for name, (url, expected) in SOURCES.items():
         target = OUT / name
+        historical = ROOT / "data/output/mvp-002" / name
+        if not target.exists() and historical.exists() and sha(historical) == expected:
+            shutil.copy2(historical, target)
         if not target.exists():
             target.write_bytes(urllib.request.urlopen(url, timeout=120).read())
         if sha(target) != expected:
@@ -154,13 +167,25 @@ def prepare(*, final: bool = False) -> dict:
     add("WebView2Loader SDK", "webview2-com-sys 0.38.2 bundled loader", "native WebView loader", "Microsoft SDK terms, distinct from MIT Rust bindings", "https://github.com/wravery/webview2-rs", "static loader link declared in bindings; no fixed WebView runtime", "native Microsoft clearance dossier", "not an open-source source obligation", "NEEDS_REVIEW")
     add("OCRmyPDF / Ghostscript / QPDF / LibreOffice", "not packaged", "development/QA only", "not applicable", "component inventory", "no archive or installed executable entries", "not applicable", "not applicable", "NOT_APPLICABLE")
     (OUT / "local-build-inputs.json").write_text(json.dumps(rust_sources), "utf-8")
+    native_command = ["uv", "run", "--project", str(ROOT / "services/pdf-engine"), "--with", "pyinstaller==6.16.0", "python", "-m", "scripts.release_native", "--sidecar", str(ROOT / "apps/desktop/src-tauri/binaries/pdf-engine-x86_64-pc-windows-msvc.exe"), "--sources", str(OUT), "--notices", str(NOTICES)]
+    if final:
+        native_command.append("--final")
+    subprocess.run(native_command, cwd=ROOT, check=True)
+    native = json.loads((NOTICES / "native-evidence.json").read_text("utf-8"))
+    for row in rows:
+        if row["name"] == "Microsoft CRT":
+            row.update(status=native["crt"]["status"], version=native["crt"]["files"][0]["version"], notices="microsoft/CRT/", form="unmodified x64 app-local CRT from discovered Build Tools VC/Redist; see native-evidence.json")
+        elif row["name"] == "MuPDF and statically incorporated third-party libraries":
+            row["status"] = native["mupdf"]["status"]
+        elif row["name"] == "WebView2Loader SDK":
+            row.update(status=native["webview2"]["status"], license=native["webview2"]["license"], notices="microsoft/WebView2-SDK-1.0.3650.58/")
     evidence["modules"] = [module.replace(str(ROOT).replace("\\", "/") + "/", "") for module in evidence["modules"]]
     result = {"rows": rows, "rustSourcePackages": [Path(directory).name for directory in rust_sources], "frontendEvidence": evidence}
     (NOTICES / "inventory.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), "utf-8")
     lines = ["# Third-party redistribution inventory", "", "Evidence completeness; not a legal certificate.", "", "| Component | Version | Role | License | Form | Sources | Status |", "|---|---|---|---|---|---|---|"]
     for row in rows:
         lines.append("| " + " | ".join(str(row[key]).replace("|", "/").replace("\n", " ") for key in ["name", "version", "role", "license", "form", "correspondingSource", "status"]) + " |")
-    lines += ["", "Full upstream URLs and notice paths: inventory.json. Rust coverage includes generated-code candidates; dead-code removal is not inferred from Cargo.lock.", "", "Native wheel provenance and CRT redistribution clearance remain a single native-payload clearance dossier; no OK is inferred from successful compilation."]
+    lines += ["", "Full upstream URLs and notice paths: inventory.json. Rust coverage includes generated-code candidates; dead-code removal is not inferred from Cargo.lock.", "", "Native provenance verified against the locked wheel, corresponding sources, Microsoft SDK and official VC/Redist CRT; native-evidence.json retains the checks. This is not legal certification."]
     (NOTICES / "THIRD_PARTY_NOTICES.md").write_text("\n".join(lines), "utf-8")
     (NOTICES / "build-provenance.json").write_text(json.dumps({"commit": git("rev-parse", "HEAD"), "trackedChanges": git("diff", "HEAD", "--name-only"), "date": dt.datetime.now(dt.timezone.utc).isoformat(), "sources": {name: record(OUT / name) for name in SOURCES}}, indent=2), "utf-8")
     return result
@@ -169,10 +194,8 @@ def prepare(*, final: bool = False) -> dict:
 def kit() -> dict:
     if git("diff", "HEAD", "--name-only"):
         raise ValueError("Release requires committed tracked sources")
-    commit = git("rev-parse", "HEAD")
     provenance = json.loads((NOTICES / "build-provenance.json").read_text("utf-8"))
-    if provenance["commit"] != commit or provenance["trackedChanges"]:
-        raise ValueError("Build provenance must identify this clean commit")
+    commit = build_identity(provenance)
     version = json.loads((ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text("utf-8"))["version"]
     inventory = json.loads((NOTICES / "inventory.json").read_text("utf-8"))
     target = OUT / f"PDF-Studio-Local_{version}_{commit[:12]}_sources.zip"
@@ -199,16 +222,19 @@ def kit() -> dict:
                 if path.is_file() and (directory.name != "fonts" or path.suffix.lower() in {".txt", ".md"}):
                     output.write(path, directory.name + "/" + path.relative_to(directory).as_posix())
         output.write(ROOT / "LICENSE", "APPLICATION-LICENSE.txt")
+        for name in ["MVP_STATUS.md", "THIRD_PARTY_NOTICES.md", "WINDOWS_PREVIEW.md"]:
+            output.write(ROOT / name, "release-documentation/" + name)
     nsis = ROOT / f"apps/desktop/src-tauri/target/release/bundle/nsis/PDF Studio Local_{version}_x64-setup.exe"
     if nsis.stat().st_mtime < dt.datetime.fromisoformat(provenance["date"]).timestamp():
         raise ValueError("NSIS predates build provenance; rebuild this commit")
     shutil.copy2(nsis, OUT / nsis.name)
-    manifest = {"application": "PDF Studio Local Windows Preview", "version": version, "commit": commit,
+    manifest = {"application": "PDF Studio Local Windows Preview", "version": version, "commit": commit, "reviewCommit": git("rev-parse", "HEAD"),
                 "buildDate": provenance["date"],
                 "configuration": {"target": "Windows x64 Tauri NSIS", "signed": False, "webview2": "downloadBootstrapper", "cleanVM": "À VALIDER MANUELLEMENT"},
                 "artifacts": [record(path) for path in [nsis, target, notices]],
                 "evidence": {"nativeInventory": "component-inventory.json", "buildProvenance": provenance},
                 "inventorySha256": sha(NOTICES / "inventory.json"),
+                "nativeEvidenceSha256": sha(NOTICES / "native-evidence.json"),
                 "status": "NEEDS_REVIEW" if any(row["status"] in {"NEEDS_REVIEW", "BLOCKED"} for row in inventory["rows"]) else "OK"}
     (OUT / "RELEASE_MANIFEST.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), "utf-8")
     return manifest
@@ -216,12 +242,15 @@ def kit() -> dict:
 
 def verify() -> bool:
     review_directory = OUT.parent / "mvp-003"
-    if (review_directory / "RELEASE_MANIFEST.json").exists():
+    if OUT.name == "mvp-002" and (review_directory / "RELEASE_MANIFEST.json").exists():
         from scripts.native_redistribution import verify_review
 
         return verify_review(review_directory)
     manifest = json.loads((OUT / "RELEASE_MANIFEST.json").read_text("utf-8"))
-    if manifest["commit"] != git("rev-parse", "HEAD") or git("diff", "HEAD", "--name-only"):
+    if "reviewCommit" in manifest:
+        if manifest["reviewCommit"] != git("rev-parse", "HEAD") or build_identity(manifest["evidence"]["buildProvenance"]) != manifest["commit"]:
+            return False
+    elif manifest["commit"] != git("rev-parse", "HEAD") or git("diff", "HEAD", "--name-only"):
         return False
     inventory = json.loads((NOTICES / "inventory.json").read_text("utf-8"))
     if any(row["status"] not in {"OK", "NOT_APPLICABLE"} for row in inventory["rows"]):
@@ -236,6 +265,16 @@ def verify() -> bool:
             with zipfile.ZipFile(path) as archive:
                 if archive.read("SOURCE_COMMIT.txt").decode().strip() != manifest["commit"]:
                     return False
+    if OUT.name == "mvp-004":
+        from scripts.windows_crt import verify_payload, sha as byte_sha, require
+        native_file = NOTICES / "native-evidence.json"
+        require(sha(native_file) == manifest["nativeEvidenceSha256"], "Native evidence changed")
+        native = json.loads(native_file.read_text("utf-8"))
+        sidecar = ROOT / "apps/desktop/src-tauri/binaries/pdf-engine-x86_64-pc-windows-msvc.exe"
+        require(byte_sha(sidecar.read_bytes()) == native["sidecarSha256"] and native["finalCompilationChecked"], "Stale or incomplete native evidence")
+        current = verify_payload(sidecar, extra=[ROOT / "apps/desktop/src-tauri/target/release/pdf-studio-local.exe"])
+        require(current == native["crt"], "CRT evidence does not match the current payload")
+        require(native["mupdf"]["status"] == native["webview2"]["status"] == "OK", "Unresolved native component")
     return manifest["status"] == "OK" and sha(NOTICES / "inventory.json") == manifest["inventorySha256"]
 
 
@@ -248,7 +287,7 @@ if __name__ == "__main__":
             valid = verify()
         except (OSError, ValueError, KeyError):
             valid = False
-        print("PASS" if valid else "NEEDS_REVIEW: redistribution evidence incomplete or Microsoft CRT app-local rights unresolved; see data/output/mvp-003")
+        print("PASS" if valid else "NEEDS_REVIEW: release/native provenance verification failed; see data/output/mvp-004")
         raise SystemExit(0 if valid else 2)
     result = prepare(final=action == "prepare-final") if action.startswith("prepare") else kit()
     print("Prepared redistribution evidence" if action.startswith("prepare") else json.dumps(result, indent=2))

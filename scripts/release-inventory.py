@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import datetime as dt
 import hashlib
 import importlib.metadata
 import io
@@ -227,12 +228,28 @@ def inventory(output: Path, installed: Path | None) -> dict:
     )["version"]
     excluded = []
     release = ROOT / "apps/desktop/src-tauri/target/release"
+    provenance = ROOT / "services/pdf-engine/build/redistribution/build-provenance.json"
+    build_started = (
+        dt.datetime.fromisoformat(
+            json.loads(provenance.read_text("utf-8"))["date"]
+        ).timestamp()
+        if provenance.exists()
+        else 0
+    )
     for path in [
         release / "pdf-studio-local.exe",
         *sorted((release / "bundle").rglob("*.exe")),
         *sorted((release / "bundle").rglob("*.msi")),
     ]:
         if path.is_file():
+            if path.parent != release and path.stat().st_mtime < build_started:
+                excluded.append(
+                    {
+                        **record(path),
+                        "reason": "historical artifact predating current build provenance",
+                    }
+                )
+                continue
             if path.parent == release or f"_{version}_" in path.name:
                 artifacts.append(record(path))
             else:

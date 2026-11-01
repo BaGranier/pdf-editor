@@ -23,7 +23,7 @@ Depuis un commit propre (l'audit non suivi peut rester présent) :
 ```powershell
 npm --prefix apps/desktop run desktop:build
 npm --prefix apps/desktop run release:sources
-uv run --locked --with pyinstaller==6.16.0 --project services/pdf-engine python -m scripts.release-inventory --output data/output/mvp-002/component-inventory.json
+uv run --locked --with pyinstaller==6.16.0 --project services/pdf-engine python -m scripts.release-inventory --output data/output/mvp-004/component-inventory.json
 npm --prefix apps/desktop run release:verify
 npm --prefix apps/web run qa:mvp
 ```
@@ -37,7 +37,7 @@ et notices téléchargées sont verrouillées par hash. `release:sources` utilis
 PyMuPDF/MuPDF/NSIS et celles des crates retenues. Le contenu applicatif conserve
 ses manifests, lockfiles, scripts, licences et instructions de compilation.
 
-Sorties ignorées : `data/output/mvp-002/RELEASE_MANIFEST.json`, archive
+Sorties ignorées : `data/output/mvp-004/RELEASE_MANIFEST.json`, archive
 `PDF-Studio-Local_<version>_<commit>_sources.zip`, `THIRD_PARTY_NOTICES.zip`.
 L'inventaire détaillé et les notices sont aussi installés sous
 `licenses/redistribution/`. Livrer les sources et notices **avec** le NSIS,
@@ -47,9 +47,12 @@ pas seulement un lien vers un dépôt privé. Ne pas partager si le manifest por
 VM clean : **À VALIDER MANUELLEMENT** par le propriétaire. Aucun résultat du poste
 de développement ne constitue une preuve VM clean.
 
-Revue native MVP-003 : voir [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-Le NSIS et l'archive source MVP-002 sont conservés ; le manifest complémentaire
-`data/output/mvp-003/RELEASE_MANIFEST.json` identifie séparément le commit de build
-et celui de revue. Les notices SDK complémentaires sont des matériaux externes,
-sans changement des fichiers installés. Le droit de redistribution du CRT reste
-à établir ; cette candidate ne doit donc pas encore être partagée.
+MVP-004 : le CRT app-local provient exclusivement du dossier officiel VC\Redist
+x64 d?couvert dans les Build Tools. Le spec impose sa provenance avant cr?ation
+du sidecar ; le gate compare les DLL et leurs imports au payload final.
+Voir [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Les candidates MVP-002/003 sont historiques. Utiliser uniquement le NSIS et les
+hashes du manifest courant sous `data/output/mvp-004/`. Le commit de build lie
+l'archive source au binaire ; un commit documentaire ult?rieur est identifi? en
+`reviewCommit` et ne peut changer le code compil?. Livrer l'ensemble du kit.

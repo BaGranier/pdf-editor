@@ -13,6 +13,7 @@ apps/desktop/src-tauri/binaries/pdf-engine-*
 apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/.tauri/
 *.spec
+!/services/pdf-engine/pdf-engine.spec
 apps/web/e2e/fixtures/pdf-large.pdf
 apps/web/test-results/
 QA_AUTOMATED_REPORT.md

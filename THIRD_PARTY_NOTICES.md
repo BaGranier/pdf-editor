@@ -19,7 +19,52 @@ ne sont pas distribués. Les fontes et leurs licences sont dans `fonts/`.
 Le build conserve les notices runtime et ajoute les notices natives de la source
 MuPDF complète, celles de NSIS 3.11 et celles des dépendances frontend/Rust.
 
-## Revue native MVP-003 — 2026-10-30
+## MVP-004 — CRT Microsoft officiel, 2026-11-02
+
+La candidate MVP-002/003 est **historique**. MVP-004 reconstruit le sidecar et le
+NSIS ; le kit courant est `data/output/mvp-004/RELEASE_MANIFEST.json`.
+
+Le build découvre Build Tools via `vswhere`, puis les valeurs par défaut
+`VCToolsInstallDir` et `VCToolsRedistDir` (ou les variables Developer Shell validées
+contre cette installation). Installation observée : **Build Tools 2022
+17.14.37710.0**, canal stable, toolset **14.44.35207**, redist **14.44.35112**.
+Le dossier x64 `Microsoft.VC143.CRT` contient les fichiers suivants, tous en
+**14.44.35211.0** :
+
+| DLL distribuée | SHA-256 |
+|---|---|
+| msvcp140.dll | 0f885b509a685d2bbfa652fed26b5fb31d88fbdab0a978c641d1c7b8aa460aa9 |
+| vcruntime140.dll | d5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066 |
+| vcruntime140_1.dll | 1f2d41c4aa5db0bc33ebf7b66d72943a817d7ce6cbe880502a9403823633093f |
+
+Le spec versionné remplace les résultats de recherche initiaux d'Analysis **avant
+PKG/EXE**, par la fermeture transitive minimale des imports PE, y compris les
+imports différés. Les symboles importés sont vérifiés dans les exports des CRT
+choisies. La TOC finale PKG et le CArchive sont la référence du payload ; les
+anciennes origines de la phase initiale Analysis ne sont pas les fichiers livrés.
+Aucune copie manuelle après build ni DLL téléchargée individuellement.
+
+Statut CRT **OK** signifie ici : mécanisme **app-local Microsoft documenté**,
+fichiers non modifiés du dossier officiel `VC/Redist/MSVC`, édition/version,
+termes et REDIST enregistrés, imports/version/hashes contrôlés. Il ne s'agit pas
+d'une certification juridique. Les termes Microsoft applicables restent attachés
+au produit installé et au distributeur ; cette vérification ne déduit pas un droit
+des anciennes copies System32/CPython. Le déploiement central et son servicing
+restent hors Preview.
+
+`licenses/redistribution/native-evidence.json` conserve la provenance complète,
+les trois hashes et les preuves MuPDF/SDK actualisées. `microsoft/CRT/` contient
+le REDIST installé, les références/termes officiels et la provenance. Les tests
+comparent le CArchive final aux fichiers officiels, refusent les chemins interdits,
+les copies imbriquées, les versions mixtes et les imports incomplets. Le contrôle
+de démarrage vérifie aussi les CRT effectivement chargées par le worker.
+
+Le nouveau kit source correspond au **commit de build** du manifest. Un éventuel
+commit ultérieur de documentation figure en `reviewCommit` ; toute modification
+de code, spec, configuration ou lockfile impose un rebuild. Les preuves MVP-003
+ci-dessous expliquent la qualification MuPDF/SDK reprise et rejouée sur le build courant.
+
+## Historique : revue native MVP-003 — 2026-10-30
 
 Le NSIS MVP-002 reste inchangé : commit `8fe3d4f6af049354b539ff62fbf1b3c3dd630b0e`,
 SHA-256 `975800cc45325b22ae213d8763997862a5990c57eb5f3a90d502e7e1d1126eef`.
@@ -78,7 +123,7 @@ livrée ; la branche MSVC du binding et la bibliothèque de compilation sont vé
 Le runtime **Evergreen n'est pas embarqué**. `downloadBootstrapper` demeure le
 mécanisme d'installation Microsoft si le runtime manque ; aucun Fixed Version.
 
-### Unique blocker : droits de redistribution du CRT app-local
+### Ancien blocker MVP-003 : CRT de provenance hétérogène (remplacé en MVP-004)
 
 | DLL réellement embarquée | Version PE | Provenance Analysis PyInstaller |
 |---|---|---|

@@ -26,6 +26,21 @@ def test_sources_reject_uncommitted_tracked_changes(monkeypatch):
         release.kit()
 
 
+@pytest.mark.parametrize(
+    "path,allowed", [("MVP_STATUS.md", True), ("apps/web/src/App.tsx", False)]
+)
+def test_build_commit_allows_documentation_review_only(monkeypatch, path, allowed):
+    release = module()
+    monkeypatch.setattr(release, "git", lambda *args: "" if args[1] == "HEAD" else path)
+    if allowed:
+        assert (
+            release.build_identity({"commit": "built", "trackedChanges": ""}) == "built"
+        )
+    else:
+        with pytest.raises(ValueError, match="rebuild"):
+            release.build_identity({"commit": "built", "trackedChanges": ""})
+
+
 @pytest.mark.parametrize("status", ["NEEDS_REVIEW", "BLOCKED", "UNKNOWN"])
 def test_gate_cannot_promote_an_unreviewed_component(tmp_path, monkeypatch, status):
     release = module()

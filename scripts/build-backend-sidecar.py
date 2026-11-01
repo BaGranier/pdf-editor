@@ -35,29 +35,64 @@ def build() -> Path:
         "PyInstaller",
         "--noconfirm",
         "--clean",
-        "--onefile",
-        "--name",
-        "pdf-engine",
-        "--paths",
-        str(BACKEND_ROOT),
-        "--collect-submodules",
-        "app",
-        "--add-data",
-        f"{resources}{os.pathsep}ocr",
-        "--add-data",
-        f"{REPOSITORY_ROOT / 'apps/web/public/fonts'}{os.pathsep}fonts",
         "--distpath",
         str(BUILD_ROOT / "dist"),
         "--workpath",
         str(BUILD_ROOT / "work"),
-        "--specpath",
-        str(BUILD_ROOT / "spec"),
-        str(BACKEND_ROOT / "desktop_entrypoint.py"),
+        str(BACKEND_ROOT / "pdf-engine.spec"),
     ]
+    if os.name != "nt":
+        command = [
+            "uv",
+            "run",
+            "--with",
+            "pyinstaller==6.16.0",
+            "python",
+            "-m",
+            "PyInstaller",
+            "--noconfirm",
+            "--clean",
+            "--onefile",
+            "--name",
+            "pdf-engine",
+            "--paths",
+            str(BACKEND_ROOT),
+            "--collect-submodules",
+            "app",
+            "--add-data",
+            f"{resources}{os.pathsep}ocr",
+            "--add-data",
+            f"{REPOSITORY_ROOT / 'apps/web/public/fonts'}{os.pathsep}fonts",
+            "--distpath",
+            str(BUILD_ROOT / "dist"),
+            "--workpath",
+            str(BUILD_ROOT / "work"),
+            "--specpath",
+            str(BUILD_ROOT / "spec"),
+            str(BACKEND_ROOT / "desktop_entrypoint.py"),
+        ]
     subprocess.run(command, cwd=BACKEND_ROOT, check=True)
     executable = BUILD_ROOT / "dist" / EXECUTABLE_NAME
     if not executable.is_file():
         raise RuntimeError(f"PyInstaller n'a pas produit {executable}.")
+    if os.name == "nt":
+        subprocess.run(
+            [
+                "uv",
+                "run",
+                "--project",
+                str(BACKEND_ROOT),
+                "--with",
+                "pyinstaller==6.16.0",
+                "python",
+                "-m",
+                "scripts.windows_crt",
+                "--sidecar",
+                str(executable),
+            ],
+            cwd=REPOSITORY_ROOT,
+            check=True,
+        )
     # Use the same ephemeral environment as Analysis: PyInstaller hooks can add
     # modules (e.g. setuptools) absent from the application's normal venv.
     subprocess.run(
@@ -122,6 +157,15 @@ def verify_health(executable: Path) -> None:
                         timeout=0.5,
                     ) as response:
                         if json.loads(response.read()) == {"status": "ok"}:
+                            if os.name == "nt":
+                                import importlib
+
+                                worker_pid = int(
+                                    (root_path / "temp/.backend-lease").read_text()
+                                )
+                                importlib.import_module(
+                                    "scripts.windows_crt"
+                                ).verify_loaded(worker_pid, executable)
                             return
                 except (OSError, urllib.error.URLError, json.JSONDecodeError):
                     time.sleep(0.1)

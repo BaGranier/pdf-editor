@@ -1,13 +1,13 @@
 # PDF Editor — MVP Status
 
-Dernière mise à jour : 2026-10-30
+Dernière mise à jour : 2026-11-02
 Version cible : MVP Preview Windows x64 / Tauri
 
 ## État
 
-MVP : RELEASE CANDIDATE — **NON PARTAGEABLE** : droits CRT app-local non établis.
+MVP : RELEASE CANDIDATE — qualification du nouveau NSIS MVP-004 en cours.
 
-Gate : `cd apps/web && npm run qa:mvp` ; résultat courant dans `data/output/mvp-gate/latest.json`. Distribution attendue : code **2** tant que les droits CRT restent non établis.
+Gate : `cd apps/web && npm run qa:mvp` ; résultat courant dans `data/output/mvp-gate/latest.json`. Le nouvel artefact doit être qualifié avant partage.
 
 - frontend : PASS, 348 tests, types et build ;
 - backend : périmètre technique MVP-002 PASS (248 tests), complété par les régressions redistribution ; OCR embarqué : 18 tests ciblés PASS ; OCR système `fra` non qualifié ;
@@ -15,7 +15,7 @@ Gate : `cd apps/web && npm run qa:mvp` ; résultat courant dans `data/output/mvp
 - E2E MVP : PASS, 36 Chromium + 36 Firefox, zéro skip/flaky ; restauration répétée 12/12 ;
 - installé Windows : ouverture, Save As/Save, réouverture, OCR eng et politique gros Save PASS sur poste dev (pas VM clean).
 
-Preuves : `data/output/mvp-gate/latest.json`, `data/output/mvp-002/` et revue native `data/output/mvp-003/`.
+Preuves courantes : `data/output/mvp-004/` et `data/output/mvp-gate/latest.json`. MVP-002/003 sont historiques.
 Candidate NSIS locale : `apps/desktop/src-tauri/target/release/bundle/nsis/PDF Studio Local_0.1.0_x64-setup.exe`.
 
 ## Supporté
@@ -38,17 +38,17 @@ Candidate NSIS locale : `apps/desktop/src-tauri/target/release/bundle/nsis/PDF S
 
 ## Blockers restants
 
-1. **Microsoft CRT app-local — NEEDS_REVIEW** : `MSVCP140.dll` 14.51 vient de System32 ; les deux `VCRUNTIME` 14.38 viennent de Python. Le propriétaire déclare Build Tools uniquement. Obtenir un fondement Microsoft applicable à leur redistribution. MuPDF et le loader SDK sont désormais reliés aux sources/notices. Voir `THIRD_PARTY_NOTICES.md`.
+1. Qualification finale du nouveau NSIS : les contrôles préliminaires confirment trois CRT x64 officiels VC\Redist, version homogène 14.44.35211.0, import/export et démarrage /health vérifiés. Aucun NEEDS_REVIEW de provenance dans l'inventaire préparé. Voir `THIRD_PARTY_NOTICES.md`.
 
-Candidate et sources MVP-002 conservées sans rebuild. Revue externe MVP-003 :
-inventaire, notices SDK et manifest séparant commit de build et commit de revue.
-`release:verify` reste à 2 tant que le CRT est ouvert. Signature Authenticode hors MVP.
-**VM clean : À VALIDER MANUELLEMENT** après clôture de ce droit de redistribution.
+MVP-004 reconstruit le sidecar et le NSIS ; les anciennes candidates sont historiques.
+Le kit lie sources, commit de build, notices, preuves natives et hashes. Une mise à
+jour documentaire ultérieure est identifiée séparément et ne peut modifier le code compilé.
+Signature Authenticode hors MVP. **VM clean : À VALIDER MANUELLEMENT**.
 
 ## Prochains tickets
 
-Action restante unique : consigner le droit Microsoft applicable au CRT identifié,
-puis rejouer le gate. Après PASS, seule la qualification manuelle VM clean reste prévue.
+Terminer la qualification du NSIS MVP-004. Après PASS, seule la qualification
+manuelle VM clean reste prévue ; aucun MVP-005 ni chantier fonctionnel.
 
 ## Journal MVP
 
@@ -72,3 +72,10 @@ puis rejouer le gate. Après PASS, seule la qualification manuelle VM clean rest
 - validation : collecte reproductible et régressions du gate ; candidate NSIS et archive source inchangées ;
 - décision : aucune modification fonctionnelle ; Build Tools seul ne démontre pas les droits du CRT app-local ;
 - reste : unique blocker CRT Microsoft ; redistribution maintenue NEEDS_REVIEW, VM clean non exécutée.
+
+### 2026-11-02 — MVP-004
+
+- fait : sélection CRT x64 officielle VC\Redist dans le spec, fermeture des imports et garde-fous de provenance ;
+- validation : sidecar préliminaire /health et CRT réellement chargées vérifiés, régressions redistribution ; qualification finale du NSIS en cours ;
+- décision : app-local conservé, copies System32/CPython supprimées du payload ;
+- reste : gates de la nouvelle candidate, puis validation manuelle VM clean uniquement.

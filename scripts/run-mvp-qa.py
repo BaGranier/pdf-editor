@@ -31,7 +31,7 @@ BACKEND_FILES = [
     "test_shape_export", "test_freehand_export", "test_text_markup_export",
     "test_comments", "test_conversion", "test_conversion_filenames",
     "test_desktop_server", "test_desktop_entrypoint", "test_ocr", "test_ocr_runtime",
-    "test_release_inventory", "test_qa_assets", "test_redistribution",
+    "test_release_inventory", "test_qa_assets", "test_redistribution", "test_windows_crt",
 ]
 
 
@@ -111,7 +111,7 @@ def main() -> int:
         record("windows-installed", "PASS" if valid else "FAIL", str(native_file.relative_to(ROOT)))
     except (OSError, ValueError, KeyError, TypeError):
         record("windows-installed", "NON TESTABLE DANS CET ENVIRONNEMENT", "Exact installed artifact evidence missing/stale; run native qualification")
-    distribution = subprocess.run([sys.executable, "-m", "scripts.redistribution", "verify"], cwd=ROOT, capture_output=True, text=True)
+    distribution = subprocess.run(["uv", "run", "--project", str(ENGINE), "--with", "pyinstaller==6.16.0", "python", "-m", "scripts.redistribution", "verify"], cwd=ROOT, capture_output=True, text=True)
     (directory / "distribution.log").write_text(distribution.stdout + distribution.stderr, "utf-8")
     record("distribution", "PASS" if distribution.returncode == 0 else "WIP" if distribution.returncode == 2 else "FAIL", distribution.stdout.strip())
     for name, reason in [
