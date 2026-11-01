@@ -5,18 +5,23 @@ Version cible : MVP Preview Windows x64 / Tauri
 
 ## État
 
-MVP : RELEASE CANDIDATE — qualification du nouveau NSIS MVP-004 en cours.
+MVP : RELEASE CANDIDATE — **PRÊTE POUR VALIDATION VM CLEAN**.
 
-Gate : `cd apps/web && npm run qa:mvp` ; résultat courant dans `data/output/mvp-gate/latest.json`. Le nouvel artefact doit être qualifié avant partage.
+Dernier gate MVP-004 : `npm run qa:mvp` **exit 0**, commit de build `ae97cb8`, preuves dans `data/output/mvp-gate/latest.json`.
+
+- fonctionnel / redistribution : PASS ; Microsoft CRT / MuPDF / WebView2 : PASS ;
+- `release:verify` : PASS ; `qa:mvp` : PASS ; signature Authenticode : hors MVP ;
+- VM clean : **À VALIDER MANUELLEMENT**, non exécutée.
 
 - frontend : PASS, 348 tests, types et build ;
-- backend : périmètre technique MVP-002 PASS (248 tests), complété par les régressions redistribution ; OCR embarqué : 18 tests ciblés PASS ; OCR système `fra` non qualifié ;
+- backend : PASS, 270 tests MVP dont les garde-fous CRT/redistribution ; OCR embarqué : 18 tests ciblés PASS ; OCR système `fra` non qualifié ;
 - desktop : PASS, checks source/package, 11 tests Rust, NSIS/MSI construits ;
 - E2E MVP : PASS, 36 Chromium + 36 Firefox, zéro skip/flaky ; restauration répétée 12/12 ;
 - installé Windows : ouverture, Save As/Save, réouverture, OCR eng et politique gros Save PASS sur poste dev (pas VM clean).
 
 Preuves courantes : `data/output/mvp-004/` et `data/output/mvp-gate/latest.json`. MVP-002/003 sont historiques.
-Candidate NSIS locale : `apps/desktop/src-tauri/target/release/bundle/nsis/PDF Studio Local_0.1.0_x64-setup.exe`.
+Candidate unique : NSIS `0.1.0`, build `ae97cb80115de78c795a9118d484d01ba3e63cd0`, `data/output/mvp-004/PDF Studio Local_0.1.0_x64-setup.exe`.
+SHA-256 : `f207904fcb1521c62460c54f98bbf9169d9b245b70a8d73052a1adb28c1bb735`.
 
 ## Supporté
 
@@ -38,7 +43,9 @@ Candidate NSIS locale : `apps/desktop/src-tauri/target/release/bundle/nsis/PDF S
 
 ## Blockers restants
 
-1. Qualification finale du nouveau NSIS : les contrôles préliminaires confirment trois CRT x64 officiels VC\Redist, version homogène 14.44.35211.0, import/export et démarrage /health vérifiés. Aucun NEEDS_REVIEW de provenance dans l'inventaire préparé. Voir `THIRD_PARTY_NOTICES.md`.
+Aucun blocker de préparation MVP. Trois CRT x64 officiels VC\Redist, version
+homogène 14.44.35211.0, imports/exports et chargement réel vérifiés. Aucun
+NEEDS_REVIEW dans l'inventaire courant. Voir `THIRD_PARTY_NOTICES.md`.
 
 MVP-004 reconstruit le sidecar et le NSIS ; les anciennes candidates sont historiques.
 Le kit lie sources, commit de build, notices, preuves natives et hashes. Une mise à
@@ -47,8 +54,8 @@ Signature Authenticode hors MVP. **VM clean : À VALIDER MANUELLEMENT**.
 
 ## Prochains tickets
 
-Terminer la qualification du NSIS MVP-004. Après PASS, seule la qualification
-manuelle VM clean reste prévue ; aucun MVP-005 ni chantier fonctionnel.
+Action unique : installer **cette candidate MVP-004** sur une VM Windows clean et
+effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 
 ## Journal MVP
 
@@ -75,7 +82,7 @@ manuelle VM clean reste prévue ; aucun MVP-005 ni chantier fonctionnel.
 
 ### 2026-11-02 — MVP-004
 
-- fait : sélection CRT x64 officielle VC\Redist dans le spec, fermeture des imports et garde-fous de provenance ;
-- validation : sidecar préliminaire /health et CRT réellement chargées vérifiés, régressions redistribution ; qualification finale du NSIS en cours ;
+- fait : CRT app-local remplacé par les redistribuables officiels VC\Redist des Build Tools ;
+- validation : provenance/hashes/imports, chargement réel, Save/OCR installés, `release:verify` et `qa:mvp` exit 0 ;
 - décision : app-local conservé, copies System32/CPython supprimées du payload ;
-- reste : gates de la nouvelle candidate, puis validation manuelle VM clean uniquement.
+- reste : validation manuelle de cette candidate sur VM Windows clean uniquement.
