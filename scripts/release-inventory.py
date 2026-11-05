@@ -329,7 +329,7 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=ROOT / "data/output/release-gate-006/component-inventory.json",
+        default=ROOT / "data/output/release-006/component-inventory.json",
     )
     parser.add_argument("--installed", type=Path)
     args = parser.parse_args()

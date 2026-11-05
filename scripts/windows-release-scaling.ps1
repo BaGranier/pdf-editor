@@ -37,4 +37,3 @@ $after = @($selection.Current.GetSelection())[0].Current.Name
 $physical = [ReleaseScale]::Current()
 if ($Scale -ne 'Inspect' -and ($after -notmatch ('^' + $Scale + '\s*%') -or $physical -ne [int]$Scale)) { throw 'Windows scale change was not confirmed by Settings and monitor API.' }
 [pscustomobject]@{ before=$before; after=$after; physicalScale=$physical; mechanism='Windows Settings UI Automation + GetScaleFactorForMonitor'; simulated=$false } | ConvertTo-Json -Compress
-
