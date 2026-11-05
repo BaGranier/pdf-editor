@@ -16,6 +16,17 @@ from scripts import native_redistribution as upstream
 from scripts.windows_crt import PROVENANCE, ROOT, require, sha, verify_payload
 
 
+# SDK pinned by webview2-com-sys 0.39.1's upstream update-bindings source.
+# Keep the hash and byte comparison: a bindings upgrade requires fresh evidence.
+WEBVIEW2_CRATE_VERSION = "0.39.1"
+WEBVIEW2_SDK_VERSION = "1.0.3800.47"
+WEBVIEW2_SDK_URL = (
+    "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/"
+    f"{WEBVIEW2_SDK_VERSION}/microsoft.web.webview2.{WEBVIEW2_SDK_VERSION}.nupkg"
+)
+WEBVIEW2_SDK_SHA = "56c9f26bdd07916a2d1949fb58a5c7e434dfa1173577dca879206050c4e718db"
+
+
 def audit(sidecar: Path, sources: Path, notices: Path, final: bool = False) -> dict:
     from PyInstaller.archive.readers import CArchiveReader
 
@@ -116,8 +127,8 @@ def audit(sidecar: Path, sources: Path, notices: Path, final: bool = False) -> d
                 and all(c["status"] == "OK" for c in graph["components"].values()),
                 "MuPDF source/notice coverage incomplete",
             )
-    sdk = sources / "microsoft.web.webview2.1.0.3650.58.nupkg"
-    upstream.download(sdk, upstream.SDK_URL, upstream.SDK_SHA)
+    sdk = sources / f"microsoft.web.webview2.{WEBVIEW2_SDK_VERSION}.nupkg"
+    upstream.download(sdk, WEBVIEW2_SDK_URL, WEBVIEW2_SDK_SHA)
     crates = json.loads((sources / "local-build-inputs.json").read_text("utf-8"))
     # The normal graph's .d evidence is intentionally incomplete before a first Rust build.
     import subprocess
@@ -140,7 +151,7 @@ def audit(sidecar: Path, sources: Path, notices: Path, final: bool = False) -> d
         next(
             p["manifest_path"]
             for p in metadata["packages"]
-            if p["name"] == "webview2-com-sys" and p["version"] == "0.38.2"
+            if p["name"] == "webview2-com-sys" and p["version"] == WEBVIEW2_CRATE_VERSION
         )
     ).parent
     with zipfile.ZipFile(sdk) as archive:
@@ -149,7 +160,7 @@ def audit(sidecar: Path, sources: Path, notices: Path, final: bool = False) -> d
             (crate / "x64/WebView2LoaderStatic.lib").read_bytes() == loader,
             "SDK static loader differs",
         )
-        sdk_notices = notices / "microsoft/WebView2-SDK-1.0.3650.58"
+        sdk_notices = notices / f"microsoft/WebView2-SDK-{WEBVIEW2_SDK_VERSION}"
         sdk_notices.mkdir(parents=True, exist_ok=True)
         for name in ["LICENSE.txt", "NOTICE.txt"]:
             (sdk_notices / name).write_bytes(archive.read(name))
@@ -198,7 +209,8 @@ def audit(sidecar: Path, sources: Path, notices: Path, final: bool = False) -> d
         },
         "webview2": {
             "status": "OK",
-            "version": "1.0.3650.58",
+            "version": WEBVIEW2_SDK_VERSION,
+            "crateVersion": WEBVIEW2_CRATE_VERSION,
             "loaderSha256": sha(loader),
             "license": "Microsoft BSD-3-Clause SDK LICENSE.txt + NOTICE.txt",
             "runtime": "Evergreen not bundled; downloadBootstrapper",

@@ -82,6 +82,8 @@ import {
 import { getWebBackendBaseUrl, isDesktopRuntime } from "./api/backend";
 import {
   getDesktopStartupPdfs,
+  findDesktopDocument,
+  type DesktopPdfFile,
   openDesktopPdf,
   saveDesktopPdf,
   saveDesktopPdfAs,
@@ -699,6 +701,8 @@ function PdfPageCanvas({
     [eyedropperTarget, onSampleColor],
   );
 
+  const devicePixelRatio = useDevicePixelRatio();
+
   useEffect(() => {
     let isCancelled = false;
     let renderTask: RenderTask | null = null;
@@ -734,7 +738,8 @@ function PdfPageCanvas({
         const renderDimensions = getCanvasRenderDimensions(
           viewport.width,
           viewport.height,
-          window.devicePixelRatio,
+          devicePixelRatio,
+          zoom,
         );
         staging.width = renderDimensions.canvasWidth;
         staging.height = renderDimensions.canvasHeight;
@@ -776,6 +781,8 @@ function PdfPageCanvas({
           // Synchronous copy: the browser cannot paint between resize and draw.
           canvas.width = staging.width;
           canvas.height = staging.height;
+          canvas.dataset.renderPixelRatio = String(renderDimensions.outputScale);
+          canvas.dataset.renderZoom = String(zoom);
           visibleContext.drawImage(staging, 0, 0);
           if (context.isContextLost?.() || visibleContext.isContextLost?.()) {
             throw new Error("Le contexte du canvas a été perdu.");
@@ -1871,6 +1878,7 @@ type OrganizePageThumbnailProps = {
 };
 
 function OrganizePageThumbnail({ pdfDocument, page }: OrganizePageThumbnailProps) {
+  const devicePixelRatio = useDevicePixelRatio();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [renderState, setRenderState] = useState<RenderState>("idle");
 
@@ -1931,7 +1939,7 @@ function OrganizePageThumbnail({ pdfDocument, page }: OrganizePageThumbnailProps
       renderTask?.cancel();
       clearCanvas(canvas);
     };
-  }, [page.rotation, page.sourcePageIndex, pdfDocument]);
+  }, [devicePixelRatio, page.rotation, page.sourcePageIndex, pdfDocument]);
 
   return (
     <div className="organize-thumbnail" aria-label={`Miniature de la page source ${page.sourcePageIndex + 1}`}>
@@ -1953,6 +1961,7 @@ type ExternalPageThumbnailProps = {
 
 function ExternalPageThumbnail({ pdfDocument, pageNumber }: ExternalPageThumbnailProps) {
   const thumbnailRef = useRef<HTMLDivElement | null>(null);
+  const devicePixelRatio = useDevicePixelRatio();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [shouldRender, setShouldRender] = useState(false);
   const [renderState, setRenderState] = useState<RenderState>("idle");
@@ -2036,7 +2045,7 @@ function ExternalPageThumbnail({ pdfDocument, pageNumber }: ExternalPageThumbnai
       renderTask?.cancel();
       clearCanvas(canvas);
     };
-  }, [pageNumber, pdfDocument, shouldRender]);
+  }, [devicePixelRatio, pageNumber, pdfDocument, shouldRender]);
 
   return (
     <div ref={thumbnailRef} className="external-page-thumbnail" aria-label={`Miniature externe de la page ${pageNumber}`}>
@@ -2806,7 +2815,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [lastCommentAuthor, setLastCommentAuthor] = useState(() => storedPreferences?.commentAuthor ?? "");
   const [isCommentsView, setIsCommentsView] = useState(false);
   const [documents, setDocuments] = useState<OpenPdfDocument[]>([]);
-  const desktopStartupLoadedRef = useRef(false);
+  const desktopOpenChainRef = useRef<Promise<void>>(Promise.resolve());
+  const desktopQueueBusyRef = useRef(false);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("read");
   const [viewerMode, setViewerMode] = useState<ViewerMode>(
@@ -4711,6 +4721,33 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     });
   }, [resetDocumentProcessing]);
 
+  const openDesktopFile = useCallback((selected: DesktopPdfFile): Promise<void> => {
+    const operation = desktopOpenChainRef.current.then(async () => {
+      const existing = findDesktopDocument(documentsRef.current, selected.documentId);
+      if (existing) {
+        setActiveDocumentId(existing.id);
+        pendingFocusTargetRef.current = "viewer";
+        return;
+      }
+      const openedDocument = await loadOpenPdfDocument(selected.file, null,
+        { type: "desktop", documentId: selected.documentId });
+      // Update immediately: another queued file can arrive before React commits.
+      documentsRef.current = [...documentsRef.current, openedDocument];
+      setDocuments((current) => [...current, openedDocument]);
+      setActiveDocumentId(openedDocument.id);
+      pendingFocusTargetRef.current = "viewer";
+      setWorkspaceMode("read");
+      setStatus("");
+      if (!import.meta.env.MODE.startsWith("test")) void loadPdfComments(backendUrl, openedDocument.file).then((comments) => {
+        if (comments.length) dispatchPdfEdits({ type: "hydrate", documentId: openedDocument.id, edits: comments });
+      });
+    });
+    desktopOpenChainRef.current = operation.catch(() => undefined);
+    return operation;
+  }, [backendUrl, loadOpenPdfDocument]);
+  const openDesktopFileRef = useRef(openDesktopFile);
+  openDesktopFileRef.current = openDesktopFile;
+
   const openPdfFromUser = useCallback(async () => {
     if (!isDesktopRuntime()) {
       openFileInputRef.current?.click();
@@ -4724,25 +4761,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     try {
       const selected = await openDesktopPdf();
       if (!selected) return;
-      setStatus("Ouverture du PDF...");
-      const openedDocument = await loadOpenPdfDocument(
-        selected.file,
-        null,
-        { type: "desktop", documentId: selected.documentId },
-      );
-      const usageWarnings = getDocumentUsageWarnings(
-        openedDocument.file,
-        openedDocument.pageCount,
-        documents.length + 1,
-      );
-      pendingFocusTargetRef.current = "viewer";
-      setDocuments((currentDocuments) => [...currentDocuments, openedDocument]);
-      setActiveDocumentId(openedDocument.id);
-      setWorkspaceMode("read");
-      if (!import.meta.env.MODE.startsWith("test")) void loadPdfComments(backendUrl, openedDocument.file).then((comments) => {
-        if (comments.length) dispatchPdfEdits({ type: "hydrate", documentId: openedDocument.id, edits: comments });
-      });
-      setStatus(usageWarnings.map((warning) => `Avertissement: ${warning}`).join(" "));
+      await openDesktopFile(selected);
     } catch (error) {
       if (error instanceof PdfOpenCancelled) { setStatus("Ouverture annulée."); return; }
       setExportFeedback({
@@ -4750,44 +4769,34 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         message: error instanceof Error ? error.message : "Impossible d'ouvrir le PDF sélectionné.",
       });
     }
-  }, [backendUrl, documents.length, isRestoringDocuments, loadOpenPdfDocument]);
+  }, [isRestoringDocuments, openDesktopFile]);
 
   useEffect(() => {
-    if (!isDesktopRuntime() || isRestoringDocuments || desktopStartupLoadedRef.current) {
-      return;
-    }
-    desktopStartupLoadedRef.current = true;
-    void getDesktopStartupPdfs().then(async (startupFiles) => {
-      const openedDocuments: OpenPdfDocument[] = [];
-      for (const startupFile of startupFiles) {
+    if (!isDesktopRuntime() || isRestoringDocuments) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const reportError = (message: string) => setExportFeedback({ kind: "error", message });
+    // Poll only the retained native queue, never files on disk. This also works
+    // before WebView readiness and does not depend on delivery of a JS event.
+    const drain = async () => {
+      if (!desktopQueueBusyRef.current) {
+        desktopQueueBusyRef.current = true;
         try {
-          openedDocuments.push(await loadOpenPdfDocument(
-            startupFile.file,
-            null,
-            { type: "desktop", documentId: startupFile.documentId },
-          ));
-        } catch (error) {
-          if (error instanceof PdfOpenCancelled) continue;
-          setExportFeedback({
-            kind: "error",
-            message: error instanceof Error ? error.message : `Impossible d'ouvrir ${startupFile.file.name}.`,
-          });
-        }
+          const files = await getDesktopStartupPdfs(reportError);
+          for (const file of files) {
+            try { await openDesktopFileRef.current(file); }
+            catch (error) {
+              if (!(error instanceof PdfOpenCancelled)) reportError(error instanceof Error ? error.message : String(error));
+            }
+          }
+        } catch (error) { reportError(error instanceof Error ? error.message : String(error)); }
+        finally { desktopQueueBusyRef.current = false; }
       }
-      if (openedDocuments.length) {
-        pendingFocusTargetRef.current = "viewer";
-        setDocuments((currentDocuments) => [...currentDocuments, ...openedDocuments]);
-        setActiveDocumentId(openedDocuments[openedDocuments.length - 1].id);
-        setWorkspaceMode("read");
-        setStatus("");
-      }
-    }).catch((error) => {
-      setExportFeedback({
-        kind: "error",
-        message: error instanceof Error ? error.message : "Impossible de recevoir le PDF de démarrage.",
-      });
-    });
-  }, [isRestoringDocuments, loadOpenPdfDocument]);
+      if (!stopped) timer = setTimeout(() => void drain(), 500);
+    };
+    void drain();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [isRestoringDocuments]);
 
   const addExternalPagesFromOpenDocument = useCallback(
     (sourceDocumentId: string, sourcePageIndexes: number[]) => {

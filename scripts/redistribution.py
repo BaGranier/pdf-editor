@@ -188,7 +188,7 @@ def prepare(*, final: bool = False) -> dict:
     add("Bundled font families", "repository pinned TTF/OTF bytes", "text", "OFL / Ubuntu / DejaVu / Liberation; per-font NOTICE", FONT_NOTICE, "web assets + frozen fonts/", "fonts/NOTICE.md and LICENSE-*", "font binaries and notices in application sources")
     add("Microsoft CRT", "MSVCP140 / VCRUNTIME140 / VCRUNTIME140_1, exact DLL hashes in component inventory", "native runtime", "Microsoft redistributable terms", "https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution", "DLLs in frozen Python payload; UCRT is OS dependency", "Microsoft terms referenced in THIRD_PARTY_NOTICES.md", "not an open-source source obligation", "NEEDS_REVIEW")
     add("WebView2", "bootstrapper downloaded by installer", "WebView runtime", "Microsoft WebView2 terms", "https://developer.microsoft.com/en-us/microsoft-edge/webview2/", "downloadBootstrapper; no fixed offline runtime", "installer terms + user prerequisites", "not applicable", "NOT_APPLICABLE")
-    add("WebView2Loader SDK", "webview2-com-sys 0.38.2 bundled loader", "native WebView loader", "Microsoft SDK terms, distinct from MIT Rust bindings", "https://github.com/wravery/webview2-rs", "static loader link declared in bindings; no fixed WebView runtime", "native Microsoft clearance dossier", "not an open-source source obligation", "NEEDS_REVIEW")
+    add("WebView2Loader SDK", "locked webview2-com-sys bundled loader", "native WebView loader", "Microsoft SDK terms, distinct from MIT Rust bindings", "https://github.com/wravery/webview2-rs", "static loader link declared in bindings; no fixed WebView runtime", "native Microsoft clearance dossier", "not an open-source source obligation", "NEEDS_REVIEW")
     add("OCRmyPDF / Ghostscript / QPDF / LibreOffice", "not packaged", "development/QA only", "not applicable", "component inventory", "no archive or installed executable entries", "not applicable", "not applicable", "NOT_APPLICABLE")
     (OUT / "local-build-inputs.json").write_text(json.dumps(rust_sources), "utf-8")
     native_command = ["uv", "run", "--project", str(ROOT / "services/pdf-engine"), "--with", "pyinstaller==6.16.0", "python", "-m", "scripts.release_native", "--sidecar", str(ROOT / "apps/desktop/src-tauri/binaries/pdf-engine-x86_64-pc-windows-msvc.exe"), "--sources", str(OUT), "--notices", str(NOTICES)]
@@ -202,7 +202,7 @@ def prepare(*, final: bool = False) -> dict:
         elif row["name"] == "MuPDF and statically incorporated third-party libraries":
             row["status"] = native["mupdf"]["status"]
         elif row["name"] == "WebView2Loader SDK":
-            row.update(status=native["webview2"]["status"], license=native["webview2"]["license"], notices="microsoft/WebView2-SDK-1.0.3650.58/")
+            row.update(status=native["webview2"]["status"], version=f"webview2-com-sys {native['webview2']['crateVersion']} / SDK {native['webview2']['version']}", license=native["webview2"]["license"], notices=f"microsoft/WebView2-SDK-{native['webview2']['version']}/")
     evidence["modules"] = [module.replace(str(ROOT).replace("\\", "/") + "/", "") for module in evidence["modules"]]
     result = {"rows": rows, "rustSourcePackages": [Path(directory).name for directory in rust_sources], "frontendEvidence": evidence}
     (NOTICES / "inventory.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), "utf-8")

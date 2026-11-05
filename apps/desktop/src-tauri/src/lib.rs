@@ -1,4 +1,5 @@
 use serde::Serialize;
+mod desktop_open;
 mod window_geometry;
 #[cfg(windows)]
 mod windows_job;
@@ -65,15 +66,24 @@ impl DesktopFileStore {
     }
 
     fn register(&self, path: PathBuf) -> Result<String, String> {
+        // Save As and native Open must share the same absolute path identity.
+        let path = path.canonicalize().map_err(|error| error.to_string())?;
+        let mut paths = self
+            .paths
+            .lock()
+            .map_err(|_| "Le stockage des fichiers Desktop est indisponible.".to_owned())?;
+        if let Some((id, _)) = paths
+            .iter()
+            .find(|(_, existing)| desktop_open::same_path(existing, &path))
+        {
+            return Ok(id.clone());
+        }
         let id = format!(
             "desktop-pdf-{}-{}",
             std::process::id(),
             self.next_id.fetch_add(1, Ordering::Relaxed)
         );
-        self.paths
-            .lock()
-            .map_err(|_| "Le stockage des fichiers Desktop est indisponible.".to_owned())?
-            .insert(id.clone(), path);
+        paths.insert(id.clone(), path);
         Ok(id)
     }
 
@@ -99,7 +109,13 @@ impl DesktopFileStore {
     }
 }
 
-struct StartupPdfPaths(Mutex<Vec<PathBuf>>);
+struct DesktopOpenQueue(Mutex<desktop_open::OpenQueue>);
+
+#[derive(Serialize)]
+struct DesktopOpenBatch {
+    files: Vec<NativePdfFile>,
+    errors: Vec<String>,
+}
 
 fn is_pdf_path(path: &Path) -> bool {
     path.extension()
@@ -603,6 +619,26 @@ fn launch_backend(_app: &AppHandle, runtime: &BackendRuntime) -> BackendStatus {
 }
 
 fn backend_paths(app: &AppHandle) -> Result<BackendPaths, String> {
+    #[cfg(debug_assertions)]
+    if let Some(root) = std::env::var_os("PDF_STUDIO_QA_DATA_ROOT") {
+        // Native QA must not share backend state with an installed candidate.
+        let root = PathBuf::from(root)
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+        let output = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../data/output")
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+        if !root.starts_with(output) {
+            return Err("QA data must stay under repository data/output".into());
+        }
+        return Ok(BackendPaths {
+            data: root.join("data"),
+            logs: root.join("logs"),
+            cache: root.join("cache"),
+            temp: root.join(format!("temp/backend-{}", std::process::id())),
+        });
+    }
     let resolver = app.path();
     let data = resolver
         .app_local_data_dir()
@@ -731,19 +767,25 @@ fn save_pdf_as(
 
 #[tauri::command]
 fn get_startup_pdfs(
-    startup_paths: State<'_, StartupPdfPaths>,
+    startup_paths: State<'_, DesktopOpenQueue>,
     files: State<'_, DesktopFileStore>,
-) -> Result<Vec<NativePdfFile>, String> {
+) -> Result<DesktopOpenBatch, String> {
     let paths = startup_paths
         .0
         .lock()
         .map_err(|_| "Les fichiers de démarrage Desktop sont indisponibles.".to_owned())?
-        .drain(..)
-        .collect::<Vec<_>>();
-    paths
-        .into_iter()
-        .map(|path| read_native_pdf(path, &files))
-        .collect()
+        .take();
+    let mut batch = DesktopOpenBatch {
+        files: Vec::new(),
+        errors: Vec::new(),
+    };
+    for path in paths {
+        match read_native_pdf(path, &files) {
+            Ok(file) => batch.files.push(file),
+            Err(error) => batch.errors.push(error),
+        }
+    }
+    Ok(batch)
 }
 
 #[tauri::command]
@@ -792,7 +834,25 @@ fn open_pdf_web_link(app: AppHandle, url: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let mut open_queue = desktop_open::OpenQueue::default();
+    open_queue.extend(desktop_open::pdf_arguments(
+        std::env::args_os(),
+        &std::env::current_dir().unwrap_or_default(),
+    ));
     let app = tauri::Builder::default()
+        .manage(DesktopOpenQueue(Mutex::new(open_queue)))
+        .manage(DesktopFileStore::new())
+        // Must be the first plugin: secondary invocations exit before backend setup.
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            if let Ok(mut queue) = app.state::<DesktopOpenQueue>().0.lock() {
+                queue.extend(desktop_open::pdf_arguments(args, Path::new(&cwd)));
+            }
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             get_backend_status,
@@ -856,13 +916,6 @@ pub fn run() {
             }
             let paths = backend_paths(app.handle()).map_err(std::io::Error::other)?;
             app.manage(BackendRuntime::new(paths));
-            let startup_paths = std::env::args_os()
-                .skip(1)
-                .map(PathBuf::from)
-                .filter(|path| is_pdf_path(path))
-                .collect();
-            app.manage(DesktopFileStore::new());
-            app.manage(StartupPdfPaths(Mutex::new(startup_paths)));
             #[cfg(debug_assertions)]
             if std::env::var_os("PDF_STUDIO_OPEN_DEVTOOLS").is_some() {
                 if let Some(main_window) = app.get_webview_window("main") {
@@ -895,6 +948,26 @@ mod tests {
     use super::{is_pdf_path, pdf_save_path, port_from_base_url, write_pdf_atomically};
     use std::fs;
     use std::path::PathBuf;
+
+    #[test]
+    fn already_registered_native_path_reuses_identity_after_normalization() {
+        let files = super::DesktopFileStore::new();
+        let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../web/e2e/fixtures");
+        let first = files
+            .register(fixtures.join("pdf-small-1-page.pdf"))
+            .unwrap();
+        let repeated = files
+            .register(fixtures.join("../fixtures/pdf-small-1-page.pdf"))
+            .unwrap();
+        assert_eq!(first, repeated);
+        #[cfg(windows)]
+        assert_eq!(
+            first,
+            files
+                .register(fixtures.join("PDF-SMALL-1-PAGE.PDF"))
+                .unwrap()
+        );
+    }
 
     #[test]
     fn raw_save_requires_pdf_bytes_and_enforces_preview_budget() {

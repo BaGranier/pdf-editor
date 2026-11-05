@@ -516,6 +516,7 @@ def create_links_fixture(output_dir: Path = FIXTURE_DIR) -> Path:
 def generate(include_large: bool, output_dir: Path = FIXTURE_DIR) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     generated = [
+        create_sharpness_fixture(output_dir=output_dir),
         write_pdf("pdf-small-1-page.pdf", [(320, 460)], output_dir=output_dir),
         write_pdf("pdf-text-position.pdf", [(612, 792)], output_dir=output_dir),
         create_native_text_fixture(output_dir=output_dir),
@@ -561,6 +562,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", type=Path, default=FIXTURE_DIR)
     parser.add_argument("--french-only", action="store_true")
+    parser.add_argument("--sharpness-only", action="store_true")
     parser.add_argument(
         "--include-large",
         action="store_true",
@@ -568,11 +570,12 @@ def main() -> None:
     )
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    fixtures = (
-        [create_french_scan_fixture(output_dir=args.output_dir)]
-        if args.french_only
-        else generate(args.include_large, output_dir=args.output_dir)
-    )
+    if args.sharpness_only:
+        fixtures = [create_sharpness_fixture(output_dir=args.output_dir)]
+    elif args.french_only:
+        fixtures = [create_french_scan_fixture(output_dir=args.output_dir)]
+    else:
+        fixtures = generate(args.include_large, output_dir=args.output_dir)
     for fixture in fixtures:
         print(f"{fixture} ({fixture.stat().st_size} octets)")
 

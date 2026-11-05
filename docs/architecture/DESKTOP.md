@@ -113,10 +113,9 @@ Rust/Cargo, un compilateur C/C++ ou un Python de développement.
 
 - Node.js 22 et npm ;
 - Python 3.11 et [uv](https://docs.astral.sh/uv/) ;
-- Rust stable **>= 1.88** (`rustc`, `cargo`). Tauri v2 et le plugin shell
-  annoncent un minimum 1.77.2, mais les versions indirectes verrouillées de
-  `time` et `serde_with` portent le MSRV effectif à 1.88. Le projet le déclare
-  dans `src-tauri/Cargo.toml` et la CI le vérifie avec Rust 1.88.0 ;
+- Rust stable **>= 1.90** (`rustc`, `cargo`), minimum requis par Tauri
+  2.12.5 et le plugin single-instance 2.5.5. Le projet le déclare dans
+  `src-tauri/Cargo.toml` et la CI utilise Rust 1.90.0 ;
 - les dépendances système Tauri v2 de la plateforme (WebView2 sous Windows,
   WebKitGTK 4.1 et les bibliothèques de build sous Linux, outils Xcode sous
   macOS) ;
@@ -148,7 +147,7 @@ cd ../../services/pdf-engine && uv sync --locked
 ### Windows 11
 
 Installer Visual Studio Build Tools 2022 avec « Desktop development with C++ »
-(MSVC x64/x86 et Windows SDK), Rust stable MSVC >= 1.88, Node 22, Python 3.11 et
+(MSVC x64/x86 et Windows SDK), Rust stable MSVC >= 1.90, Node 22, Python 3.11 et
 uv. `link.exe` peut être hors PATH d’un PowerShell ordinaire : le build Rust de
 l’audit l’a trouvé via l’installation Visual Studio. Pour un diagnostic explicite,
 utiliser le Developer PowerShell de Visual Studio et `where.exe link`.

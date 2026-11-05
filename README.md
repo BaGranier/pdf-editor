@@ -53,7 +53,7 @@ suppression ciblée des anciennes copies et les limites de stockage.
 ## Démarrer
 
 Environnement de référence : Node **22**, Python **>= 3.11** et uv ; Rust
-**>= 1.88** pour Tauri. Les dépendances sont verrouillées par les lockfiles de
+**>= 1.90** pour Tauri. Les dépendances sont verrouillées par les lockfiles de
 chaque workspace. Prérequis OCR système et conteneur :
 [DEVELOPMENT.md](docs/getting-started/DEVELOPMENT.md).
 

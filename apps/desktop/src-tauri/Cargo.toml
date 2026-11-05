@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Native shell for the local-first PDF editor"
 authors = ["PDF Studio Local contributors"]
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.90"
 
 [lib]
 name = "pdf_studio_local_lib"
@@ -17,8 +17,9 @@ tauri-build = { version = "2", features = [] }
 rfd = "0.15.4"
 serde = { version = "1", features = ["derive"] }
 percent-encoding = "2.3"
-tauri = { version = "2.11.5", features = [] }
+tauri = { version = "=2.12.5", features = [] }
 tauri-plugin-shell = "2.3.5"
+tauri-plugin-single-instance = "=2.5.5"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }

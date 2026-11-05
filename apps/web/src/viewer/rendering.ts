@@ -14,6 +14,7 @@ export function getCanvasRenderDimensions(
   cssWidth: number,
   cssHeight: number,
   devicePixelRatio: number,
+  zoom = 1,
 ): CanvasRenderDimensions {
   const normalizedWidth = Math.max(1, cssWidth);
   const normalizedHeight = Math.max(1, cssHeight);

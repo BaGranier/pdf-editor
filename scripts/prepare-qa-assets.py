@@ -25,6 +25,7 @@ SMALL = Path("apps/web/e2e/fixtures")
 INTEGRATION = Path("data/output/windows-qa-004/fixtures")
 ROBUSTNESS = Path("data/output/editor-robustness-008")
 BASE_PAGES = {
+    "pdf-render-sharpness.pdf": 1,
     "pdf-small-1-page.pdf": 1,
     "pdf-small-5-pages.pdf": 5,
     "pdf-text-position.pdf": 1,

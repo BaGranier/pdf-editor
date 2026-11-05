@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getDesktopStartupPdfs,
+  findDesktopDocument,
   openDesktopPdf,
   saveDesktopPdf,
   saveDesktopPdfAs,
@@ -67,12 +68,25 @@ describe("desktop file bridge", () => {
   });
 
   it("materializes every PDF supplied at application startup", async () => {
-    invokeMock.mockResolvedValue([{ documentId: "desktop-pdf-2", fileName: "launch.pdf", bytes: [37] }]);
+    invokeMock.mockResolvedValue({ files: [{ documentId: "desktop-pdf-2", fileName: "launch.pdf", bytes: [37] }], errors: [] });
     const files = await getDesktopStartupPdfs();
 
     expect(files).toHaveLength(1);
     expect(files[0].file.name).toBe("launch.pdf");
     expect(invokeMock).toHaveBeenCalledWith("get_startup_pdfs");
+  });
+
+  it("isolates invalid incoming paths from valid PDFs", async () => {
+    const report = vi.fn();
+    invokeMock.mockResolvedValue({ files: [{ documentId: "id", fileName: "valid.pdf", bytes: [37] }], errors: ["missing PDF"] });
+    expect(await getDesktopStartupPdfs(report)).toHaveLength(1);
+    expect(report).toHaveBeenCalledWith("missing PDF");
+  });
+
+  it("activates the same native identity without matching unrelated names", () => {
+    const document = { source: { type: "desktop" as const, documentId: "native-1" } };
+    expect(findDesktopDocument([document], "native-1")).toBe(document);
+    expect(findDesktopDocument([document], "native-2")).toBeUndefined();
   });
 
   it("rejects an oversized Preview save before reading or invoking native IPC", async () => {

@@ -3440,14 +3440,19 @@ button:disabled {
 @media (max-width: 620px) {
   .toolbar {
     grid-template-columns: auto minmax(0, 1fr);
-    padding: 0.35rem 0.5rem;
+    padding: 0.55rem 0.65rem;
   }
 
   .toolbar-actions { flex-wrap: wrap; gap: 0.25rem; }
   .toolbar-actions__spacer,
   .app-brand h1,
   .save-as-button span {
+  .save-as-button span {
     display: none;
+  }
+
+  .toolbar-actions {
+    flex-wrap: wrap;
   }
 
   .status-bar {

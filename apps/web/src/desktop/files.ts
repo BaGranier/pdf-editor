@@ -65,9 +65,15 @@ export async function openDesktopPdf(): Promise<DesktopPdfFile | null> {
   return response ? toDesktopPdfFile(response) : null;
 }
 
-export async function getDesktopStartupPdfs(): Promise<DesktopPdfFile[]> {
-  const responses = await invoke<NativePdfResponse[]>("get_startup_pdfs");
-  return responses.map(toDesktopPdfFile);
+/** Drain the native queue. Each failed path is isolated from the other files. */
+export async function getDesktopStartupPdfs(onError?: (message: string) => void): Promise<DesktopPdfFile[]> {
+  const batch = await invoke<{ files: NativePdfResponse[]; errors: string[] }>("get_startup_pdfs");
+  batch.errors.forEach((message) => onError?.(message));
+  return batch.files.map(toDesktopPdfFile);
+}
+
+export function findDesktopDocument<T extends { source: DocumentSource }>(documents: T[], documentId: string): T | undefined {
+  return documents.find((document) => document.source.type === "desktop" && document.source.documentId === documentId);
 }
 
 export async function saveDesktopPdf(

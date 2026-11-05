@@ -8,7 +8,7 @@ import { clearViewerStorage } from "./storage/viewerStorage";
 
 const runtime = vi.hoisted(() => ({ desktop: false }));
 vi.mock("./api/backend", async (original) => ({ ...await original<object>(), isDesktopRuntime: () => runtime.desktop }));
-vi.mock("./desktop/files", () => ({ openDesktopPdf: vi.fn(), getDesktopStartupPdfs: vi.fn().mockResolvedValue([]), saveDesktopPdf: vi.fn(), saveDesktopPdfAs: vi.fn() }));
+vi.mock("./desktop/files", async (original) => ({ ...await original<object>(), openDesktopPdf: vi.fn(), getDesktopStartupPdfs: vi.fn().mockResolvedValue([]), saveDesktopPdf: vi.fn(), saveDesktopPdfAs: vi.fn() }));
 vi.mock("pdfjs-dist", () => ({ GlobalWorkerOptions: {}, AnnotationMode: { ENABLE: 1, ENABLE_FORMS: 2 }, getDocument: vi.fn(), TextLayer: class { textContentItemsStr: string[] = []; render = vi.fn().mockResolvedValue(undefined); cancel = vi.fn(); } }));
 vi.mock("pdfjs-dist/build/pdf.worker.mjs?url", () => ({ default: "mock-worker" }));
 function deferred() {
@@ -77,6 +77,23 @@ describe("first save destination (simulated native IPC, not Windows validation)"
     expect(vi.mocked(native.saveDesktopPdf).mock.calls.some(([id]) => id === "original-source")).toBe(false);
   });
 });
+describe("desktop open queue lifecycle", () => {
+  it("handles cold batches, later invocations and duplicate activation", async () => {
+    runtime.desktop = true;
+    const file = (id: string) => ({ documentId: id, file: new File(["%PDF"], `${id}.pdf`, { type: "application/pdf" }) });
+    vi.mocked(native.getDesktopStartupPdfs).mockResolvedValueOnce([file("a"), file("b"), file("a")]).mockResolvedValue([]);
+    render(<App />);
+    await waitFor(() => expect(document.querySelectorAll(".document-select")).toHaveLength(2));
+    vi.mocked(native.getDesktopStartupPdfs).mockResolvedValueOnce([file("c"), file("b")]);
+    await waitFor(() => expect(document.querySelectorAll(".document-select")).toHaveLength(3), { timeout: 2500 });
+    await waitFor(() => expect(document.querySelector('.document-select[aria-selected="true"]')).toHaveTextContent("b.pdf"));
+    vi.mocked(native.openDesktopPdf).mockResolvedValueOnce(file("a"));
+    fireEvent.click(screen.getByRole("button", { name: "Ouvrir un PDF" }));
+    await waitFor(() => expect(document.querySelector('.document-select[aria-selected="true"]')).toHaveTextContent("a.pdf"));
+    expect(document.querySelectorAll(".document-select")).toHaveLength(3);
+  });
+});
+
 describe("presentation complete frames", () => {
   it("keeps the current canvas, ignores obsolete renders and preserves the frame on error", async () => {
     const { gates, cancelled } = mockDocument(); await open();

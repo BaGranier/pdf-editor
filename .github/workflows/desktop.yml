@@ -35,7 +35,7 @@ jobs:
             apps/web/package-lock.json
             apps/desktop/package-lock.json
 
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@1.90.0
 
       - uses: astral-sh/setup-uv@v6
         with:

@@ -119,7 +119,7 @@ def main(arguments: list[str] | None = None) -> int:
             print("SKIP cargo check: validation Rust/Tauri non exécutée à la demande.")
         elif shutil.which("cargo") is None:
             raise RuntimeError(
-                "cargo est absent; installez Rust >= 1.88 avant desktop:check."
+                "cargo est absent; installez Rust >= 1.90 avant desktop:check."
             )
         else:
             run(["cargo", "check", "--locked"], TAURI_ROOT)
