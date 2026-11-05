@@ -13,7 +13,7 @@ Les autres limites du périmètre sont dans [MVP_STATUS.md](../product/MVP_STATU
 
 ## Reconstruction et dossier de redistribution
 
-Prérequis de build : Node 22, Python 3.11.9, uv, Rust >=1.88, MSVC/SDK Windows,
+Prérequis de build : Node 22, Python 3.11.9, uv, Rust >=1.90, MSVC/SDK Windows,
 outils Tauri Windows. Installer les dépendances depuis les lockfiles :
 `npm ci --prefix apps/web`, `npm ci --prefix apps/desktop`,
 `uv sync --locked --directory services/pdf-engine`.
@@ -23,7 +23,7 @@ Depuis un commit propre (l'audit non suivi peut rester présent) :
 ```powershell
 npm --prefix apps/desktop run desktop:build
 npm --prefix apps/desktop run release:sources
-uv run --locked --with pyinstaller==6.16.0 --project services/pdf-engine python -m scripts.release-inventory --output data/output/mvp-004/component-inventory.json
+uv run --locked --with pyinstaller==6.16.0 --project services/pdf-engine python -m scripts.release-inventory --output data/output/release-006/component-inventory.json
 npm --prefix apps/desktop run release:verify
 npm --prefix apps/web run qa:mvp
 ```
@@ -33,11 +33,11 @@ puis collecte les modules frontend émis. La collecte finale des preuves Rust a
 lieu après compilation et avant création de l'installateur, y compris au premier
 build d'un clone sans cache Cargo. Les sources tierces
 et notices téléchargées sont verrouillées par hash. `release:sources` utilise
-`git archive HEAD`, jamais les fichiers non suivis, puis ajoute les sources
+`git archive BUILD_COMMIT`, jamais les fichiers non suivis, puis ajoute les sources
 PyMuPDF/MuPDF/NSIS et celles des crates retenues. Le contenu applicatif conserve
 ses manifests, lockfiles, scripts, licences et instructions de compilation.
 
-Sorties ignorées : `data/output/mvp-004/RELEASE_MANIFEST.json`, archive
+Sorties ignorées : `data/output/release-006/RELEASE_MANIFEST.json`, archive
 `PDF-Studio-Local_<version>_<commit>_sources.zip`, `THIRD_PARTY_NOTICES.zip`.
 L'inventaire détaillé et les notices sont aussi installés sous
 `licenses/redistribution/`. Livrer les sources et notices **avec** le NSIS,
@@ -47,12 +47,17 @@ pas seulement un lien vers un dépôt privé. Ne pas partager si le manifest por
 VM clean : **À VALIDER MANUELLEMENT** par le propriétaire. Aucun résultat du poste
 de développement ne constitue une preuve VM clean.
 
-MVP-004 : le CRT app-local provient exclusivement du dossier officiel VC\Redist
+RELEASE-006 : le CRT app-local provient exclusivement du dossier officiel VC\Redist
 x64 d?couvert dans les Build Tools. Le spec impose sa provenance avant cr?ation
 du sidecar ; le gate compare les DLL et leurs imports au payload final.
 Voir [THIRD_PARTY_NOTICES.md](../architecture/THIRD_PARTY_NOTICES.md).
 
-Les candidates MVP-002/003 sont historiques. Utiliser uniquement le NSIS et les
-hashes du manifest courant sous `data/output/mvp-004/`. Le commit de build lie
+Les candidates MVP-002/003/004 sont **HISTORICAL / DO NOT TEST**. Utiliser uniquement le NSIS et les
+hashes du manifest courant sous `data/output/release-006/`. Le commit de build lie
 l'archive source au binaire ; un commit documentaire ult?rieur est identifi? en
 `reviewCommit` et ne peut changer le code compil?. Livrer l'ensemble du kit.
+
+
+Candidate finale : [RELEASE_006.md](RELEASE_006.md). DESKTOP-005 est inclus ;
+Explorer et le scaling Windows 125 % réel sont qualifiés sur le package installé.
+La prochaine étape est exclusivement la validation humaine de cette candidate sur VM clean.

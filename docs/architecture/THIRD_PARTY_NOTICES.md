@@ -20,10 +20,21 @@ ne sont pas distribués. Les fontes et leurs licences sont dans `fonts/`.
 Le build conserve les notices runtime et ajoute les notices natives de la source
 MuPDF complète, celles de NSIS 3.11 et celles des dépendances frontend/Rust.
 
+## RELEASE-006 — DESKTOP-005 reconstruit, 2026-11-05
+
+Seule candidate courante : `data/output/release-006/RELEASE_MANIFEST.json`.
+MVP-002/003/004 : **HISTORICAL / DO NOT TEST**.
+Tauri 2.12.5, plugin single-instance 2.5.5 ; 263 lignes d'inventaire sans statut non résolu.
+Les bindings `webview2-com-sys` 0.39.1 embarquent le loader du SDK Microsoft
+1.0.3800.47, comparé octet pour octet aux sources du SDK verrouillé par hash.
+Les notices des nouvelles versions Rust sont jointes ; la qualification CRT
+14.44.35211.0 et MuPDF 1.26.3 est rejouée sur le nouveau payload.
+`release:verify` et `qa:mvp` passent. Voir [RELEASE_006.md](RELEASE_006.md).
+
 ## MVP-004 — CRT Microsoft officiel, 2026-11-02
 
-La candidate MVP-002/003 est **historique**. MVP-004 reconstruit le sidecar et le
-NSIS ; le kit courant est `data/output/mvp-004/RELEASE_MANIFEST.json`.
+Cette qualification MVP-004 est **historique** ; son kit est conservé sous
+`data/output/mvp-004/RELEASE_MANIFEST.json`. Le kit courant est celui de RELEASE-006.
 
 Le build découvre Build Tools via `vswhere`, puis les valeurs par défaut
 `VCToolsInstallDir` et `VCToolsRedistDir` (ou les variables Developer Shell validées

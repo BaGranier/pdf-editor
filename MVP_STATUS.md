@@ -5,27 +5,27 @@ Version cible : MVP Preview Windows x64 / Tauri
 
 ## État
 
-MVP : RELEASE-006 — REBUILD ET QUALIFICATION EN COURS.
+MVP : RELEASE CANDIDATE — **PRÊTE POUR VALIDATION VM CLEAN**.
 
-DESKTOP-005 : code desktop amélioré et validé en WebView2 de développement.
-La candidate installable ci-dessous reste celle de MVP-004 ; ces corrections
-nécessitent un nouveau packaging et son gate de redistribution avant diffusion.
+- fonctionnel / DESKTOP-005 / single-instance / multi-open Explorer : PASS ;
+- menus viewport-safe / netteté faible zoom / scaling Windows 125 % réel : PASS ;
+- redistribution / `release:verify` / `qa:mvp` : PASS, exit 0 ;
+- frontend : 365 tests, lint, types E2E et build PASS ;
+- backend MVP : 272 tests ; OCR embarqué : 18 tests ; Rust : 15 tests PASS ;
+- E2E MVP : 40 Chromium + 40 Firefox, zéro skip/flaky ; desktop source/package PASS ;
+- installé : Explorer, association PDF, zoom/navigation, Save As/Save, réouverture,
+  annotation/signature, OCR eng/fra et plafond Save 25 Mio PASS ;
+- VM clean : **À VALIDER MANUELLEMENT**, non exécutée ; signature Authenticode hors MVP.
 
-Dernier gate MVP-004 : `npm run qa:mvp` **exit 0**, commit de build `ae97cb8`, preuves dans `data/output/mvp-gate/latest.json`.
+**FINAL CANDIDATE FOR CLEAN VM : RELEASE-006**, NSIS 0.1.0 Windows x64.
+Build : `24dd8a9c7e6e0c060d808a3320bb9b606d86df63`, incluant DESKTOP-005.
+Installer : `data/output/release-006/PDF Studio Local_0.1.0_x64-setup.exe`, **59 812 843 octets**.
+SHA-256 : `b791da13feab982b07d1f9c203cc6ab58daccb4a2d474e567827323179ce8908`.
 
-- fonctionnel / redistribution : PASS ; Microsoft CRT / MuPDF / WebView2 : PASS ;
-- `release:verify` : PASS ; `qa:mvp` : PASS ; signature Authenticode : hors MVP ;
-- VM clean : **À VALIDER MANUELLEMENT**, non exécutée.
-
-- frontend : PASS, 348 tests, types et build ;
-- backend : PASS, 270 tests MVP dont les garde-fous CRT/redistribution ; OCR embarqué : 18 tests ciblés PASS ; OCR système `fra` non qualifié ;
-- desktop : PASS, checks source/package, 11 tests Rust, NSIS/MSI construits ;
-- E2E MVP : PASS, 36 Chromium + 36 Firefox, zéro skip/flaky ; restauration répétée 12/12 ;
-- installé Windows : ouverture, Save As/Save, réouverture, OCR eng et politique gros Save PASS sur poste dev (pas VM clean).
-
-Preuves courantes : `data/output/mvp-004/` et `data/output/mvp-gate/latest.json`. MVP-002/003 sont historiques.
-HISTORICAL / DO NOT TEST — MVP-004 : NSIS `0.1.0`, build `ae97cb80115de78c795a9118d484d01ba3e63cd0`, `data/output/mvp-004/PDF Studio Local_0.1.0_x64-setup.exe`.
-SHA-256 : `f207904fcb1521c62460c54f98bbf9169d9b245b70a8d73052a1adb28c1bb735`.
+Preuves : `data/output/release-006/`, manifest et package verification de cette candidate ;
+gate complet : `data/output/mvp-gate/20261105T155837Z/results.json`.
+Sources et notices liées au commit : voir [RELEASE_006.md](RELEASE_006.md).
+MVP-002, MVP-003 et MVP-004 : **HISTORICAL / DO NOT TEST**, conservés comme preuves.
 
 ## Supporté
 
@@ -51,16 +51,15 @@ Aucun blocker de préparation MVP. Trois CRT x64 officiels VC\Redist, version
 homogène 14.44.35211.0, imports/exports et chargement réel vérifiés. Aucun
 NEEDS_REVIEW dans l'inventaire courant. Voir `THIRD_PARTY_NOTICES.md`.
 
-MVP-004 reconstruit le sidecar et le NSIS ; les anciennes candidates sont historiques.
+RELEASE-006 reconstruit le sidecar et le NSIS avec DESKTOP-005 ; les anciennes candidates sont historiques.
 Le kit lie sources, commit de build, notices, preuves natives et hashes. Une mise à
 jour documentaire ultérieure est identifiée séparément et ne peut modifier le code compilé.
 Signature Authenticode hors MVP. **VM clean : À VALIDER MANUELLEMENT**.
 
-## Prochains tickets
+## Prochaine étape
 
-Action unique : installer **cette candidate MVP-004** sur une VM Windows clean et
-effectuer la validation manuelle. DESKTOP-005 est implémenté dans les sources ;
-la nouvelle candidate devra repasser le packaging et ses gates avant diffusion.
+Validation humaine de **cette candidate RELEASE-006 précise** sur une VM Windows clean.
+Aucun autre ticket de préparation MVP requis.
 
 ## Journal MVP
 
@@ -104,7 +103,7 @@ la nouvelle candidate devra repasser le packaging et ses gates avant diffusion.
 
 ### 2026-11-05 — RELEASE-006
 
-- fait : périmètre fonctionnel gelé sur DESKTOP-005 ; tooling de release ciblant `release-006` ;
-- validation : précontrôles frontend/backend ; qualification du nouveau package en cours ;
-- gate : preuves installées, redistribution et `qa:mvp` exigés sur le nouvel artefact ;
-- reste : terminer le rebuild et les contrôles avant de déclarer la candidate VM clean.
+- fait : candidate reconstruite avec DESKTOP-005, sources/notices et nouveaux hashes liés au build ;
+- validation : Explorer multi-PDF, association, popovers et rendu faible zoom qualifiés sur package Windows, 125 % réel inclus ;
+- gate : `release:verify` et `qa:mvp` PASS ;
+- reste : validation manuelle de cette candidate précise sur VM clean.
