@@ -32,7 +32,7 @@ def test_empty_clone_idempotence_partial_repair_and_bounded_cleanup(
     tmp_path: Path,
 ) -> None:
     result = assets.prepare("browser", root=tmp_path)
-    assert result == {"created": 63, "validated": 63}
+    assert result == {"created": 64, "validated": 64}
     first = snapshot(tmp_path)
     assert assets.prepare("browser", root=tmp_path)["created"] == 0
     assert snapshot(tmp_path) == first

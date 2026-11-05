@@ -97,6 +97,38 @@ def test_release_gate_rejects_changed_artifact(tmp_path, monkeypatch):
     assert release.verify() is False
 
 
+def test_release_gate_rejects_a_stale_copied_installer(tmp_path, monkeypatch):
+    release = module()
+    monkeypatch.setattr(release, "ROOT", tmp_path)
+    output = tmp_path / "candidate"
+    output.mkdir()
+    monkeypatch.setattr(release, "OUT", output)
+    monkeypatch.setattr(release, "NOTICES", output)
+    monkeypatch.setattr(
+        release, "git", lambda *args: "" if args[0] == "diff" else "commit"
+    )
+    installer = (
+        tmp_path / "apps/desktop/src-tauri/target/release/bundle/nsis/app-setup.exe"
+    )
+    installer.parent.mkdir(parents=True)
+    installer.write_bytes(b"new-build")
+    (output / installer.name).write_bytes(b"historical-build")
+    (output / "inventory.json").write_text(json.dumps({"rows": []}))
+    (output / "RELEASE_MANIFEST.json").write_text(
+        json.dumps(
+            {
+                "commit": "commit",
+                "status": "OK",
+                "artifacts": [release.record(installer)],
+                "inventorySha256": release.sha(output / "inventory.json"),
+            }
+        )
+    )
+    assert release.verify() is False
+    (output / installer.name).write_bytes(installer.read_bytes())
+    assert release.verify() is True
+
+
 def native_module():
     path = Path(__file__).resolve().parents[3] / "scripts/native_redistribution.py"
     spec = importlib.util.spec_from_file_location("native_redistribution", path)

@@ -5,7 +5,7 @@ Version cible : MVP Preview Windows x64 / Tauri
 
 ## État
 
-MVP : RELEASE CANDIDATE — **PRÊTE POUR VALIDATION VM CLEAN**.
+MVP : RELEASE-006 — REBUILD ET QUALIFICATION EN COURS.
 
 DESKTOP-005 : code desktop amélioré et validé en WebView2 de développement.
 La candidate installable ci-dessous reste celle de MVP-004 ; ces corrections
@@ -24,7 +24,7 @@ Dernier gate MVP-004 : `npm run qa:mvp` **exit 0**, commit de build `ae97cb8`, p
 - installé Windows : ouverture, Save As/Save, réouverture, OCR eng et politique gros Save PASS sur poste dev (pas VM clean).
 
 Preuves courantes : `data/output/mvp-004/` et `data/output/mvp-gate/latest.json`. MVP-002/003 sont historiques.
-Candidate unique : NSIS `0.1.0`, build `ae97cb80115de78c795a9118d484d01ba3e63cd0`, `data/output/mvp-004/PDF Studio Local_0.1.0_x64-setup.exe`.
+HISTORICAL / DO NOT TEST — MVP-004 : NSIS `0.1.0`, build `ae97cb80115de78c795a9118d484d01ba3e63cd0`, `data/output/mvp-004/PDF Studio Local_0.1.0_x64-setup.exe`.
 SHA-256 : `f207904fcb1521c62460c54f98bbf9169d9b245b70a8d73052a1adb28c1bb735`.
 
 ## Supporté
@@ -100,3 +100,11 @@ la nouvelle candidate devra repasser le packaging et ses gates avant diffusion.
 - validation : 365 frontend, 15 Rust, 34 Chromium + 8 Firefox et vraie WebView2 (DPR 1 / 1,25 simulé) ;
 - décision : plugin 2.5.5 pour sa correction des lancements simultanés, Tauri 2.12.5 et Rust 1.90 ;
 - reste : nouvelle candidate/gates, Explorer installé et scaling Windows 125 % physique à valider ; voir `DESKTOP_005_QA.md`.
+
+
+### 2026-11-05 — RELEASE-006
+
+- fait : périmètre fonctionnel gelé sur DESKTOP-005 ; tooling de release ciblant `release-006` ;
+- validation : précontrôles frontend/backend ; qualification du nouveau package en cours ;
+- gate : preuves installées, redistribution et `qa:mvp` exigés sur le nouvel artefact ;
+- reste : terminer le rebuild et les contrôles avant de déclarer la candidate VM clean.

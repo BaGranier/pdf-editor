@@ -17,10 +17,11 @@ import tarfile
 import zipfile
 import urllib.request
 import datetime as dt
+import tomllib
 import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "data/output/mvp-004"
+OUT = ROOT / "data/output/release-006"
 NOTICES = ROOT / "services/pdf-engine/build/redistribution"
 FONT_NOTICE = "docs/architecture/NOTICE.md"
 RELEASE_DOCUMENTS = (
@@ -52,8 +53,7 @@ def build_identity(provenance: dict) -> str:
     if provenance["trackedChanges"] or git("diff", "HEAD", "--name-only"):
         raise ValueError("Release requires committed tracked sources")
     changes = set(git("diff", "--name-only", provenance["commit"], "HEAD").splitlines())
-    historical_paths = {Path(path).name for path in RELEASE_DOCUMENTS}
-    if not changes <= (set(RELEASE_DOCUMENTS) | historical_paths):
+    if not changes <= {"MVP_STATUS.md", "THIRD_PARTY_NOTICES.md", "WINDOWS_PREVIEW.md", "RELEASE_006.md"}:
         raise ValueError("Compiled sources changed; rebuild from this commit")
     return provenance["commit"]
 
@@ -252,8 +252,19 @@ def kit() -> dict:
     if nsis.stat().st_mtime < dt.datetime.fromisoformat(provenance["date"]).timestamp():
         raise ValueError("NSIS predates build provenance; rebuild this commit")
     shutil.copy2(nsis, OUT / nsis.name)
+    locked = tomllib.loads((ROOT / "apps/desktop/src-tauri/Cargo.lock").read_text("utf-8"))
+    native = json.loads((NOTICES / "native-evidence.json").read_text("utf-8"))
+    desktop_versions = {name: next(p["version"] for p in locked["package"] if p["name"] == name)
+                        for name in ["tauri", "tauri-plugin-single-instance"]}
     manifest = {"application": "PDF Studio Local Windows Preview", "version": version, "commit": commit, "reviewCommit": git("rev-parse", "HEAD"),
                 "buildDate": provenance["date"],
+                "buildCommit": commit,
+                "desktopVersions": desktop_versions,
+                "rustToolchain": subprocess.check_output(["rustc", "--version"], text=True).strip(),
+                "rustMinimum": "1.90",
+                "crtVersion": native["crt"]["files"][0]["version"],
+                "nsis": record(nsis), "sources": record(target), "notices": record(notices),
+                "candidate": "FINAL CANDIDATE FOR CLEAN VM",
                 "configuration": {"target": "Windows x64 Tauri NSIS", "signed": False, "webview2": "downloadBootstrapper", "cleanVM": "À VALIDER MANUELLEMENT"},
                 "artifacts": [record(path) for path in [nsis, target, notices]],
                 "evidence": {"nativeInventory": "component-inventory.json", "buildProvenance": provenance},
@@ -283,13 +294,13 @@ def verify() -> bool:
         path = OUT / artifact["file"]
         if artifact["file"].endswith("setup.exe"):
             path = ROOT / "apps/desktop/src-tauri/target/release/bundle/nsis" / artifact["file"]
-        if record(path) != artifact:
+        if record(path) != artifact or record(OUT / artifact["file"]) != artifact:
             return False
         if artifact["file"].endswith("_sources.zip"):
             with zipfile.ZipFile(path) as archive:
                 if archive.read("SOURCE_COMMIT.txt").decode().strip() != manifest["commit"]:
                     return False
-    if OUT.name == "mvp-004":
+    if OUT.name in {"mvp-004", "release-006"}:
         from scripts.windows_crt import verify_payload, sha as byte_sha, require
         native_file = NOTICES / "native-evidence.json"
         require(sha(native_file) == manifest["nativeEvidenceSha256"], "Native evidence changed")
@@ -311,7 +322,7 @@ if __name__ == "__main__":
             valid = verify()
         except (OSError, ValueError, KeyError):
             valid = False
-        print("PASS" if valid else "NEEDS_REVIEW: release/native provenance verification failed; see data/output/mvp-004")
+        print("PASS" if valid else "NEEDS_REVIEW: release/native provenance verification failed; see data/output/release-006")
         raise SystemExit(0 if valid else 2)
     result = prepare(final=action == "prepare-final") if action.startswith("prepare") else kit()
     print("Prepared redistribution evidence" if action.startswith("prepare") else json.dumps(result, indent=2))

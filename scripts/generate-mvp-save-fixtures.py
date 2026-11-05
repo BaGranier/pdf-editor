@@ -9,7 +9,7 @@ import fitz
 
 
 def main() -> None:
-    root = Path(__file__).resolve().parents[1] / "data/output/mvp-001"
+    root = Path(__file__).resolve().parents[1] / "data/output/release-006"
     root.mkdir(parents=True, exist_ok=True)
     manifest = []
     for side in [1200, 2300, 2950, 3000]:
@@ -25,7 +25,7 @@ def main() -> None:
         with fitz.open(target) as document:
             if len(document) != 1 or "MVP SYNTHETIC LARGE SAVE" not in document[0].get_text():
                 raise ValueError(f"Invalid synthetic Save fixture: {target.name}")
-        manifest.append({"file": f"data/output/mvp-001/{target.name}", "bytes": target.stat().st_size})
+        manifest.append({"file": f"data/output/release-006/{target.name}", "bytes": target.stat().st_size})
     (root / "large-fixtures.json").write_text(json.dumps(manifest, indent=2), "utf-8")
 
 

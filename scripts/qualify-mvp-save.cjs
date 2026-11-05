@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
-const output = path.join(root, 'data/output/mvp-001');
+const output = path.join(root, 'data/output/release-006');
 const label = process.argv[2] || 'before';
 if (!/^[a-z0-9-]+$/.test(label)) throw Error('Invalid QA label');
 const evidence = { label, timestamp: new Date().toISOString(), environment: 'Windows development host; not a clean VM', cases: [] };

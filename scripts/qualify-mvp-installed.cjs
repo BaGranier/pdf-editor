@@ -1,4 +1,4 @@
-// Qualify one installed Windows Preview under data/output/mvp-001.
+// Qualify one installed Windows Preview under data/output/release-006.
 const { chromium, expect } = require('../apps/web/node_modules/@playwright/test');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const root = path.resolve(__dirname, '..');
-const output = path.join(root, 'data/output/mvp-001');
+const output = path.join(root, 'data/output/release-006');
 const installed = path.join(output, 'installation été QA');
 const hash = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const relative = file => path.relative(root, file).split(path.sep).join('/');
@@ -55,6 +55,7 @@ async function validate(file) {
     if (!(await validate(saved)).text.replace(/\s+/g, '').includes('PREVIEWINSTALLEDREVISED')) throw Error('Direct Save text missing');
     if (hash(source) !== before) throw Error('Source changed');
     evidence.checks.save = 'PASS'; write();
+    await page.getByRole('button', { name: `Fermer ${path.basename(saved)}`, exact: true }).click();
     await page.keyboard.press('Control+o'); await native('Open', saved);
     await expect.poll(async () => (await page.locator('.textLayer').allTextContents()).join('').replace(/\s+/g, '')).toContain('PREVIEWINSTALLEDREVISED');
     evidence.checks['export-reopen'] = 'PASS'; write();
@@ -64,7 +65,7 @@ async function validate(file) {
     await page.keyboard.press('Control+o');
     await native('Open', path.join(root, 'apps/web/e2e/fixtures/conversion-scan.pdf'));
     await expect(page.getByRole('button', { name: 'conversion-scan.pdf, document actif' })).toBeVisible();
-    await execute(process.execPath, [path.join(root, 'scripts/windows-qa-cdp.cjs'), 'ocr-eng'], { cwd: root, env: { ...process.env, PDF_STUDIO_QA_OUTPUT: 'data/output/mvp-001' }, windowsHide: true, timeout: 150000 });
+    await execute(process.execPath, [path.join(root, 'scripts/windows-qa-cdp.cjs'), 'ocr-eng'], { cwd: root, env: { ...process.env, PDF_STUDIO_QA_OUTPUT: 'data/output/release-006' }, windowsHide: true, timeout: 150000 });
     const ocr = JSON.parse(fs.readFileSync(path.join(output, 'reports/ocr-eng.json')));
     if (!ocr.checks.length || !ocr.checks.every(check => check.status === 'OK')) throw Error('Installed OCR failed');
     evidence.checks['ocr-bundled'] = 'PASS';

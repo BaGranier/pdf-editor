@@ -24,6 +24,7 @@ E2E_SPECS = [
     "editing-core", "editing-interactions", "save-editing", "organize-pages",
     "export", "persistence", "storage-upgrade", "pdf-search", "pdf-forms",
     "comments", "shape-editing", "freehand-controls", "text-markup", "mvp-boundaries",
+    "desktop-polish",
 ]
 BACKEND_FILES = [
     "test_main", "test_clean_integration", "test_forms", "test_passwords",
@@ -99,7 +100,7 @@ def main() -> int:
         run("package-resources", ["npm", "run", "desktop:check-package"], DESKTOP)
     else:
         record("package-resources", "NON TESTABLE DANS CET ENVIRONNEMENT", "Windows x64 package required")
-    native_file = ROOT / "data/output/mvp-001/native-mvp.json"
+    native_file = ROOT / "data/output/release-006/native-mvp.json"
     try:
         native = json.loads(native_file.read_text("utf-8"))
         executable = (ROOT / native["executable"]).resolve()
@@ -107,7 +108,7 @@ def main() -> int:
         sidecar = (ROOT / native["sidecar"]).resolve()
         valid = valid and sidecar.is_relative_to(ROOT / "data/output") and digest(sidecar) == native["sidecarSha256"] == digest(ROOT / "apps/desktop/src-tauri/binaries/pdf-engine-x86_64-pc-windows-msvc.exe")
         valid = valid and all(digest(ROOT / filename) == value for filename, value in native["webHashes"].items())
-        valid = valid and bool(native["webHashes"]) and all(native["checks"].get(name) == "PASS" for name in ["startup", "save", "large-save-policy", "ocr-bundled", "export-reopen", "installed-web-payload"])
+        valid = valid and bool(native["webHashes"]) and all(native["checks"].get(name) == "PASS" for name in ["startup", "save", "large-save-policy", "ocr-bundled", "export-reopen", "installed-web-payload", "single-instance", "explorer-multi-open", "pdf-association", "viewport-popovers", "physical-scaling-125", "low-zoom"])
         record("windows-installed", "PASS" if valid else "FAIL", str(native_file.relative_to(ROOT)))
     except (OSError, ValueError, KeyError, TypeError):
         record("windows-installed", "NON TESTABLE DANS CET ENVIRONNEMENT", "Exact installed artifact evidence missing/stale; run native qualification")

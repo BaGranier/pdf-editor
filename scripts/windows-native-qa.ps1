@@ -86,7 +86,7 @@ public static class PdfStudioNativeQa {
     }
 }
 '@
-$applications = @(Get-Process pdf-studio-local -ErrorAction SilentlyContinue)
+$applications = @(Get-Process pdf-studio-local -ErrorAction SilentlyContinue | Where-Object { !$env:PDF_STUDIO_QA_PID -or $_.Id -eq [int]$env:PDF_STUDIO_QA_PID })
 if ($applications.Count -ne 1) { throw 'Exactly one PDF Studio Local QA instance is required.' }
 $application = $applications[0]
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
