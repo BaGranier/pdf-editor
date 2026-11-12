@@ -36,3 +36,4 @@ apps/desktop/src-tauri/*.docx
 /.cargo/
 /.rustup/
 /.toolchains/
+.agent/
