@@ -1,3 +1,4 @@
+import { navigationTool } from "./test/navigation";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as pdfjsLib from "pdfjs-dist";
@@ -54,11 +55,7 @@ function createPdfDocumentMock(pageCount = 1) {
 }
 
 function selectInsertTool(tool: "Texte" | "Signature") {
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: tool === "Texte" ? "Ajouter du texte" : "Ajouter une signature",
-    }),
-  );
+  fireEvent.click(navigationTool(tool === "Texte" ? "Ajouter du texte" : "Ajouter une signature"));
 }
 
 describe("App", () => {
@@ -104,10 +101,8 @@ describe("App", () => {
     render(<App />);
 
     const toolRail = screen.getByRole("navigation", { name: "Outils d'édition" });
-    const commentTool = within(toolRail).getByRole("button", { name: "Commentaire" });
-    expect(commentTool).toHaveAttribute("title", "Commentaire");
-    expect(commentTool).toHaveTextContent("Comment.");
-    expect(commentTool.querySelector("svg.toolbar-icon")).not.toBeNull();
+    fireEvent.click(within(toolRail).getByRole("button", { name: "Annotations" }));
+    expect(screen.getByRole("button", { name: "Commentaire" })).toBeDisabled();
   });
 
   it("keeps display mode and zoom controls as distinct actions", () => {
@@ -639,7 +634,7 @@ describe("App", () => {
     });
 
     selectInsertTool("Texte");
-    expect(screen.getByRole("button", { name: "Ajouter du texte" })).toHaveAttribute(
+    expect(navigationTool("Ajouter du texte")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -713,8 +708,7 @@ describe("App", () => {
     const layer = await screen.findByLabelText("Couche d'édition de la page 1");
     const toolbar = screen.getByRole("region", { name: "Contrôles PDF" });
     const saveAsButton = screen.getByRole("button", { name: "Enregistrer sous…" });
-    const textButton = screen.getByRole("button", { name: "Ajouter du texte" });
-    const signatureButton = screen.getByRole("button", { name: "Ajouter une signature" });
+
 
     expect(within(toolbar).getAllByText("cycle.pdf")).toHaveLength(1);
     expect(within(toolbar).queryByText("1 page")).not.toBeInTheDocument();
@@ -726,29 +720,29 @@ describe("App", () => {
     );
     expect(saveAsButton).toBeDisabled();
     expect(saveAsButton).toHaveAttribute("title", "Enregistrer sous… (Ctrl+Shift+S)");
-    expect(textButton).toHaveAttribute("title", "Ajouter du texte");
-    expect(signatureButton).toHaveAttribute("title", "Ajouter une signature");
+
     fireEvent.click(screen.getByRole("button", { name: "Augmenter le zoom" }));
     expect(saveAsButton).toBeDisabled();
     expect(screen.queryByTitle("Modifications non sauvegardées")).not.toBeInTheDocument();
 
-    fireEvent.click(textButton);
+    fireEvent.click(navigationTool("Ajouter du texte"));
     expect(layer).toHaveAttribute("data-active-editing-tool", "add_text");
-    expect(textButton).toHaveAttribute("aria-pressed", "true");
+    expect(navigationTool("Ajouter du texte")).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Édition" }));
     fireEvent.keyDown(window, { key: "Escape" });
     expect(layer).toHaveAttribute("data-active-editing-tool", "select");
-    expect(textButton).toHaveAttribute("aria-pressed", "false");
+    expect(navigationTool("Ajouter du texte")).toHaveAttribute("aria-pressed", "false");
     expect(saveAsButton).toBeDisabled();
 
-    fireEvent.click(signatureButton);
+    fireEvent.click(navigationTool("Ajouter une signature"));
     expect(screen.getByRole("dialog", { name: /Ajouter une signature/ })).toBeInTheDocument();
-    expect(signatureButton).toHaveAttribute("aria-pressed", "true");
+    expect(navigationTool("Ajouter une signature")).toHaveAttribute("aria-pressed", "true");
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: /Ajouter une signature/ })).not.toBeInTheDocument();
     expect(layer).toHaveAttribute("data-active-editing-tool", "select");
-    expect(signatureButton).toHaveAttribute("aria-pressed", "false");
+    expect(navigationTool("Ajouter une signature")).toHaveAttribute("aria-pressed", "false");
 
-    fireEvent.click(textButton);
+    fireEvent.click(navigationTool("Ajouter du texte"));
 
     fireEvent.click(layer, { clientX: 80, clientY: 100 });
     expect(layer).toHaveAttribute("data-active-editing-tool", "select");
@@ -1291,7 +1285,7 @@ describe("App", () => {
     fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 100, clientY: 40 });
     fireEvent.click(screen.getByRole("button", { name: "Valider la signature" }));
 
-    expect(screen.getByRole("button", { name: "Ajouter une signature" })).toHaveAttribute(
+    expect(navigationTool("Ajouter une signature")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -1730,7 +1724,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "Vue grille" }));
     expect(screen.getByRole("button", { name: "Vue grille" })).toHaveAttribute("aria-pressed", "true");
 
-    fireEvent.click(screen.getByRole("button", { name: "Commentaire" }));
+    fireEvent.click(navigationTool("Commentaire"));
     fireEvent.pointerDown(screen.getByLabelText("Couche d'édition de la page 1"), { button: 0, clientX: 120, clientY: 160 });
     const dialog = await screen.findByRole("dialog", { name: "Nouveau commentaire" });
     fireEvent.change(within(dialog).getByLabelText("Texte du commentaire"), { target: { value: "Note de navigation" } });

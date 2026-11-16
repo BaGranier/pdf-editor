@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { copyFileSync, existsSync } from "node:fs";
 import { expect, test } from "../helpers/qa-test";
 import { fixtures, openApp, openPdf } from "../helpers/app";
@@ -160,7 +161,7 @@ test("VIEWER-CONTINUOUS-VIRTUALIZATION-001 conserve les edits hors de la fenêtr
   await expect(page.locator('.pdf-page[data-page-number="1"]')).toHaveAttribute("data-rendered", "true");
   const firstLayer = page.getByLabel("Couche d'édition de la page 1");
   await expect(firstLayer).toBeVisible();
-  await page.getByRole("button", { name: "Ajouter du texte" }).click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   const firstLayerBox = await firstLayer.boundingBox();
   expect(firstLayerBox).not.toBeNull();
   if (!firstLayerBox) throw new Error("La couche d’édition de la page 1 est introuvable.");
@@ -278,7 +279,7 @@ test("PERF-MEMORY-002 @slow @performance exporte un gros PDF modifié sans conse
   await openApp(page);
   await qa.measure("open-large-document-for-export", () => openPdf(page, fixtures.large));
   const editLayer = page.getByLabel("Couche d'édition de la page 1");
-  await page.getByRole("button", { name: "Ajouter du texte" }).click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   await expect(editLayer).toHaveAttribute("data-active-editing-tool", "add_text");
   const editLayerBox = await editLayer.boundingBox();
   expect(editLayerBox).not.toBeNull();

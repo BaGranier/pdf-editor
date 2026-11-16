@@ -71,8 +71,8 @@ test("CLEAN-004 highlight forme opaque ordre mixte et export", async ({ page }, 
   });
   await page.getByRole("button", { name: "Surligner", exact: true }).click();
   const highlight = await page.locator(".pdf-text-markup rect").first().boundingBox(); if (!highlight) throw Error("No highlight");
-  await page.getByRole("button", { name: "Formes", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Rectangle", exact: true }).click();
+  await page.getByRole("button", { name: "Édition", exact: true }).click();
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
   await page.mouse.move(highlight.x - 8, highlight.y - 8); await page.mouse.down();
   await page.mouse.move(highlight.x + highlight.width + 8, highlight.y + highlight.height + 8, { steps: 4 }); await page.mouse.up();
   await page.getByLabel("Remplissage transparent").uncheck();

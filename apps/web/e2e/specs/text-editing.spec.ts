@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { readFileSync } from "node:fs";
 import { expect, test } from "../helpers/qa-test";
 import {
@@ -17,7 +18,7 @@ test("EDIT-TEXT-001 @smoke ajoute, déplace et exporte du texte libre", async ({
   await openApp(page);
   await openPdf(page, fixtures.onePage);
 
-  await page.getByRole("button", { name: "Ajouter du texte" }).click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   const editLayer = page.getByLabel("Couche d'édition de la page 1");
   await expect(editLayer).toBeVisible();
   await drawTextBox(page, { x: 80, y: 100 });

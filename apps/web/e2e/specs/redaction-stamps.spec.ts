@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -11,7 +12,7 @@ test("redaction stamp: two pages, history, persistence and secure copy", async (
   const original = readFileSync(fixture);
   await openApp(page);
   await openPdf(page, fixture);
-  await page.getByRole("button", { name: "Biffer", exact: true }).click();
+  await chooseNavigationTool(page, "Biffer");
   for (const number of [1, 2]) {
     const layer = page.getByLabel(`Couche d'édition de la page ${number}`, { exact: true });
     await layer.scrollIntoViewIfNeeded();
@@ -28,7 +29,7 @@ test("redaction stamp: two pages, history, persistence and secure copy", async (
   await expect(page.getByLabel("Biffage en attente page 2", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Rétablir", exact: true }).click();
   await expect(page.getByLabel("Biffage en attente page 2", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Tampon", exact: true }).click();
+  await chooseNavigationTool(page, "Tampon");
   await page.getByLabel("Tampon prédéfini").selectOption("APPROUVÉ");
   const layer = page.getByLabel("Couche d'édition de la page 2", { exact: true });
   await layer.click({ position: { x: 50, y: 260 } });
@@ -86,7 +87,7 @@ test("redaction stamp: two pages, history, persistence and secure copy", async (
 test("stamp image: local PNG persists and exports", async ({ page }, testInfo) => {
   await openApp(page);
   await openPdf(page, fixture);
-  await page.getByRole("button", { name: "Tampon", exact: true }).click();
+  await chooseNavigationTool(page, "Tampon");
   await page.getByLabel("Fichier tampon image", { exact: true }).setInputFiles(path.join(fixtureDirectory, "editor-image.png"));
   const stamp = page.getByLabel("Tampon page 1", { exact: true });
   await expect(stamp).toBeVisible();

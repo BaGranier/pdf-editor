@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -11,7 +12,7 @@ test("search redaction watermark: auto-fit stamp, verified search, linked pages 
   const original = readFileSync(fixture);
   await openApp(page);
   await openPdf(page, fixture);
-  await page.getByRole("button", { name: "Tampon", exact: true }).click();
+  await chooseNavigationTool(page, "Tampon");
   await page.getByLabel("Tampon prédéfini").selectOption("REÇU");
   const layer = page.getByLabel("Couche d'édition de la page 1", { exact: true });
   await layer.click({ position: { x: 30, y: 250 } });
@@ -27,7 +28,7 @@ test("search redaction watermark: auto-fit stamp, verified search, linked pages 
   expect(Number.parseFloat(await page.getByLabel("Taille calculée du tampon", { exact: true }).innerText())).toBeGreaterThan(initialSize);
   await expect(stamp.locator(".pdf-stamp-content rect[fill-opacity='0.1']")).toHaveCount(1);
 
-  await page.getByRole("button", { name: "Biffer", exact: true }).click();
+  await chooseNavigationTool(page, "Biffer");
   await page.getByRole("button", { name: "Rechercher et biffer…", exact: true }).click();
   await page.getByLabel("Terme à biffer", { exact: true }).fill("SECRET_TEST_12345");
   await expect(page.getByLabel("Compteur des occurrences")).toHaveText("2 occurrences · 0 sélectionnées");
@@ -41,7 +42,7 @@ test("search redaction watermark: auto-fit stamp, verified search, linked pages 
   await page.getByRole("button", { name: "Rétablir", exact: true }).click();
   await expect(page.getByLabel("Biffage en attente page 1", { exact: true })).toHaveCount(1);
 
-  await page.getByRole("button", { name: "Filigrane", exact: true }).click();
+  await chooseNavigationTool(page, "Filigrane");
   await page.getByLabel("Pages du filigrane").selectOption("all");
   await page.getByRole("button", { name: "Prévisualiser le filigrane", exact: true }).click();
   await expect(page.getByLabel("Filigrane page 1", { exact: true })).toHaveCount(1);
@@ -95,7 +96,7 @@ test("search redaction watermark: auto-fit stamp, verified search, linked pages 
 test("visual mask explicitly preserves recoverable source text", async ({ page }, testInfo) => {
   await openApp(page);
   await openPdf(page, fixture);
-  await page.getByRole("button", { name: "Masquage visuel", exact: true }).click();
+  await chooseNavigationTool(page, "Masquage visuel");
   await expect(page.getByText(/Ce masque ne supprime pas les informations/)).toBeVisible();
   const bounds = await page.getByLabel("Couche d'édition de la page 1", { exact: true }).boundingBox();
   if (!bounds) throw new Error("Missing layer");
@@ -117,7 +118,7 @@ test("stamp reference proportions: large REÇU, turquoise rotated REÇU and BROU
   await openApp(page);
   await openPdf(page, fixture);
   for (const [index, text, y] of [[0, "REÇU", 40], [1, "REÇU", 170], [2, "BROUILLON", 290]] as const) {
-    await page.getByRole("button", { name: "Tampon", exact: true }).click();
+    await chooseNavigationTool(page, "Tampon");
     await page.getByLabel("Tampon prédéfini").selectOption(text);
     await page.getByLabel("Couche d'édition de la page 1", { exact: true }).click({ position: { x: 40, y } });
     const mark = page.getByLabel("Tampon page 1", { exact: true }).nth(index);
@@ -149,7 +150,7 @@ test("watermark 250 pages applies one editable group and exports all pages", asy
   execFileSync("uv", ["run", "--project", "../../services/pdf-engine", "python", "-c", "import fitz,sys; d=fitz.open(); [d.new_page(width=400,height=600).insert_text((40,100),'PUBLIC_PAGE_'+str(i+1)) for i in range(250)]; d.save(sys.argv[1],garbage=4,deflate=True)", synthetic], { env: { ...process.env, UV_CACHE_DIR: path.resolve("../../.uv-cache") } });
   await openApp(page);
   await qa.measure("open-250-watermark-pages", () => openPdf(page, synthetic));
-  await page.getByRole("button", { name: "Filigrane", exact: true }).click();
+  await chooseNavigationTool(page, "Filigrane");
   await page.getByLabel("Pages du filigrane").selectOption("all");
   await qa.measure("preview-250-watermarks", async () => {
     await page.getByRole("button", { name: "Prévisualiser le filigrane", exact: true }).click();

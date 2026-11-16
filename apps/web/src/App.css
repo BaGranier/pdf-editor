@@ -3699,3 +3699,25 @@ button:disabled {
 .pdf-watermark-edit { pointer-events: none; }
 .pdf-watermark-edit .pdf-stamp-content text { pointer-events: visiblePainted; }
 .pdf-watermark-edit .pdf-shape-edit__resize { pointer-events: none; display: none; }
+
+.navigation-popover {
+  position: fixed;
+  z-index: 80;
+  display: grid;
+  gap: 0.4rem;
+  width: min(300px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  padding: 0.75rem;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: 0 8px 28px #0003;
+}
+.navigation-popover button { display: grid; gap: 0.25rem; text-align: left; white-space: normal; }
+.navigation-popover small { font-weight: normal; }
+.navigation-popover button[aria-pressed="true"] { background: var(--selection); border-inline-start: 4px solid var(--accent); }
+.navigation-popover button:focus-visible, .tool-rail button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tool-rail > button[aria-pressed="true"] { box-shadow: inset 3px 0 var(--accent); }

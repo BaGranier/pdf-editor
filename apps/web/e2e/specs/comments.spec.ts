@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import { enterOrganizeMode, fixtures, openApp, openPdf } from "../helpers/app";
 
@@ -15,7 +16,7 @@ test("EDIT-COMMENTS-001 lit, crée et exporte des commentaires natifs", async ({
   await expect(page.getByRole("group", { name: "Affichage des pages" })).toHaveCount(0);
   await page.locator(".comment-list").getByRole("button", { name: /page 1.*commentaire existant/i }).click();
 
-  await page.getByRole("button", { name: "Commentaire", exact: true }).click();
+  await chooseNavigationTool(page, "Commentaire");
   const layer = page.getByLabel("Couche d'édition de la page 1");
   const box = await layer.boundingBox();
   if (!box) throw new Error("Couche d’édition non mesurable.");

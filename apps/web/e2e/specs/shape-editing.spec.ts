@@ -5,10 +5,10 @@ import { validatePdf } from "../helpers/pdf-validation";
 type ShapeName = "Rectangle" | "Ellipse" | "Ligne";
 
 async function selectShape(page: import("@playwright/test").Page, shape: ShapeName) {
-  await page.getByRole("button", { name: "Formes" }).click();
-  const picker = page.getByRole("menu", { name: "Formes" });
+  await page.getByRole("button", { name: "Édition" }).click();
+  const picker = page.getByRole("region", { name: "Outils Édition" });
   await expect(picker).toBeVisible();
-  await picker.getByRole("menuitem", { name: shape }).click();
+  await picker.getByRole("button", { name: shape }).click();
 }
 
 async function dragInLayer(

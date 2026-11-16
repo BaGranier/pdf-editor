@@ -1,3 +1,4 @@
+import { SidebarNavigation, type NavigationAction } from "./components/SidebarNavigation";
 import { PdfPasswordDialog } from "./components/PdfPasswordDialog";
 import { unlockWorkingPdf, PdfOpenCancelled, PdfUnlockError } from "./pdf/passwords";
 import { LayerControls } from "./components/LayerControls";
@@ -1354,6 +1355,7 @@ function PdfViewer({
     }
 
     lastFocusRequestRef.current = focusRequest;
+    if (window.document.activeElement instanceof HTMLElement && window.document.activeElement.closest(".navigation-popover, .tool-rail")) return;
     viewer.focus();
   }, [document.id, focusRequest]);
 
@@ -2706,7 +2708,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [pageView, setPageView] = useState<"list" | "grid">("list");
   const [isPropertiesPanelVisible, setIsPropertiesPanelVisible] = useState(true);
   const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(272);
-  const [isShapePickerOpen, setIsShapePickerOpen] = useState(false);
   const [textMarkupSelection, setTextMarkupSelection] = useState<{ page: number; rects: PdfRect[]; top: number; left: number } | null>(null);
   const [textMarkupColor, setTextMarkupColor] = useState("#eab308");
   const [pendingComment, setPendingComment] = useState<{ page: number; point: import("./editing/types").PdfPoint } | null>(null);
@@ -2714,9 +2715,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [commentAuthorDraft, setCommentAuthorDraft] = useState(() => storedPreferences?.commentAuthor ?? "");
   const [lastCommentAuthor, setLastCommentAuthor] = useState(() => storedPreferences?.commentAuthor ?? "");
   const [isCommentsView, setIsCommentsView] = useState(false);
-  const [shapePickerPosition, setShapePickerPosition] = useState({ top: 0, left: 0 });
-  const shapePickerButtonRef = useRef<HTMLButtonElement | null>(null);
-  const shapePickerRef = useRef<HTMLDivElement | null>(null);
   const [documents, setDocuments] = useState<OpenPdfDocument[]>([]);
   const desktopStartupLoadedRef = useRef(false);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
@@ -4938,7 +4936,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         platform: getShortcutPlatform(),
       });
       if (isAdvancedExportOpen || protectedOpeningRef.current) return;
-      if (!commandId || (commandId !== "overlay.escape" && isEditableKeyboardTarget(event.target))) return;
+      if (!commandId || isEditableKeyboardTarget(event.target)) return;
 
       const editingState = activeDocument
         ? getDocumentEditingState(pdfEditsByDocument, activeDocument.id)
@@ -5127,35 +5125,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setStatus([ignoredFilesMessage, ...usageWarnings.map((warning) => `Avertissement: ${warning}`)].filter(Boolean).join(" "));
   }
 
-  useEffect(() => {
-    const closeShapePicker = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsShapePickerOpen(false);
-      }
-    };
-    window.addEventListener("keydown", closeShapePicker);
-    return () => window.removeEventListener("keydown", closeShapePicker);
-  }, []);
-
-  useEffect(() => {
-    if (!isShapePickerOpen) {
-      return;
-    }
-
-    const closeOnOutsidePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (
-        target &&
-        !shapePickerRef.current?.contains(target) &&
-        !shapePickerButtonRef.current?.contains(target)
-      ) {
-        setIsShapePickerOpen(false);
-      }
-    };
-    window.addEventListener("pointerdown", closeOnOutsidePointerDown);
-    return () => window.removeEventListener("pointerdown", closeOnOutsidePointerDown);
-  }, [isShapePickerOpen]);
-
   const startPropertiesResize = useCallback((event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     const startX = event.clientX;
@@ -5173,28 +5142,20 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     window.addEventListener("mouseup", finish);
   }, [propertiesPanelWidth]);
 
-  const toggleShapePicker = useCallback(() => {
-    if (isShapePickerOpen) {
-      setIsShapePickerOpen(false);
-      return;
-    }
-
-    const anchor = shapePickerButtonRef.current?.getBoundingClientRect();
-    if (!anchor) {
-      return;
-    }
-
-    const pickerWidth = 15.5 * 16;
-    const pickerHeight = 3.5 * 16;
-    const left = anchor.right + 8 + pickerWidth <= window.innerWidth
-      ? anchor.right + 8
-      : Math.max(8, anchor.left - pickerWidth - 8);
-    setShapePickerPosition({
-      top: Math.min(Math.max(8, anchor.top), window.innerHeight - pickerHeight - 8),
-      left,
-    });
-    setIsShapePickerOpen(true);
-  }, [isShapePickerOpen]);
+  const selectNavigationTool = (tool: NavigationAction) => {
+    setExportFeedback(null);
+    if (tool === "ocr") { setIsOcrDialogOpen(true); return; }
+    if (tool === "convert") { setIsConversionDialogOpen(true); return; }
+    if (tool === "image") { imageInputRef.current?.click(); return; }
+    setActiveEditingTool(tool);
+    setSelectedEditId(null);
+    setPendingSignatureImageId(null);
+    setEyedropperTarget(null);
+    closePdfSearch();
+    setTextMarkupSelection(null);
+    setIsPropertiesPanelVisible(true);
+    if (tool === "signature") setIsSignatureDialogOpen(true);
+  };
 
   if (isRestoringDocuments) {
     return (
@@ -5493,148 +5454,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         aria-label="Espace de travail PDF"
         style={{ "--properties-panel-width": `${propertiesPanelWidth}px` } as CSSProperties}
       >
-        <nav className="tool-rail" aria-label="Outils d'édition">
-          <button
-            type="button"
-            onClick={() => {
-              setActiveEditingTool("select");
-              setPendingSignatureImageId(null);
-              setEyedropperTarget(null);
-            }}
-            disabled={!activeDocument || workspaceMode !== "read"}
-            aria-label="Sélection"
-            aria-pressed={activeEditingTool === "select" && workspaceMode === "read"}
-            title="Sélection"
-          >
-            <ToolbarIcon name="select" />
-            <span>Sélection</span>
-          </button>
-
-          <button type="button" aria-label="Filigrane" title="Filigrane non destructif" aria-pressed={activeEditingTool === "watermark"} disabled={!activeDocument || workspaceMode !== "read"} onClick={() => { setActiveEditingTool("watermark"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); closePdfSearch(); setIsPropertiesPanelVisible(true); }}><span aria-hidden="true">╱</span><span>Filigrane</span></button>
-          <button type="button" aria-label="Masquage visuel" title="Masquage visuel réversible — ne supprime pas les données" aria-pressed={activeEditingTool === "visual_mask"} disabled={!activeDocument || workspaceMode !== "read"} onClick={() => { setActiveEditingTool("visual_mask"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); setIsPropertiesPanelVisible(true); }}><span aria-hidden="true">▧</span><span>Masquage visuel</span></button>
-          <button type="button" aria-label="Tampon" title="Tampon visuel" aria-pressed={activeEditingTool === "stamp"} disabled={!activeDocument || workspaceMode !== "read"} onClick={() => { setActiveEditingTool("stamp"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); setIsPropertiesPanelVisible(true); }}><span aria-hidden="true">▣</span><span>Tampon</span></button>
-          <input ref={stampImageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier tampon image" hidden onChange={(event) => void insertImage(event, true)} />
-          <button type="button" aria-label="Biffer" title="Biffage sécurisé par zones" aria-pressed={activeEditingTool === "redaction"} disabled={!activeDocument || workspaceMode !== "read"} onClick={() => { setIsPropertiesPanelVisible(true); setActiveEditingTool("redaction"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }}><span aria-hidden="true">▰</span><span>Biffer</span></button>
-          <button type="button" onClick={() => { setActiveEditingTool("freehand"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }} disabled={!activeDocument || workspaceMode !== "read"} aria-label="Dessiner" aria-pressed={activeEditingTool === "freehand"} title="Dessiner">
-            <ToolbarIcon name="freehand" /><span>Dessin</span>
-          </button>
-          <button type="button" onClick={() => { setActiveEditingTool("comment"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }} disabled={!activeDocument || workspaceMode !== "read"} aria-label="Commentaire" aria-pressed={activeEditingTool === "comment"} title="Commentaire">
-            <ToolbarIcon name="comment" /><span>Comment.</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setExportFeedback(null);
-              setActiveEditingTool("add_text");
-              setPendingSignatureImageId(null);
-              setSelectedEditId(null);
-              setEyedropperTarget(null);
-            }}
-            disabled={!activeDocument || workspaceMode !== "read"}
-            aria-label="Ajouter du texte"
-            aria-pressed={activeEditingTool === "add_text"}
-            title="Ajouter du texte"
-          >
-            <ToolbarIcon name="text" />
-            <span>Texte</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setExportFeedback(null);
-              setActiveEditingTool("edit_text");
-              setPendingSignatureImageId(null);
-              setSelectedEditId(null);
-              setEyedropperTarget(null);
-            }}
-            disabled={!activeDocument || workspaceMode !== "read"}
-            aria-label="Modifier le texte existant"
-            aria-pressed={activeEditingTool === "edit_text"}
-            title="Modifier le texte existant"
-          >
-            <ToolbarIcon name="text" />
-            <span>Modifier texte</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setExportFeedback(null);
-              setActiveEditingTool("signature");
-              setSelectedEditId(null);
-              setPendingSignatureImageId(null);
-              setEyedropperTarget(null);
-              setIsSignatureDialogOpen(true);
-            }}
-            disabled={!activeDocument || workspaceMode !== "read"}
-            aria-label="Ajouter une signature"
-            aria-pressed={activeEditingTool === "signature"}
-            title="Ajouter une signature"
-          >
-            <ToolbarIcon name="signature" />
-            <span>Signature</span>
-          </button>
-
-          <input ref={imageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier image" hidden onChange={(event) => void insertImage(event)} />
-          <button type="button" aria-label="Image" title="Insérer une image PNG ou JPEG" disabled={!activeDocument || workspaceMode !== "read" || activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourceDocumentId !== activeDocument.id} onClick={() => imageInputRef.current?.click()}><span aria-hidden="true">▧</span><span>Image</span></button>
-          <div className="tool-rail__shape-group">
-            <button
-              ref={shapePickerButtonRef}
-              type="button"
-              onClick={toggleShapePicker}
-              disabled={!activeDocument || workspaceMode !== "read"}
-              aria-label="Formes"
-              aria-haspopup="menu"
-              aria-expanded={isShapePickerOpen}
-              aria-pressed={activeEditingTool.startsWith("shape_")}
-              title="Formes"
-            >
-              <ToolbarIcon name="shape" />
-              <span>Formes</span>
-            </button>
-          </div>
-
-          <span className="tool-rail__separator" aria-hidden="true" />
-          <button
-            type="button"
-            onClick={() =>
-              setWorkspaceMode((currentMode) =>
-                currentMode === "read" ? "organize" : "read",
-              )
-            }
-            aria-pressed={workspaceMode === "organize"}
-            aria-label={workspaceMode === "organize" ? "Revenir à la lecture" : "Organiser"}
-            title={workspaceMode === "organize" ? "Revenir à la lecture" : "Organiser les pages"}
-          >
-            <ToolbarIcon name="organize" />
-            <span>{workspaceMode === "organize" ? "Lecture" : "Organiser"}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setExportFeedback(null);
-              setIsOcrDialogOpen(true);
-            }}
-            disabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
-            aria-label="OCR"
-            aria-busy={isOcrProcessing}
-            title="Reconnaissance de texte (OCR)"
-          >
-            <ToolbarIcon name="ocr" />
-            <span>OCR</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setExportFeedback(null);
-              setIsConversionDialogOpen(true);
-            }}
-            disabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
-            title="Convertir le document"
-          >
-            <ToolbarIcon name="conversion" />
-            <span>Convertir</span>
-          </button>
-        </nav>
+        <SidebarNavigation activeTool={activeEditingTool} organizing={workspaceMode === "organize"}
+          disabled={!activeDocument || workspaceMode !== "read"}
+          processingDisabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
+          imageDisabled={!activeDocument || workspaceMode !== "read" || activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourceDocumentId !== activeDocument.id}
+          onSelect={selectNavigationTool} onOrganize={() => setWorkspaceMode((mode) => mode === "read" ? "organize" : "read")} />
+        <input ref={stampImageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier tampon image" hidden onChange={(event) => void insertImage(event, true)} />
+        <input ref={imageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier image" hidden onChange={(event) => void insertImage(event)} />
 
         <button
           type="button"
@@ -5944,44 +5770,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           <LayerControls edits={activeDocumentEditingState?.edits ?? []} page={(activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourcePageIndex ?? -1) + 1} selectedId={selectedEditId} onSelect={setSelectedEditId} onReorder={(editId, direction) => activeDocument && dispatchPdfEdits({ type: "reorder", documentId: activeDocument.id, editId, direction })} />
         </aside> : <button type="button" className="properties-panel-toggle" aria-label="Afficher les propriétés" title="Afficher les propriétés" onClick={() => setIsPropertiesPanelVisible(true)}>❮</button>}
       </section>
-
-      {isShapePickerOpen
-        ? createPortal(
-            <div
-              ref={shapePickerRef}
-              className="shape-picker"
-              role="menu"
-              aria-label="Formes"
-              style={shapePickerPosition}
-            >
-              {(["rectangle", "square", "ellipse", "circle", "line", "arrow"] as const).map((shapeType) => {
-                const label = { rectangle: "Rectangle", square: "Carré", ellipse: "Ellipse", circle: "Cercle", line: "Ligne", arrow: "Flèche" }[shapeType];
-                const icon = { rectangle: "▭", square: "□", ellipse: "⬭", circle: "○", line: "╱", arrow: "↗" }[shapeType];
-                return (
-                  <button
-                    key={shapeType}
-                    type="button"
-                    role="menuitem"
-                    aria-label={label}
-                    aria-pressed={activeEditingTool === `shape_${shapeType}`}
-                    title={label}
-                    onClick={() => {
-                      setExportFeedback(null);
-                      setActiveEditingTool(`shape_${shapeType}`);
-                      setPendingSignatureImageId(null);
-                      setSelectedEditId(null);
-                      setEyedropperTarget(null);
-                      setIsShapePickerOpen(false);
-                    }}
-                  >
-                    <span aria-hidden="true">{icon}</span>
-                  </button>
-                );
-              })}
-            </div>,
-            document.body,
-          )
-        : null}
 
       {textMarkupSelection ? createPortal(
         <div ref={textMarkupToolbarRef} className="text-markup-toolbar" role="toolbar" aria-label="Annotations du texte" style={{ top: Math.max(8, textMarkupSelection.top - 46), left: Math.min(window.innerWidth - 230, Math.max(8, textMarkupSelection.left - 100)) }}>

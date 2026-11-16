@@ -1,3 +1,4 @@
+import { navigationTool } from "./test/navigation";
 import {
   afterEach,
   beforeEach,
@@ -100,7 +101,7 @@ async function openPdf(fileName = "source.pdf", pageCount = 1) {
 }
 
 function openOcrDialog() {
-  fireEvent.click(screen.getByRole("button", { name: "OCR" }));
+  fireEvent.click(navigationTool("OCR"));
   return screen.getByRole("dialog", {
     name: "Reconnaissance de texte (OCR)",
   });
@@ -178,9 +179,9 @@ describe("OCR in App", () => {
   it("shows a disabled OCR button until a PDF is active", async () => {
     render(<App />);
 
-    expect(screen.getByRole("button", { name: "OCR" })).toBeDisabled();
+    expect(navigationTool("OCR")).toBeDisabled();
     await openPdf();
-    expect(screen.getByRole("button", { name: "OCR" })).toBeEnabled();
+    expect(navigationTool("OCR")).toBeEnabled();
   });
 
   it("opens the simplified OCR form with defaults and cancels without a request", async () => {
@@ -255,7 +256,7 @@ describe("OCR in App", () => {
     launchOcr();
 
     expect(screen.getByRole("status")).toHaveTextContent("OCR en cours…");
-    const ocrButton = screen.getByRole("button", { name: "OCR" });
+    const ocrButton = navigationTool("OCR");
     expect(ocrButton).toBeDisabled();
     fireEvent.click(ocrButton);
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -283,7 +284,7 @@ describe("OCR in App", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "OCR" })).toBeEnabled();
+      expect(navigationTool("OCR")).toBeEnabled();
       expect(screen.queryByText("OCR en cours…")).not.toBeInTheDocument();
     });
   });
@@ -398,7 +399,7 @@ describe("OCR in App", () => {
     await waitFor(() => {
       expect(screen.getByText(expected)).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: "OCR" })).toBeEnabled();
+    expect(navigationTool("OCR")).toBeEnabled();
     expect(
       screen.getByRole("button", {
         name: "source.pdf, document actif",
@@ -423,7 +424,7 @@ describe("OCR in App", () => {
         screen.getByText("Impossible de contacter le moteur PDF."),
       ).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: "OCR" })).toBeEnabled();
+    expect(navigationTool("OCR")).toBeEnabled();
     expect(
       screen.getByRole("button", {
         name: "source.pdf, document actif",

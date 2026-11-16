@@ -5,8 +5,8 @@ import { fixtureDirectory, fixtures, openApp, openPdf } from "../helpers/app";
 import { validatePdf } from "../helpers/pdf-validation";
 
 async function shape(page: import("@playwright/test").Page, label: string, start = { x: 40, y: 50 }, end = { x: 180, y: 150 }) {
-  await page.getByRole("button", { name: "Formes", exact: true }).click();
-  await page.getByRole("menuitem", { name: label, exact: true }).click();
+  await page.getByRole("button", { name: "Édition", exact: true }).click();
+  await page.getByRole("button", { name: label, exact: true }).click();
   const box = await page.getByLabel("Couche d'édition de la page 1").boundingBox();
   if (!box) throw new Error("No edit layer");
   await page.mouse.move(box.x + start.x, box.y + start.y); await page.mouse.down();
@@ -151,7 +151,7 @@ test("EXPORT-PRESENTATION-003-6 DPR 2 zoom 50–200 thèmes et modes", async ({ 
   try {
     await openApp(page); await openPdf(page, fixtures.onePage); await shape(page, "Carré");
     for (const zoom of [50, 100, 150, 200]) {
-      await page.getByRole("button", { name: "Formes", exact: true }).focus(); await page.keyboard.press("Control+0");
+      await page.getByRole("button", { name: "Édition", exact: true }).focus(); await page.keyboard.press("Control+0");
       const action = zoom < 100 ? "Réduire le zoom" : "Augmenter le zoom";
       for (let n = 0; n < Math.abs(zoom - 100) / 10; n++) await page.getByRole("button", { name: action, exact: true }).click();
       await expect(page.getByTestId("zoom-level")).toHaveText(`${zoom}%`);

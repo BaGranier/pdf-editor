@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import { readFileSync } from "node:fs";
 import { enterOrganizeMode, fixtures, getStoredDocuments, openApp, openPdf, organizedPages } from "../helpers/app";
@@ -73,7 +74,7 @@ test("MVP-FORMS désactive les champs et le verrou PDF après organisation", asy
 test("MVP-CONVERT télécharge un TXT source lisible sans OCR système", async ({ page }, testInfo) => {
   await openApp(page);
   await openPdf(page, fixtures.conversionText);
-  await page.getByRole("button", { name: "Convertir", exact: true }).click();
+  await chooseNavigationTool(page, "Convertir");
   const dialog = page.getByRole("dialog", { name: "Convertir le PDF" });
   await dialog.getByLabel("Format de sortie").selectOption("txt");
   const pending = page.waitForEvent("download");

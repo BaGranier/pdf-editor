@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import { fixtures, openApp, openPdf } from "../helpers/app";
 
@@ -63,12 +64,12 @@ test("UI-WORKSPACE-RESPONSIVE-001 garde les overlays d'édition alignés après 
   await openPdf(page, fixtures.fivePages);
   await page.getByLabel("Mode d'affichage").selectOption("single-page");
 
-  await page.getByRole("button", { name: "Formes" }).click();
-  await page.getByRole("menuitem", { name: "Rectangle" }).click();
+  await page.getByRole("button", { name: "Édition" }).click();
+  await page.getByRole("button", { name: "Rectangle" }).click();
   await dragInEditLayer(page, { x: 45, y: 70 }, { x: 180, y: 135 });
   await expect(page.getByLabel("Rectangle page 1")).toBeVisible();
 
-  await page.getByRole("button", { name: "Ajouter du texte" }).click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   await dragInEditLayer(page, { x: 55, y: 165 }, { x: 210, y: 220 });
   const textEdit = page.getByLabel("Texte ajouté page 1");
   await textEdit.fill("Resize fiable");

@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import { fixtures, openApp } from "../helpers/app";
 
@@ -9,7 +10,7 @@ test("UX-SHORTCUTS-AUDIT-001 réutilise les workflows d'ouverture, historique, z
   await (await fileChooser).setFiles(fixtures.onePage);
   await expect(page.getByRole("button", { name: "pdf-small-1-page.pdf, document actif" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Ajouter du texte" }).click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   const editLayer = page.getByLabel("Couche d'édition de la page 1");
   const layerBox = await editLayer.boundingBox();
   if (!layerBox) throw new Error("La couche d'édition est indisponible.");

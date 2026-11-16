@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { readFileSync } from "node:fs";
 import { expect, test } from "../helpers/qa-test";
 import {
@@ -39,7 +40,7 @@ test("EDIT-CORE-001 @smoke exporte ensemble texte et signature", async ({
   await openPdf(page, fixtures.onePage);
 
   const editLayer = page.getByLabel("Couche d'édition de la page 1");
-  await page.getByRole("button", { name: "Ajouter du texte" }).click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   await expect(editLayer).toHaveAttribute("data-active-editing-tool", "add_text");
   await dragInEditLayer(page, editLayer, { x: 55, y: 80 }, { x: 250, y: 130 });
   const textInput = page.getByLabel("Texte ajouté page 1");
@@ -61,7 +62,7 @@ test("EDIT-CORE-001 @smoke exporte ensemble texte et signature", async ({
   await page.mouse.move(handleBox.x + 45, handleBox.y + 35, { steps: 4 });
   await page.mouse.up();
 
-  await page.getByRole("button", { name: "Ajouter une signature" }).click();
+  await chooseNavigationTool(page, "Ajouter une signature");
   await expect(editLayer).toHaveAttribute("data-active-editing-tool", "signature");
   const canvas = page.getByLabel("Zone de dessin de la signature");
   const canvasBox = await canvas.boundingBox();

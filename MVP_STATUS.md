@@ -59,6 +59,13 @@ effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 
 ## Journal MVP
 
+### 2026-11-16 — FEAT-PDF-SIDEBAR-GROUPS
+- Barre gauche réduite à six entrées ; inventaire centralisé et aucun outil supprimé.
+- Biffage, masquage, filigrane et tampon réunis sous Marquage avec explications.
+- Menus temporaires accessibles, focus restauré, état de navigation indépendant du PDF.
+- Parcours de tests adaptés à la navigation par catégories ; détail dans SIDEBAR_AND_WATERMARKS.md.
+
+
 ### 2026-10-28 — MVP-001
 
 - fait : restauration durable, récupération partielle, protections formulaires et impression WIP ;

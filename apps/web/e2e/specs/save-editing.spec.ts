@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { readFileSync } from "node:fs";
 import { expect, test } from "../helpers/qa-test";
 import { fixtures, openApp, openPdf } from "../helpers/app";
@@ -22,7 +23,7 @@ async function dragInEditLayer(
 }
 
 async function addDrawnSignature(page: import("@playwright/test").Page) {
-  await page.getByRole("button", { name: "Ajouter une signature" }).click();
+  await chooseNavigationTool(page, "Ajouter une signature");
   const canvas = page.getByLabel("Zone de dessin de la signature");
   const canvasBox = await canvas.boundingBox();
   expect(canvasBox).not.toBeNull();
@@ -123,7 +124,7 @@ test("EDIT-SAVE-001 Enregistrer sous choisit le nom et le conserve", async ({
   await openPdf(page, fixtures.onePage);
 
   const editLayer = page.getByLabel("Couche d'édition de la page 1");
-  await page.getByRole("button", { name: "Ajouter du texte" }).click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   await dragInEditLayer(page, editLayer, { x: 55, y: 80 }, { x: 250, y: 130 });
   await page.getByLabel("Texte ajouté page 1").fill("Version client 2026");
   await editLayer.dispatchEvent("click");
@@ -166,7 +167,7 @@ test("EDIT-SAVE-001 annuler Enregistrer sous conserve nom, edits et dirty", asyn
   const sourceDocument = page.locator(
     '.document-select[title="pdf-small-1-page.pdf"]',
   );
-  await page.getByRole("button", { name: "Ajouter du texte" }).click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   const editLayer = page.getByLabel("Couche d'édition de la page 1");
   await dragInEditLayer(page, editLayer, { x: 55, y: 80 }, { x: 250, y: 130 });
   await page.getByLabel("Texte ajouté page 1").fill("Texte conservé");

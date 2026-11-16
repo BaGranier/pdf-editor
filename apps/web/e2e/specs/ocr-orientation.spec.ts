@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import path from "node:path";
 import { writeFile } from "node:fs/promises";
 import { expect, test } from "../helpers/qa-test";
@@ -7,7 +8,7 @@ import { validatePdf } from "../helpers/pdf-validation";
 test("OCR corrects a sideways scan and preserves its source", async ({ page }, testInfo) => {
   await openApp(page);
   await openPdf(page, path.join(fixtureDirectory, "ocr-oriented-90.pdf"));
-  await page.getByRole("button", { name: "OCR", exact: true }).click();
+  await chooseNavigationTool(page, "OCR");
   const dialog = page.getByRole("dialog", { name: "Reconnaissance de texte (OCR)" });
   await dialog.getByLabel("Langue du document").selectOption("fra+eng");
   await dialog.getByLabel("Correction de rotation des scans").selectOption("270");

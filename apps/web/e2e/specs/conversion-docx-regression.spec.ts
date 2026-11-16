@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import fs from "node:fs";
 import type { Download, Page, Response, TestInfo } from "@playwright/test";
 import { expect, test } from "../helpers/qa-test";
@@ -20,7 +21,7 @@ async function convertDocx(
   page: Page,
   mode: ConversionDocxMode,
 ): Promise<DocxRun> {
-  await page.getByRole("button", { name: "Convertir" }).click();
+  await chooseNavigationTool(page, "Convertir");
   const dialog = page.getByRole("dialog", { name: "Convertir le PDF" });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel("Format de sortie").selectOption("docx");

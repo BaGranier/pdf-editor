@@ -1,3 +1,4 @@
+import { NAVIGATION_GROUPS } from "../../src/components/SidebarNavigation";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page } from "@playwright/test";
@@ -163,4 +164,12 @@ export async function drawTextBox(page: Page, position: { x: number; y: number }
   await page.mouse.down();
   await page.mouse.move(box.x + position.x + 220, box.y + position.y + 72, { steps: 5 });
   await page.mouse.up();
+}
+
+export async function chooseNavigationTool(page: Page, label: string): Promise<void> {
+  const group = NAVIGATION_GROUPS.find((item) => item.tools.some((tool) => tool.label === label));
+  if (!group) throw new Error(`Unknown navigation tool: ${label}`);
+  const parent = page.getByRole("button", { name: group.label, exact: true });
+  if (await parent.getAttribute("aria-expanded") !== "true") await parent.click();
+  await page.getByRole("button", { name: label, exact: true }).click();
 }

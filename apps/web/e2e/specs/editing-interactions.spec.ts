@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { readFileSync } from "node:fs";
 import { expect, test } from "../helpers/qa-test";
 import {
@@ -19,7 +20,7 @@ test("EDIT-INTERACT-001 redimensionne, annule et copie un bloc texte", async ({
   await openApp(page);
   await openPdf(page, fixtures.onePage);
 
-  await page.getByRole("button", { name: "Ajouter du texte" }).click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   await drawTextBox(page, { x: 20, y: 100 });
   // Drag creation derives font size from height; these overflow probes use 18pt.
   await page.getByLabel("Taille du texte").fill("18");
@@ -177,7 +178,7 @@ test("EDIT-TEXT-OVERFLOW-001 retire le warning après agrandissement", async ({
   await openApp(page);
   await openPdf(page, fixtures.onePage);
 
-  await page.getByRole("button", { name: "Ajouter du texte" }).click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   await drawTextBox(page, { x: 30, y: 120 });
   await page.getByLabel("Taille du texte").fill("18");
   const input = page.getByLabel("Texte ajouté page 1");

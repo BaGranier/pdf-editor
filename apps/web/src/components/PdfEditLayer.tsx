@@ -97,6 +97,8 @@ export function PdfEditLayer({
 
   useEffect(() => {
     setCreationState(null);
+    freehandPointsRef.current = null;
+    setFreehandPreview([]);
   }, [activeTool, pageNumber, pendingSignatureImage]);
 
   useEffect(() => {

@@ -1,3 +1,4 @@
+import { navigationTool } from "./test/navigation";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as pdfjsLib from "pdfjs-dist";
@@ -327,7 +328,7 @@ describe("PDF.js text layer in App", () => {
       );
       expect(document.querySelector(".endOfContent")).not.toBeInTheDocument();
       expect(screen.queryByText("Impossible d'afficher cette page.")).not.toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "OCR" })).toBeEnabled();
+      expect(navigationTool("OCR")).toBeEnabled();
     });
   });
 

@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { readFileSync } from "node:fs";
 import { expect, test } from "../helpers/qa-test";
 import {
@@ -16,7 +17,7 @@ test("EDIT-SIGN-001 @smoke dessine, place et exporte une signature visuelle", as
   await openApp(page);
   await openPdf(page, fixtures.onePage);
 
-  await page.getByRole("button", { name: "Ajouter une signature" }).click();
+  await chooseNavigationTool(page, "Ajouter une signature");
   const drawingCanvas = page.getByLabel("Zone de dessin de la signature");
   const canvasBox = await drawingCanvas.boundingBox();
   expect(canvasBox).not.toBeNull();

@@ -1,3 +1,4 @@
+import { navigationTool } from "./test/navigation";
 import {
   afterEach,
   beforeEach,
@@ -69,7 +70,7 @@ async function openPdf() {
 }
 
 function openDialog() {
-  fireEvent.click(screen.getByRole("button", { name: "Convertir" }));
+  fireEvent.click(navigationTool("Convertir"));
   return screen.getByRole("dialog", { name: "Convertir le PDF" });
 }
 
@@ -121,9 +122,9 @@ describe("PDF conversion in App", () => {
 
   it("disables conversion until a PDF is active", async () => {
     render(<App />);
-    expect(screen.getByRole("button", { name: "Convertir" })).toBeDisabled();
+    expect(navigationTool("Convertir")).toBeDisabled();
     await openPdf();
-    expect(screen.getByRole("button", { name: "Convertir" })).toBeEnabled();
+    expect(navigationTool("Convertir")).toBeEnabled();
   });
 
   it("shows format-specific options and the DOCX fidelity warning", async () => {
@@ -239,7 +240,7 @@ describe("PDF conversion in App", () => {
     );
 
     expect(screen.getByRole("status")).toHaveTextContent("Conversion en cours…");
-    expect(screen.getByRole("button", { name: "Convertir" })).toBeDisabled();
+    expect(navigationTool("Convertir")).toBeDisabled();
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledOnce();
     });

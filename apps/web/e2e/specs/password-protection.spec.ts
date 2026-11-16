@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { validatePdf } from "../helpers/pdf-validation";
@@ -48,7 +49,7 @@ test("protected PDF cancellation, retry, rendering, search and persistence witho
   await page.getByRole("textbox", { name: "Rechercher dans le document" }).fill("PROTECTED PDF WITNESS");
   await expect(page.locator('[aria-label="Résultats de recherche"]')).toContainText("1 / 1");
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Ajouter du texte", exact: true }).click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   const layer = page.getByLabel("Couche d'édition de la page 1");
   const box = await layer.boundingBox();
   if (!box) throw new Error("Missing edit layer");

@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import type { Download, Page, Response, TestInfo } from "@playwright/test";
 import { expect, test } from "../helpers/qa-test";
 import { fixtures, openApp, openPdf } from "../helpers/app";
@@ -14,7 +15,7 @@ async function runConversion(
   targetFormat: ConversionTarget,
   configure?: (dialog: ReturnType<Page["getByRole"]>) => Promise<void>,
 ): Promise<ConversionRun> {
-  await page.getByRole("button", { name: "Convertir" }).click();
+  await chooseNavigationTool(page, "Convertir");
   const dialog = page.getByRole("dialog", { name: "Convertir le PDF" });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel("Format de sortie").selectOption(targetFormat);
@@ -244,7 +245,7 @@ test("QA-CONV-004 @regression affiche une erreur backend sans fermer la source",
   });
   await openApp(page);
   await openPdf(page, fixtures.conversionText);
-  await page.getByRole("button", { name: "Convertir" }).click();
+  await chooseNavigationTool(page, "Convertir");
   const dialog = page.getByRole("dialog", { name: "Convertir le PDF" });
   await dialog.getByLabel("Pages").fill("99");
   await dialog.getByRole("button", { name: "Lancer la conversion" }).click();

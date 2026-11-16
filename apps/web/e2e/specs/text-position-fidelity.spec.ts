@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { readFileSync } from "node:fs";
 import { expect, test } from "../helpers/qa-test";
 import {
@@ -67,7 +68,7 @@ test("EDIT-TEXT-FIDELITY-001 aligne l'origine preview avec l'export", async ({
     "pdf-text-position.pdf",
   );
 
-  await page.getByRole("button", { name: "Ajouter du texte" }).click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   const editLayer = page.getByLabel("Couche d'édition de la page 1");
   await editLayer.evaluate((element) => {
     const bounds = element.getBoundingClientRect();

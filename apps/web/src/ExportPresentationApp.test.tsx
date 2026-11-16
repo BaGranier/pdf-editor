@@ -1,3 +1,4 @@
+import { navigationTool } from "./test/navigation";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as pdfjs from "pdfjs-dist";
@@ -37,7 +38,7 @@ async function open() {
   await screen.findByLabelText("Couche d'édition de la page 1");
 }
 function addText(text: string) {
-  fireEvent.click(screen.getByRole("button", { name: "Ajouter du texte" }));
+  fireEvent.click(navigationTool("Ajouter du texte"));
   fireEvent.click(screen.getByLabelText("Couche d'édition de la page 1"), { clientX: 50, clientY: 70 });
   fireEvent.change(screen.getByLabelText("Texte ajouté page 1"), { target: { value: text } });
   fireEvent.blur(screen.getByLabelText("Texte ajouté page 1"));

@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import { enterOrganizeMode, fixtures, openApp, openPdf } from "../helpers/app";
 import { validatePdf } from "../helpers/pdf-validation";
@@ -7,7 +8,7 @@ test("EDIT-TEXT-NATIVE-001 modifie et exporte un texte PDF natif", async ({ page
   await openApp(page);
   await openPdf(page, fixtures.nativeText);
 
-  await page.getByRole("button", { name: "Modifier le texte existant" }).click();
+  await chooseNavigationTool(page, "Modifier le texte existant");
   const target = page.getByRole("button", { name: /Modifier le texte « Montant total : 1 250 €/ });
   await expect(target).toBeVisible();
   await target.dblclick();
@@ -42,7 +43,7 @@ test("EDIT-TEXT-NATIVE-001 modifie et exporte un texte PDF natif", async ({ page
 test("EDIT-TEXT-NATIVE-001 exporte une police TTF personnalisée locale", async ({ page }, testInfo) => {
   await openApp(page);
   await openPdf(page, fixtures.nativeText);
-  await page.getByRole("button", { name: "Modifier le texte existant" }).click();
+  await chooseNavigationTool(page, "Modifier le texte existant");
   await page.getByRole("button", { name: /Modifier le texte « Montant total : 1 250 €/ }).dblclick();
   const editor = page.getByRole("textbox", { name: /Modifier le texte PDF/ });
   await editor.fill("Montant total : 1 375 EUR");
@@ -67,7 +68,7 @@ test("EDIT-TEXT-NATIVE-001 exporte une police TTF personnalisée locale", async 
 test("EDIT-TEXT-NATIVE-001 explique un scan sans texte natif", async ({ page }) => {
   await openApp(page);
   await openPdf(page, fixtures.conversionScan);
-  await page.getByRole("button", { name: "Modifier le texte existant" }).click();
+  await chooseNavigationTool(page, "Modifier le texte existant");
   await expect(page.getByRole("status")).toContainText(
     "Aucun texte PDF natif modifiable sur cette page",
   );
@@ -77,7 +78,7 @@ test("EDIT-TEXT-NATIVE-001 explique un scan sans texte natif", async ({ page }) 
 test("EDIT-TEXT-NATIVE-002 garde un aperçu local propre et explique l’import de police", async ({ page }) => {
   await openApp(page);
   await openPdf(page, fixtures.nativeText);
-  await page.getByRole("button", { name: "Modifier le texte existant" }).click();
+  await chooseNavigationTool(page, "Modifier le texte existant");
   let backgroundRequests = 0;
   page.on("request", (request) => {
     if (request.url().endsWith("/pdf/native-text/preview")) backgroundRequests += 1;
@@ -114,7 +115,7 @@ test("EDIT-TEXT-NATIVE-003 extrait uniquement la page active et libère les over
   expect(nativeTextRequests).toEqual([]);
 
   await page.getByLabel("Mode d'affichage").selectOption("single-page");
-  await page.getByRole("button", { name: "Modifier le texte existant" }).click();
+  await chooseNavigationTool(page, "Modifier le texte existant");
   await expect.poll(() => nativeTextRequests).toHaveLength(1);
   await expect(page.locator(".native-text-layer")).toHaveCount(1);
 

@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import { enterOrganizeMode, fixtures, openApp, openPdf } from "../helpers/app";
 
@@ -5,7 +6,7 @@ test("EDIT-CONTROLS-001 règle l’épaisseur et l’opacité d’un dessin libr
   await openApp(page);
   await openPdf(page, fixtures.onePage);
 
-  await page.getByRole("button", { name: "Dessiner" }).click();
+  await chooseNavigationTool(page, "Dessiner");
   const width = page.getByLabel("Épaisseur du dessin");
   const opacity = page.getByLabel("Opacité du dessin");
   await width.press("Home");
@@ -46,7 +47,7 @@ test("EDIT-CONTROLS-001 règle l’épaisseur et l’opacité d’un dessin libr
 test("EDITOR-UX-003 sélectionne, déplace et restaure un dessin libre", async ({ page }) => {
   await openApp(page);
   await openPdf(page, fixtures.onePage);
-  await page.getByRole("button", { name: "Dessiner" }).click();
+  await chooseNavigationTool(page, "Dessiner");
   const layer = page.getByLabel("Couche d'édition de la page 1");
   const box = await layer.boundingBox();
   if (!box) throw new Error("La couche de dessin n’est pas mesurable.");

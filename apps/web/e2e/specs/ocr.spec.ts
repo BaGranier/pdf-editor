@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { writeFile } from "node:fs/promises";
 import { expect, test } from "../helpers/qa-test";
 import { fixtures, openApp, openPdf } from "../helpers/app";
@@ -38,7 +39,7 @@ test("QA-OCR-001 @smoke exécute un OCR réel et ouvre un PDF consultable", asyn
   await openApp(page);
   await openPdf(page, fixtures.conversionScan);
 
-  await page.getByRole("button", { name: "OCR" }).click();
+  await chooseNavigationTool(page, "OCR");
   const dialog = page.getByRole("dialog", {
     name: "Reconnaissance de texte (OCR)",
   });
