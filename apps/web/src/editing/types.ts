@@ -183,6 +183,9 @@ export type StampEdit = BasePdfEdit & {
   purpose?: "watermark";
   groupId?: string;
   watermarkScale?: number;
+  /** Missing is the historical single inscription. All tile lengths are native PDF points. */
+  watermarkMode?: "single" | "tiled";
+  tile?: { horizontalGapPt: number; verticalGapPt: number; offsetXPt: number; offsetYPt: number };
   offsetX?: number;
   offsetY?: number;
   /** Missing means historical fixed-size / no-background rendering. */

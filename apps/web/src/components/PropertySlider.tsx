@@ -7,6 +7,7 @@ type PropertySliderProps = {
   unit: string;
   color: string;
   opacity?: number;
+  signed?: boolean;
   previewThickness?: number;
   previewKind?: "line" | "shape";
   previewFillColor?: string | null;
@@ -24,6 +25,7 @@ export function PropertySlider({
   unit,
   color,
   opacity = 1,
+  signed = false,
   previewThickness = value,
   previewKind = "line",
   previewFillColor,
@@ -38,11 +40,12 @@ export function PropertySlider({
     <div className="property-slider">
       <div className="property-slider__header">
         <span>{label}</span>
-        <output>{displayValue} {unit}</output>
+        <output>{signed && value >= 0 ? "+" : ""}{displayValue} {unit}</output>
       </div>
       <input
         type="range"
         aria-label={label}
+        aria-valuetext={signed ? `${value >= 0 ? "+" : ""}${displayValue} ${unit}` : undefined}
         min={min}
         max={max}
         step={step}

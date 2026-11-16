@@ -1,3 +1,4 @@
+import { requestToolChange } from "./editing/toolTransition";
 import { SidebarNavigation, type NavigationAction } from "./components/SidebarNavigation";
 import { PdfPasswordDialog } from "./components/PdfPasswordDialog";
 import { unlockWorkingPdf, PdfOpenCancelled, PdfUnlockError } from "./pdf/passwords";
@@ -3391,6 +3392,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     }
 
     setViewerMode(nextMode);
+    if (nextMode === "presentation") setViewerFocusRequest((request) => request + 1);
   }, [activeDocument, viewerMode]);
 
   const exitPresentation = useCallback(() => {
@@ -4976,6 +4978,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           ? cancelSaveAsDialog
           : isFileMenuOpen || isSignatureDialogOpen || eyedropperTarget !== null || activeEditingTool !== "select" || pendingSignatureImageId !== null || selectedEditId !== null
             ? () => {
+                if (!requestToolChange()) return;
                 if (isFileMenuOpen) fileMenuTriggerRef.current?.focus();
                 setIsFileMenuOpen(false);
                 setIsSignatureDialogOpen(false);
@@ -5143,6 +5146,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, [propertiesPanelWidth]);
 
   const selectNavigationTool = (tool: NavigationAction) => {
+    if (!requestToolChange()) return false;
     setExportFeedback(null);
     if (tool === "ocr") { setIsOcrDialogOpen(true); return; }
     if (tool === "convert") { setIsConversionDialogOpen(true); return; }
@@ -5458,7 +5462,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           disabled={!activeDocument || workspaceMode !== "read"}
           processingDisabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
           imageDisabled={!activeDocument || workspaceMode !== "read" || activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourceDocumentId !== activeDocument.id}
-          onSelect={selectNavigationTool} onOrganize={() => setWorkspaceMode((mode) => mode === "read" ? "organize" : "read")} />
+          onSelect={selectNavigationTool} onOrganize={() => { if (requestToolChange()) setWorkspaceMode((mode) => mode === "read" ? "organize" : "read"); }} />
         <input ref={stampImageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier tampon image" hidden onChange={(event) => void insertImage(event, true)} />
         <input ref={imageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier image" hidden onChange={(event) => void insertImage(event)} />
 
@@ -5644,7 +5648,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               onApply={() => {
                 if (!activeDocument || watermarkPreview?.documentId !== activeDocument.id) return;
                 const existing = getDocumentEditingState(pdfEditsByDocument, activeDocument.id).edits;
-                const add = watermarkPreview.edits.filter((candidate) => !existing.some((edit) => edit.type === "stamp" && edit.purpose === "watermark" && edit.page === candidate.page && edit.text === candidate.text && edit.color === candidate.color && edit.rotation === candidate.rotation && edit.opacity === candidate.opacity));
+                const add = watermarkPreview.edits.filter((candidate) => !existing.some((edit) => edit.type === "stamp" && edit.purpose === "watermark" && edit.page === candidate.page && edit.text === candidate.text && edit.color === candidate.color && edit.rotation === candidate.rotation && edit.opacity === candidate.opacity && (edit.watermarkMode ?? "single") === (candidate.watermarkMode ?? "single") && JSON.stringify(edit.tile) === JSON.stringify(candidate.tile) && edit.fontSize === candidate.fontSize && edit.fontFamily === candidate.fontFamily));
                 dispatchPdfEdits({ type: "batch", documentId: activeDocument.id, add });
                 setSelectedEditId(add[0]?.id ?? null); clearWatermarkPreview(); setActiveEditingTool("select");
               }} />

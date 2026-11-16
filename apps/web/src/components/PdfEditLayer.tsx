@@ -1,3 +1,5 @@
+import { isEditableKeyboardTarget } from "../commands/appShortcuts";
+import { DEFAULT_TILE } from "../editing/watermarkTiling";
 import { constrainSquare } from "../editing/objectGeometry";
 import type { PageViewport } from "pdfjs-dist";
 import {
@@ -103,7 +105,7 @@ export function PdfEditLayer({
 
   useEffect(() => {
     const cancelCreation = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !isEditableKeyboardTarget(event.target)) {
         setCreationState(null);
       }
     };
@@ -301,7 +303,16 @@ export function PdfEditLayer({
           );
         }
 
-        if (edit.type === "stamp") return <div key={edit.id} className="pdf-edit-object" style={{ zIndex: order }}><StampEditBlock edit={edit} image={edit.imageId ? images[edit.imageId] : undefined} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} onMove={(rect) => onUpdate({ ...edit, rect })} /></div>;
+        if (edit.type === "stamp") return <div key={edit.id} className="pdf-edit-object" style={{ zIndex: order }}><StampEditBlock edit={edit} image={edit.imageId ? images[edit.imageId] : undefined} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} onMove={(rect) => {
+          if (edit.purpose === "watermark") {
+            const dx = rect.x0 - edit.rect.x0, dy = edit.rect.y0 - rect.y0;
+            if (edit.watermarkMode === "tiled") {
+              const angle = edit.rotation * Math.PI / 180;
+              const tile = { ...DEFAULT_TILE, ...edit.tile };
+              onUpdate({ ...edit, tile: { ...tile, offsetXPt: Math.max(-720, Math.min(720, tile.offsetXPt + dx * Math.cos(angle) + dy * Math.sin(angle))), offsetYPt: Math.max(-720, Math.min(720, tile.offsetYPt - dx * Math.sin(angle) + dy * Math.cos(angle))) } });
+            } else onUpdate({ ...edit, offsetX: Math.max(-0.4, Math.min(0.4, (edit.offsetX ?? 0) + dx / (edit.rect.x1 - edit.rect.x0))), offsetY: Math.max(-0.4, Math.min(0.4, (edit.offsetY ?? 0) + dy / (edit.rect.y1 - edit.rect.y0))) });
+          } else onUpdate({ ...edit, rect });
+        }} /></div>;
 
         if (edit.type === "redaction") {
           return <div key={edit.id} className="pdf-edit-object" style={{ zIndex: 10000 + order }}>

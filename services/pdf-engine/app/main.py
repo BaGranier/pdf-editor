@@ -32,6 +32,7 @@ from pypdf.generic import NameObject, NumberObject
 
 from app.image_dimensions import raster_dimensions
 from app.stamp_layout import layout_stamp
+from app.watermark_tiling import layout_watermark_tiles
 from app.stamp_font_metrics import write_stamp_unicode_map
 from app.redaction_geometry import ResolveMatches, resolve_matches
 from app.export_options import ExportOptions, finalize_export
@@ -338,7 +339,26 @@ class PdfFormLock(BaseModel):
     locked: bool = True
 
 
+class WatermarkTile(BaseModel):
+    horizontal_gap_pt: float = Field(
+        default=48, alias="horizontalGapPt", ge=8, le=720, allow_inf_nan=False
+    )
+    vertical_gap_pt: float = Field(
+        default=64, alias="verticalGapPt", ge=8, le=720, allow_inf_nan=False
+    )
+    offset_x_pt: float = Field(
+        default=0, alias="offsetXPt", ge=-720, le=720, allow_inf_nan=False
+    )
+    offset_y_pt: float = Field(
+        default=0, alias="offsetYPt", ge=-720, le=720, allow_inf_nan=False
+    )
+
+
 class StampEdit(BaseModel):
+    watermark_mode: Literal["single", "tiled"] = Field(
+        default="single", alias="watermarkMode"
+    )
+    tile: WatermarkTile = Field(default_factory=WatermarkTile)
     purpose: Literal["watermark"] | None = None
     group_id: str | None = Field(
         default=None, alias="groupId", min_length=1, max_length=200
@@ -404,6 +424,12 @@ class StampEdit(BaseModel):
 
     @model_validator(mode="after")
     def validate_content(self) -> "StampEdit":
+        if self.watermark_mode == "tiled" and (
+            self.purpose != "watermark" or self.font_size_mode != "manual"
+        ):
+            raise ValueError(
+                "Un motif répété doit être un filigrane à taille manuelle."
+            )
         if self.purpose == "watermark" and (
             self.layout_version != 2
             or self.image_id
@@ -468,22 +494,37 @@ def _insert_stamp(
             metrics = fitz.Font(
                 fontfile=str(BUNDLED_FONT_DIR / BUNDLED_FONT_FILES[font_ref])
             )
-            size, lines = layout_stamp(
-                edit.text,
-                metrics,
-                rect.width,
-                rect.height,
-                edit.font_size,
-                edit.font_size_mode,
-                edit.padding_ratio,
-                edit.border_width if edit.border else 0,
-                edit.align,
-                rotation=edit.rotation if edit.purpose == "watermark" else 0,
-                scale=edit.watermark_scale if edit.purpose == "watermark" else 1,
-                offset_x=edit.offset_x if edit.purpose == "watermark" else 0,
-                offset_y=edit.offset_y if edit.purpose == "watermark" else 0,
-                watermark=edit.purpose == "watermark",
-            )
+            if edit.purpose == "watermark" and edit.watermark_mode == "tiled":
+                size = edit.font_size
+                _, lines = layout_watermark_tiles(
+                    edit.text,
+                    metrics,
+                    rect.width,
+                    rect.height,
+                    size,
+                    edit.rotation,
+                    edit.tile.horizontal_gap_pt,
+                    edit.tile.vertical_gap_pt,
+                    edit.tile.offset_x_pt,
+                    edit.tile.offset_y_pt,
+                )
+            else:
+                size, lines = layout_stamp(
+                    edit.text,
+                    metrics,
+                    rect.width,
+                    rect.height,
+                    edit.font_size,
+                    edit.font_size_mode,
+                    edit.padding_ratio,
+                    edit.border_width if edit.border else 0,
+                    edit.align,
+                    rotation=edit.rotation if edit.purpose == "watermark" else 0,
+                    scale=edit.watermark_scale if edit.purpose == "watermark" else 1,
+                    offset_x=edit.offset_x if edit.purpose == "watermark" else 0,
+                    offset_y=edit.offset_y if edit.purpose == "watermark" else 0,
+                    watermark=edit.purpose == "watermark",
+                )
             text_color = _parse_hex_color(
                 edit.color if edit.linked_colors else edit.text_color or edit.color
             )
@@ -498,9 +539,12 @@ def _insert_stamp(
                     ),
                     fill_opacity=edit.fill_opacity * edit.opacity,
                 )
+            text_shape = (
+                canvas.new_shape() if edit.watermark_mode == "tiled" else canvas
+            )
             for line, x, y in lines:
                 if line:
-                    canvas.insert_text(
+                    text_shape.insert_text(
                         (x, y),
                         line,
                         fontname=fontname,
@@ -508,6 +552,8 @@ def _insert_stamp(
                         color=text_color,
                         fill_opacity=edit.text_opacity * edit.opacity,
                     )
+            if edit.watermark_mode == "tiled":
+                text_shape.commit()
         else:
             font = {"Helvetica": "hebo", "Times": "tibo", "Courier": "cobo"}[
                 edit.font_family
@@ -566,8 +612,10 @@ def _insert_stamp(
                 math.cos(angle),
             )
             cx, cy = (
-                rect.width * (0.5 + edit.offset_x),
-                rect.height * (0.5 - edit.offset_y),
+                rect.width
+                * (0.5 + (edit.offset_x if edit.watermark_mode == "single" else 0)),
+                rect.height
+                * (0.5 - (edit.offset_y if edit.watermark_mode == "single" else 0)),
             )
             e, f = cx - a * cx - c * cy, cy - b * cx - d * cy
             stream = canvas.get_contents()[0]

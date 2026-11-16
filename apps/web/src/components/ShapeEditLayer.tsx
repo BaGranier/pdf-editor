@@ -17,6 +17,9 @@ import type { PdfRect, ShapeEdit, LineGeometry } from "../editing/types";
 
 type ShapeEditBlockProps = {
   edit: ShapeEdit;
+  resizable?: boolean;
+  fixedFrame?: boolean;
+  onMovePreview?: (rect: PdfRect) => void;
   label?: string;
   className?: string;
   children?: ReactNode;
@@ -30,6 +33,9 @@ const RESIZE_HANDLES: ResizeHandle[] = ["nw", "ne", "sw", "se"];
 
 export function ShapeEditBlock({
   edit,
+  resizable = true,
+  fixedFrame = false,
+  onMovePreview,
   label,
   className,
   children,
@@ -49,7 +55,7 @@ export function ShapeEditBlock({
   const interactionRectRef = useRef(edit.rect);
   const draftLineRef = useRef<LineGeometry | null>(null);
   const [draftLine, setDraftLine] = useState<LineGeometry | null>(null);
-  const style = pdfRectToViewportStyle(viewport, draftRect);
+  const style = pdfRectToViewportStyle(viewport, fixedFrame ? edit.rect : draftRect);
   const viewportScale = Math.hypot(viewport.transform[0], viewport.transform[1]);
 
   useEffect(() => {
@@ -58,6 +64,15 @@ export function ShapeEditBlock({
       setDraftRect(edit.rect);
     }
   }, [edit.id, edit.rect]);
+
+  useEffect(() => {
+    if (!selected && interactionRef.current) {
+      interactionRef.current = null;
+      interactionRectRef.current = edit.rect;
+      setDraftRect(edit.rect);
+      onMovePreview?.(edit.rect);
+    }
+  }, [selected, edit.rect, onMovePreview]);
 
   useEffect(() => {
     function handleMouseMove(event: globalThis.MouseEvent) {
@@ -80,6 +95,13 @@ export function ShapeEditBlock({
         draftLineRef.current = line; setDraftLine(line);
         const rect = { x0: Math.min(line.start.x, line.end.x), y0: Math.min(line.start.y, line.end.y), x1: Math.max(line.start.x, line.end.x) + 0.1, y1: Math.max(line.start.y, line.end.y) + 0.1 };
         interactionRectRef.current = rect; setDraftRect(rect);
+        return;
+      }
+      if (fixedFrame && interaction.kind === "move") {
+        const origin = viewport.convertToPdfPoint(0, 0), next = viewport.convertToPdfPoint(delta.x, delta.y);
+        const rect = { x0: interaction.rect.x0 + next[0] - origin[0], x1: interaction.rect.x1 + next[0] - origin[0], y0: interaction.rect.y0 + next[1] - origin[1], y1: interaction.rect.y1 + next[1] - origin[1] };
+        interactionRectRef.current = rect;
+        onMovePreview?.(rect);
         return;
       }
       const rawRect =
@@ -111,6 +133,7 @@ export function ShapeEditBlock({
       if (draftLineRef.current) { onMove(next, draftLineRef.current); draftLineRef.current = null; setDraftLine(null); }
       else if (edit.start && edit.end) onMove(next, { start: transform(edit.start), end: transform(edit.end) });
       else onMove(next);
+      if (fixedFrame) { interactionRectRef.current = edit.rect; setDraftRect(edit.rect); }
     }
 
     window.addEventListener("mousemove", handleMouseMove);
@@ -121,7 +144,7 @@ export function ShapeEditBlock({
       window.removeEventListener("mouseup", finishInteraction);
       window.removeEventListener("blur", finishInteraction);
     };
-  }, [edit, onMove, viewport]);
+  }, [edit, onMove, onMovePreview, fixedFrame, viewport]);
 
   const startInteraction = (
     kind: "move" | "resize" | "start" | "end",
@@ -202,7 +225,7 @@ export function ShapeEditBlock({
         <button type="button" className="pdf-shape-edit__endpoint" style={{ left: end.x, top: end.y }} aria-label="Déplacer la fin du trait" onMouseDown={(event) => startInteraction("end", event)} />
       </> : null}
       {selected
-        ? RESIZE_HANDLES.map((handle) => (
+        ? (resizable ? RESIZE_HANDLES : []).map((handle) => (
             <button
               key={handle}
               type="button"

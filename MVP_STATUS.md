@@ -59,6 +59,14 @@ effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 
 ## Journal MVP
 
+### 2026-11-16 — FEAT-PDF-WATERMARK-TILING
+- Mode Répété ajouté au même filigrane, un objet par page et paramètres en points PDF.
+- Aperçu, police embarquée, angle, densité, phase, opacité et export vectoriel synchronisés.
+- Anciennes sessions Unique conservées ; historique groupé et persistance réutilisés.
+- Géométrie portrait/paysage/rotation/CropBox et limite de densité testées dans les deux runtimes.
+- Mesure synthétique 250 pages : 23 132 octets ; durée observée entre 7 et 10 secondes.
+
+
 ### 2026-11-16 — FEAT-PDF-SIDEBAR-GROUPS
 - Barre gauche réduite à six entrées ; inventaire centralisé et aucun outil supprimé.
 - Biffage, masquage, filigrane et tampon réunis sous Marquage avec explications.

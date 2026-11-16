@@ -68,8 +68,11 @@ test("search redaction watermark: auto-fit stamp, verified search, linked pages 
   await page.getByLabel("Mode d'affichage").selectOption("single-page");
   await expect(page.getByLabel("Filigrane page 1", { exact: true })).toBeVisible();
   await page.getByLabel("Mode d'affichage").selectOption("presentation");
+  await expect(page.getByTestId("pdf-viewer")).toHaveClass(/viewer--presentation/);
+  await expect(page.getByTestId("pdf-viewer")).toBeFocused();
   await expect(page.getByLabel("Filigrane page 1", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
+  await expect(page.locator(".app-shell")).not.toHaveClass(/app-shell--presentation/);
   await page.getByLabel("Mode d'affichage").selectOption("continuous");
   await page.getByRole("switch", { name: "Basculer le thème" }).click();
   await page.screenshot({ path: testInfo.outputPath("pending-watermark-dark.png") });

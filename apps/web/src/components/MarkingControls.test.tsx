@@ -39,6 +39,8 @@ describe("distinct marking controls", () => {
     fireEvent.click(screen.getByRole("button", { name: "Prévisualiser le filigrane" }));
     expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ scope: "all", opacity: 0.25, rotation: -45 }));
     expect(onApply).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByLabelText("Texte du filigrane"), { key: "Escape" });
+    expect(onCancel).not.toHaveBeenCalled();
     fireEvent.keyDown(screen.getByLabelText("Créer un filigrane"), { key: "Escape" });
     expect(onCancel).toHaveBeenCalledOnce();
   });
