@@ -107,3 +107,10 @@ effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 - Polices embarquées communes au viewer/PDF ; métriques frontend générées et vérifiées.
 - Ancien rendu préservé ; conversion explicite, contrôles de couleur/alpha/marge/bordure.
 - Tests ciblés : 21 backend et 9 frontend réussis ; aucune dépendance ajoutée.
+
+### 2026-11-16 — Recherche/biffage et marquages : biffage par recherche
+- Matcher Ctrl+F mutualisé : casse, mot entier, expressions et portée par page.
+- Résultats sélectionnables et confirmation de masse ; création groupée et dédupliquée.
+- Géométrie native vérifiée contre l'empreinte des caractères, jamais dérivée du DOM.
+- Refus des correspondances ambiguës ; réutilisation du biffage réel final.
+- Tests ciblés : 32 backend et 22 frontend réussis, dont OCR/pixels et pages pivotées.

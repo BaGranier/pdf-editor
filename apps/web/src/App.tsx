@@ -85,6 +85,8 @@ import { PdfEditLayer } from "./components/PdfEditLayer";
 import { TextEditToolbar } from "./components/TextEditToolbar";
 import { NativeTextLayer } from "./components/NativeTextLayer";
 import { createTextStamp, STAMP_PRESETS } from "./editing/stamps";
+import { RedactionSearchPanel } from "./components/RedactionSearchPanel";
+import { prepareSearchRedactions } from "./editing/redactionSearch";
 import { StampInspector } from "./components/StampInspector";
 import { ShapeEditToolbar } from "./components/ShapeEditToolbar";
 import { FreehandEditToolbar } from "./components/FreehandEditToolbar";
@@ -2734,6 +2736,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   // application without changing the PDF or its undo/dirty state.
   const [formUiLockedByDocument, setFormUiLockedByDocument] = useState<Record<string, boolean>>({});
   const [isFormLockConfirmOpen, setIsFormLockConfirmOpen] = useState(false);
+  const [redactionSearchDocumentId, setRedactionSearchDocumentId] = useState<string | null>(null);
   const [stampLabel, setStampLabel] = useState("APPROUVÉ");
   const [stampWithDate, setStampWithDate] = useState(false);
   const [selectedEditId, setSelectedEditId] = useState<string | null>(null);
@@ -3356,6 +3359,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     openPdfSearch,
     closePdfSearch,
     updatePdfSearchQuery,
+    updatePdfSearchOptions,
+    selectPdfSearchHit,
     navigatePdfSearch,
     forgetPdfSearchDocument,
   } = usePdfSearch({
@@ -5773,7 +5778,20 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <div><span>Inspecteur</span><h2>Propriétés</h2></div>
             <button type="button" aria-label="Masquer les propriétés" title="Masquer les propriétés" onClick={() => setIsPropertiesPanelVisible(false)}>❯</button>
           </header>
-          {workspaceMode === "read" && selectedPdfEdit?.type === "stamp" ? (
+          {workspaceMode === "read" && activeDocument && activeSearch.isOpen && redactionSearchDocumentId === activeDocument.id ? (
+            <RedactionSearchPanel search={activeSearch}
+              currentPage={(activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourcePageIndex ?? activePageNumber - 1) + 1}
+              onQuery={updatePdfSearchQuery} onOptions={updatePdfSearchOptions} onNavigate={selectPdfSearchHit}
+              onClose={() => { closePdfSearch(); setRedactionSearchDocumentId(null); }}
+              onCreate={async (hits, signal) => {
+                const target = activeDocument;
+                const edits = await prepareSearchRedactions(target.file, backendUrl, hits, getDocumentEditingState(pdfEditsByDocument, target.id).edits, signal);
+                if (signal.aborted || documentsRef.current.every((document) => document.id !== target.id)) throw new Error("Le document n’est plus ouvert ; aucune zone créée.");
+                dispatchPdfEdits({ type: "batch", documentId: target.id, add: edits });
+                setSelectedEditId(null);
+                return edits.length;
+              }} />
+          ) : workspaceMode === "read" && selectedPdfEdit?.type === "stamp" ? (
             <StampInspector edit={selectedPdfEdit} onUpdate={(edit, key) => updatePdfEdit(edit, key ? `${edit.id}:${key}` : undefined)} onFinish={(key) => finishPdfEditCoalescing(selectedPdfEdit.id, key)} onDelete={() => deletePdfEdit(selectedPdfEdit.id)} />
           ) : workspaceMode === "read" && activeEditingTool === "stamp" ? (
             <section className="shape-edit-toolbar" aria-label="Bibliothèque de tampons">
@@ -5787,7 +5805,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             </section>
           ) : workspaceMode === "read" && (activeEditingTool === "redaction" || selectedPdfEdit?.type === "redaction") ? (
             <section className="properties-panel__empty" aria-label="Biffage sécurisé">
-              <strong>Biffage · En attente</strong>
+              <strong>Biffage sécurisé · En attente</strong>
+              <button type="button" onClick={() => { if (!activeDocument) return; setRedactionSearchDocumentId(activeDocument.id); updatePdfSearchOptions({ geometryProof: true }); openPdfSearch(); }}>Rechercher et biffer…</button>
               <p>Tracez des rectangles. Le biffage ne devient irréversible que dans le PDF exporté.</p>
               <p>Le biffage par zones ne supprime pas les données ailleurs dans le document, notamment les métadonnées.</p>
               {selectedPdfEdit?.type === "redaction" ? <button type="button" onClick={() => deletePdfEdit(selectedPdfEdit.id)}>Supprimer le biffage</button> : null}

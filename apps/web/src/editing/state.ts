@@ -24,6 +24,7 @@ export type DocumentEditingState = {
 export type PdfEditsByDocument = Record<string, DocumentEditingState>;
 
 export type PdfEditsAction =
+  | { type: "batch"; documentId: string; add?: PdfEdit[]; replace?: PdfEdit[]; deleteIds?: string[]; coalesceKey?: string }
   | { type: "add"; documentId: string; edit: PdfEdit }
   | { type: "hydrate"; documentId: string; edits: PdfEdit[] }
   | { type: "replace"; documentId: string; edit: PdfEdit; coalesceKey?: string }
@@ -182,6 +183,18 @@ export function pdfEditsReducer(
   action: PdfEditsAction,
 ): PdfEditsByDocument {
   switch (action.type) {
+    case "batch": {
+      const current = getDocumentEditingState(state, action.documentId);
+      const deleted = new Set(action.deleteIds ?? []);
+      const replacements = new Map((action.replace ?? []).map((edit) => [edit.id, edit]));
+      const edits = current.edits.filter((edit) => !deleted.has(edit.id)).map((edit) => replacements.get(edit.id) ?? edit);
+      const known = new Set(edits.map((edit) => edit.id));
+      for (const edit of action.add ?? []) if (!known.has(edit.id)) { edits.push(edit); known.add(edit.id); }
+      if (JSON.stringify(edits) === JSON.stringify(current.edits)) return state;
+      const next = action.coalesceKey && current.coalescingKey === action.coalesceKey
+        ? withDerivedState({ ...current, edits }) : commitEdits(current, edits);
+      return { ...state, [action.documentId]: { ...next, coalescingKey: action.coalesceKey ?? null } };
+    }
     case "hydrate": {
       const current = getDocumentEditingState(state, action.documentId);
       const known = new Set(current.edits.map((edit) => edit.id));

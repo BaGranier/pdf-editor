@@ -32,6 +32,7 @@ from pypdf.generic import NameObject, NumberObject
 
 from app.image_dimensions import raster_dimensions
 from app.stamp_layout import layout_stamp
+from app.redaction_geometry import ResolveMatches, resolve_matches
 from app.export_options import ExportOptions, finalize_export
 from app.conversion import router as conversion_router
 from app.conversion.errors import ConversionError
@@ -2682,6 +2683,20 @@ async def extract_pdf_annotations(
         raise HTTPException(
             status_code=422, detail="Les annotations du PDF sont illisibles."
         ) from error
+
+
+@app.post("/pdf/redaction/resolve")
+async def resolve_redaction_search(
+    file: Annotated[UploadFile, File(description="PDF source")],
+    selections: Annotated[str, Form()],
+) -> dict:
+    try:
+        request = ResolveMatches.model_validate_json(selections)
+    except ValidationError as error:
+        raise HTTPException(422, "Sélection d'occurrences invalide.") from error
+    source = await file.read()
+    _check_redaction_source(source)
+    return resolve_matches(source, request)
 
 
 @app.post("/pdf/export/organize", response_class=Response)

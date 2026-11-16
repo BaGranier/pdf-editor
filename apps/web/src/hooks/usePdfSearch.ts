@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { OrganizePagePlan } from "../organize/pagePlan";
 import type { OpenPdfDocument } from "../pdf/documentLifecycle";
-import { searchPdfDocument, type PdfSearchHit } from "../pdf/search";
+import { searchPdfDocument, type PdfSearchHit, type PdfSearchOptions } from "../pdf/search";
 
 export type DocumentSearchState = {
+  options?: PdfSearchOptions;
   isOpen: boolean;
   query: string;
   hits: PdfSearchHit[];
@@ -13,6 +14,8 @@ export type DocumentSearchState = {
   status: "idle" | "searching" | "complete" | "error";
   error: string | null;
 };
+
+const EMPTY_OPTIONS: PdfSearchOptions = {};
 
 const EMPTY_SEARCH_STATE: DocumentSearchState = {
   isOpen: false,
@@ -47,6 +50,7 @@ export function usePdfSearch({
   const activeSearch = activeDocument
     ? searchByDocument[activeDocument.id] ?? EMPTY_SEARCH_STATE
     : EMPTY_SEARCH_STATE;
+  const searchOptions = activeSearch.options ?? EMPTY_OPTIONS;
   const activeSearchDocumentId = activeDocument?.id ?? null;
   const activeSearchPdfDocument = activeDocument?.pdfDocument ?? null;
   const activeSearchPageCount = activeDocument?.pageCount ?? 0;
@@ -76,6 +80,7 @@ export function usePdfSearch({
         },
       }));
       void searchPdfDocument(pdfDocument, query, {
+        ...searchOptions,
         signal: controller.signal,
         onProgress: ({ pagesScanned, totalPages, hits }) => {
           if (controller.signal.aborted || generation !== searchGenerationRef.current) return;
@@ -104,8 +109,8 @@ export function usePdfSearch({
             [documentId]: {
               ...state,
               hits,
-              pagesScanned: pageCount,
-              totalPages: pageCount,
+              pagesScanned: searchOptions.pageNumber ? 1 : pageCount,
+              totalPages: searchOptions.pageNumber ? 1 : pageCount,
               status: "complete",
             },
           };
@@ -127,7 +132,7 @@ export function usePdfSearch({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [activeSearchDocumentId, activeSearchPageCount, activeSearchPdfDocument, activeSearch.isOpen, activeSearch.query]);
+  }, [activeSearchDocumentId, activeSearchPageCount, activeSearchPdfDocument, activeSearch.isOpen, activeSearch.query, searchOptions]);
 
   const openPdfSearch = useCallback(() => {
     if (!activeDocument || workspaceMode !== "read") return;
@@ -168,6 +173,22 @@ export function usePdfSearch({
     }));
   }, [activeDocument]);
 
+  const updatePdfSearchOptions = useCallback((options: PdfSearchOptions) => {
+    if (!activeDocument) return;
+    setSearchByDocument((current) => ({ ...current, [activeDocument.id]: {
+      ...(current[activeDocument.id] ?? EMPTY_SEARCH_STATE), options, isOpen: true,
+      hits: [], activeHitIndex: 0, status: "searching", error: null,
+    } }));
+  }, [activeDocument]);
+
+  const selectPdfSearchHit = useCallback((index: number) => {
+    if (!activeDocument || !activeSearch.hits[index]) return;
+    const hit = activeSearch.hits[index];
+    const displayIndex = activeOrganizationPlan?.pages.findIndex((page) => page.sourceDocumentId === activeDocument.id && page.sourcePageIndex === hit.pageNumber - 1);
+    setSearchByDocument((current) => ({ ...current, [activeDocument.id]: { ...(current[activeDocument.id] ?? EMPTY_SEARCH_STATE), activeHitIndex: index } }));
+    if (displayIndex !== undefined && displayIndex >= 0) onNavigateToPage(displayIndex + 1);
+  }, [activeDocument, activeSearch.hits, activeOrganizationPlan, onNavigateToPage]);
+
   const navigatePdfSearch = useCallback((direction: 1 | -1) => {
     if (!activeDocument || activeSearch.hits.length === 0) return;
     const nextIndex = (activeSearch.activeHitIndex + direction + activeSearch.hits.length) % activeSearch.hits.length;
@@ -201,6 +222,8 @@ export function usePdfSearch({
     openPdfSearch,
     closePdfSearch,
     updatePdfSearchQuery,
+    updatePdfSearchOptions,
+    selectPdfSearchHit,
     navigatePdfSearch,
     forgetPdfSearchDocument,
   };

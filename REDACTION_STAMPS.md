@@ -108,3 +108,30 @@ Le viewer charge les mêmes fichiers que le backend. Les métriques frontend son
 générées par `scripts/generate-stamp-metrics.py` depuis ces fichiers ; un test
 compare chaque métrique aux polices réellement utilisées à l'export. L'ancien
 texte des limites de taille fixe ci-dessus ne concerne plus ce style nouveau.
+
+## Rechercher et biffer
+
+Depuis Biffer, « Rechercher et biffer… » partage le matcher et les surbrillances
+Ctrl+F : casse, mot entier, page courante ou document, sélection individuelle,
+de page ou de toutes les occurrences. Une confirmation précède la création en
+masse ; la recherche et les sélections ne rendent pas dirty. La création forme
+une seule étape d'historique. Les zones déjà couvertes sont dédupliquées.
+
+La recherche utilise le texte du PDF source, pas les objets ajoutés dans l'éditeur.
+NFC et casse Unicode sont gérés ; les accents restent significatifs. Les espaces
+et fins de ligne PDF.js sont équivalents pour une expression. Pas de regex, de
+recherche multi-termes ni de décomposition automatique des ligatures.
+Un scan sans couche texte ne donne aucun résultat : utiliser le biffage manuel ou
+l'OCR existant puis rouvrir sa copie. Limite de préparation : 2 000 occurrences/zones.
+
+La nouvelle route locale `/pdf/redaction/resolve` ne réimplémente pas la recherche :
+elle vérifie les offsets sélectionnés et l'empreinte SHA-256 de la séquence textuelle
+contre les caractères natifs PyMuPDF. Elle produit des rectangles natifs par ligne,
+avec marge de 0,5 pt, sans exploiter les rectangles DOM des surbrillances.
+Toute divergence d'ordre/d'encodage, géométrie vide ou page invalide fait échouer
+le lot entier. Les séquences décomposées complexes et les caractères hors BMP
+sont refusés pour cette résolution. Les zones restent ajustables dans le travail.
+
+L'export réutilise la suppression réelle finale et toutes ses restrictions de
+sécurité. Cette recherche ne détecte pas tous les secrets, ne garantit pas la
+qualité d'une couche OCR et n'anonymise pas les métadonnées ou contenus ailleurs.

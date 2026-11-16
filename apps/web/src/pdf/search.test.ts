@@ -52,3 +52,20 @@ describe("PDF text search", () => {
     expect(document.getPage).toHaveBeenCalledTimes(1);
   });
 });
+
+it("supports whole words, case sensitivity, expressions and page scope in the common matcher", async () => {
+  const page = pageWithText([{ str: "Jean Jeanne JEAN Été" }]);
+  expect(await searchPdfPage(page, 1, "Jean", undefined, { wholeWord: true })).toHaveLength(2);
+  expect(await searchPdfPage(page, 1, "Jean", undefined, { wholeWord: true, caseSensitive: true })).toHaveLength(1);
+  expect(await searchPdfPage(page, 1, "ete")).toHaveLength(0);
+  const multiline = { getTextContent: async () => ({ items: [{ str: "Secret", hasEOL: true }, { str: "été" }] }) };
+  expect(await searchPdfPage(multiline, 2, "Secret été")).toMatchObject([{ start: 0, end: 9, pageNumber: 2 }]);
+  const getPage = vi.fn(async () => page);
+  expect(await searchPdfDocument({ numPages: 3, getPage }, "Jean", { pageNumber: 2 })).toHaveLength(3);
+  expect(getPage).toHaveBeenCalledExactlyOnceWith(2);
+});
+
+it("keeps original DOM offsets when NFC or lowercase normalization changes length", async () => {
+  const hits = await searchPdfPage(pageWithText([{ str: "E\u0301té Jean" }]), 1, "Jean");
+  expect(hits).toMatchObject([{ start: 5, end: 9 }]);
+});
