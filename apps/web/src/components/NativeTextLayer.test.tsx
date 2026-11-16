@@ -1,3 +1,4 @@
+import { requestToolChange } from "../editing/toolTransition";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { PageViewport } from "pdfjs-dist";
@@ -62,7 +63,13 @@ describe("NativeTextLayer", () => {
     fireEvent.doubleClick(hitbox);
     const input = screen.getByRole("textbox", { name: /Modifier le texte PDF/ });
     fireEvent.change(input, { target: { value: "Montant : 1 375 €" } });
+    const transition = new Event("pdf-editor:before-tool-change", { cancelable: true });
+    const changed = fireEvent(window, transition);
+    expect(changed).toBe(false);
+    expect(screen.getByRole("alert")).toHaveTextContent("Validez ou annulez");
+    expect(input).toHaveValue("Montant : 1 375 €");
     fireEvent.keyDown(input, { key: "Escape" });
+    expect(requestToolChange()).toBe(true);
     expect(onCreateEdit).not.toHaveBeenCalled();
 
     fireEvent.doubleClick(screen.getByRole("button", { name: /Modifier le texte/ }));

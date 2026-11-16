@@ -1,3 +1,4 @@
+import { BEFORE_TOOL_CHANGE } from "../editing/toolTransition";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import type { PageViewport } from "pdfjs-dist";
 import { pdfRectToViewportStyle } from "../editing/coordinates";
@@ -63,8 +64,20 @@ export function NativeTextLayer({ spans, edits, viewport, selectedEditId, onCrea
 
 function NativeTextDraftEditor({ span, viewport, backgroundReady, onCancel, onCommit, onPreviewChange }: { span: NativeTextSpan; viewport: PageViewport; backgroundReady: boolean; onCancel: () => void; onCommit: (text: string) => void; onPreviewChange: (edit: NativeTextEdit | null) => void }) {
   const [draft, setDraft] = useState(span.sourceText);
+  const [transitionBlocked, setTransitionBlocked] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const hasOverflow = useTextOverflow(inputRef, draft, viewport);
+  useEffect(() => {
+    const guard = (event: Event) => {
+      if (draft === span.sourceText) return;
+      event.preventDefault();
+      setTransitionBlocked(true);
+      inputRef.current?.focus();
+    };
+    window.addEventListener(BEFORE_TOOL_CHANGE, guard);
+    return () => window.removeEventListener(BEFORE_TOOL_CHANGE, guard);
+  }, [draft, span.sourceText]);
+
   const style = pdfRectToViewportStyle(viewport, span.rect);
   const scale = Math.hypot(viewport.transform[0], viewport.transform[1]);
   useEffect(() => { if (backgroundReady) { inputRef.current?.focus(); inputRef.current?.select(); } }, [backgroundReady]);
@@ -104,6 +117,7 @@ function NativeTextDraftEditor({ span, viewport, backgroundReady, onCancel, onCo
       }}
     /> : <span className="native-text-editor__preparing" role="status">Préparation de l’aperçu…</span>}
     {hasOverflow ? <p className="native-text-editor__overflow" role="status">Le texte dépasse la zone d’origine. Il ne sera pas tronqué, mais peut recouvrir le contenu voisin.</p> : null}
+    {transitionBlocked ? <p role="alert">Validez ou annulez le texte en cours avant de changer d’outil.</p> : null}
     <div className="native-text-editor__actions">
       <button type="button" onClick={onCancel}>Annuler</button>
       <button type="button" onClick={() => draft !== span.sourceText ? onCommit(draft) : onCancel()}>Valider</button>

@@ -10,7 +10,7 @@ export const NAVIGATION_GROUPS = [
     { id: "shape_ellipse", label: "Ellipse" }, { id: "shape_circle", label: "Cercle" },
     { id: "shape_line", label: "Ligne" }, { id: "shape_arrow", label: "Flèche" },
   ] },
-  { id: "annotations", label: "Annotations", icon: "☏", tools: [
+  { id: "annotations", label: "Annotations", icon: "💬", tools: [
     { id: "comment", label: "Commentaire" }, { id: "signature", label: "Ajouter une signature" },
   ] },
   { id: "marking", label: "Marquage", icon: "▧", tools: [
@@ -25,7 +25,7 @@ export type NavigationAction = EditingTool | "image" | "ocr" | "convert";
 
 export function SidebarNavigation({ activeTool, organizing, disabled, processingDisabled, imageDisabled, onSelect, onOrganize }: {
   activeTool: EditingTool; organizing: boolean; disabled: boolean; processingDisabled: boolean; imageDisabled: boolean;
-  onSelect: (tool: NavigationAction) => void; onOrganize: () => void;
+  onSelect: (tool: NavigationAction) => boolean | void; onOrganize: () => void;
 }) {
   const [openNavigationGroup, setOpenNavigationGroup] = useState<string | null>(null);
   const [position, setPosition] = useState({ top: 8, left: 8 });
@@ -51,16 +51,18 @@ export function SidebarNavigation({ activeTool, organizing, disabled, processing
     window.addEventListener("pointerdown", outside);
     return () => window.removeEventListener("pointerdown", outside);
   }, [group]);
-  return <nav ref={rail} className="tool-rail" aria-label="Outils d'édition">
-    <button type="button" aria-label="Sélection" aria-pressed={!organizing && activeTool === "select"} disabled={disabled} onClick={() => { close(); onSelect("select"); }}>↖<span>Sélection</span></button>
+  return <nav ref={rail} className="tool-rail" aria-label="Outils d'édition"
+    onKeyDown={(event) => { if (event.key === "Escape" && group) { event.preventDefault(); event.stopPropagation(); close(true); } }}
+    onBlur={(event) => { const target = event.relatedTarget; if (!target || (target instanceof Node && !rail.current?.contains(target) && !panel.current?.contains(target))) close(); }}>
+    <button type="button" aria-label="Sélection" aria-pressed={!organizing && activeTool === "select"} disabled={disabled} onClick={() => { close(); onSelect("select"); }}>↖<span className="tool-rail__label">Sélection</span></button>
     {NAVIGATION_GROUPS.map((item) => {
       const active = !organizing && item.tools.some((tool) => tool.id === activeTool);
-      return <button key={item.id} type="button" aria-label={item.label} aria-expanded={openNavigationGroup === item.id} aria-controls={`navigation-${item.id}`} aria-pressed={active}
+      return <button key={item.id} type="button" aria-label={item.label} title={item.label} aria-expanded={openNavigationGroup === item.id} aria-controls={`navigation-${item.id}`} aria-pressed={active}
         onClick={(event) => { trigger.current = event.currentTarget; setOpenNavigationGroup((current) => current === item.id ? null : item.id); }}>
-        <span aria-hidden="true">{item.icon}</span><span>{item.label}{active ? " ✓" : ""}</span>
+        <span aria-hidden="true">{item.icon}</span><span className="tool-rail__label">{item.label}</span>{active ? <span className="tool-rail__active-marker" aria-hidden="true">✓</span> : null}
       </button>;
     })}
-    <button type="button" aria-label={organizing ? "Revenir à la lecture" : "Organiser"} aria-pressed={organizing} onClick={() => { close(); onOrganize(); }}>▤<span>{organizing ? "Lecture" : "Pages"}</span></button>
+    <button type="button" aria-label={organizing ? "Revenir à la lecture" : "Organiser"} aria-pressed={organizing} onClick={() => { close(); onOrganize(); }}>▤<span className="tool-rail__label">{organizing ? "Lecture" : "Pages"}</span></button>
     {group ? createPortal(<div ref={panel} id={`navigation-${group.id}`} className="navigation-popover" role="region" aria-label={`Outils ${group.label}`} style={position}
       onBlur={(event) => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget) && !rail.current?.contains(event.relatedTarget)) close(); }}
       onKeyDown={(event) => {
@@ -72,7 +74,7 @@ export function SidebarNavigation({ activeTool, organizing, disabled, processing
         }
       }}><strong>{group.label}</strong>{group.tools.map((tool) => <button key={tool.id} type="button" aria-label={tool.label} title={tool.label} aria-pressed={activeTool === tool.id && !organizing}
         disabled={tool.id === "ocr" || tool.id === "convert" ? processingDisabled : tool.id === "image" ? imageDisabled : disabled}
-        onClick={() => { onSelect(tool.id); close(true); }}><span>{tool.label}{activeTool === tool.id && !organizing ? " ✓" : ""}</span>{"description" in tool ? <small>{tool.description}</small> : null}</button>)}
+        onClick={() => { const changed = onSelect(tool.id); close(changed !== false); }}><span>{tool.label}{activeTool === tool.id && !organizing ? " ✓" : ""}</span>{"description" in tool ? <small>{tool.description}</small> : null}</button>)}
       {group.id === "annotations" ? <p>Sélectionnez du texte dans la page pour surligner, souligner ou barrer.</p> : null}
     </div>, document.body) : null}
   </nav>;
