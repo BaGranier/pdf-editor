@@ -84,6 +84,8 @@ import {
 import { PdfEditLayer } from "./components/PdfEditLayer";
 import { TextEditToolbar } from "./components/TextEditToolbar";
 import { NativeTextLayer } from "./components/NativeTextLayer";
+import { createTextStamp, STAMP_PRESETS } from "./editing/stamps";
+import { StampInspector } from "./components/StampInspector";
 import { ShapeEditToolbar } from "./components/ShapeEditToolbar";
 import { FreehandEditToolbar } from "./components/FreehandEditToolbar";
 import { PdfSearchBar } from "./components/PdfSearchBar";
@@ -353,6 +355,7 @@ type PdfPageCanvasProps = {
   registerPageRef: (pageNumber: number, node: HTMLElement | null) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddNativeText: (span: NativeTextSpan, text: string) => void;
+  onAddStamp: (pageNumber: number, rect: PdfRect) => void;
   onAddRedaction: (pageNumber: number, rect: PdfRect) => void;
   onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect, line?: LineGeometry) => void;
   onAddFreehand: (pageNumber: number, points: import("./editing/types").PdfPoint[]) => void;
@@ -402,6 +405,7 @@ function PdfPageCanvas({
   onAddNativeText,
   onAddShape,
   onAddRedaction,
+  onAddStamp,
   onAddFreehand,
   onStartComment,
   onPlaceSignature,
@@ -947,6 +951,7 @@ function PdfPageCanvas({
             freehandStyle={freehandStyle}
             pendingSignatureImage={pendingSignatureImage}
             onAddText={(rect) => onAddText(sourcePageNumber, rect)}
+            onAddStamp={(rect) => onAddStamp(sourcePageNumber, rect)}
             onAddRedaction={(rect) => onAddRedaction(sourcePageNumber, rect)}
             onAddShape={(shapeType, rect, line) =>
               onAddShape(sourcePageNumber, shapeType, rect, line)
@@ -983,6 +988,7 @@ type PdfViewerProps = {
   onScrollPositionChange: (documentId: string, scrollLeft: number, scrollTop: number) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddNativeText: (span: NativeTextSpan, text: string) => void;
+  onAddStamp: (pageNumber: number, rect: PdfRect) => void;
   onAddRedaction: (pageNumber: number, rect: PdfRect) => void;
   onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect, line?: LineGeometry) => void;
   onAddFreehand: (pageNumber: number, points: import("./editing/types").PdfPoint[]) => void;
@@ -1030,6 +1036,7 @@ function PdfViewer({
   onAddNativeText,
   onAddShape,
   onAddRedaction,
+  onAddStamp,
   onAddFreehand,
   onStartComment,
   onPlaceSignature,
@@ -1623,6 +1630,7 @@ function PdfViewer({
               registerPageRef={registerPageRef}
               onAddText={onAddText}
               onAddNativeText={onAddNativeText}
+                onAddStamp={onAddStamp}
                 onAddRedaction={onAddRedaction}
                 onAddShape={onAddShape}
                 onAddFreehand={onAddFreehand}
@@ -2726,6 +2734,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   // application without changing the PDF or its undo/dirty state.
   const [formUiLockedByDocument, setFormUiLockedByDocument] = useState<Record<string, boolean>>({});
   const [isFormLockConfirmOpen, setIsFormLockConfirmOpen] = useState(false);
+  const [stampLabel, setStampLabel] = useState("APPROUVÉ");
+  const [stampWithDate, setStampWithDate] = useState(false);
   const [selectedEditId, setSelectedEditId] = useState<string | null>(null);
   const [fontLibraryRevision, setFontLibraryRevision] = useState(0);
   const [eyedropperTarget, setEyedropperTarget] = useState<
@@ -2904,10 +2914,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   useEffect(() => {
     const used = new Set<string>(pendingSignatureImageId ? [pendingSignatureImageId] : []);
     const copied = clipboardEditRef.current;
-    if (copied?.type === "image" || copied?.type === "signature") used.add(copied.imageId);
+    if (copied?.type === "image" || copied?.type === "signature" || (copied?.type === "stamp" && Boolean(copied.imageId))) used.add(copied.imageId!);
     for (const state of Object.values(pdfEditsByDocument)) {
       for (const snapshot of [{ edits: state.edits }, ...state.past, ...state.future]) {
-        for (const edit of snapshot.edits) if (edit.type === "image" || edit.type === "signature") used.add(edit.imageId);
+        for (const edit of snapshot.edits) if (edit.type === "image" || edit.type === "signature" || (edit.type === "stamp" && Boolean(edit.imageId))) used.add(edit.imageId!);
       }
     }
     setSignatureImages((images) => Object.keys(images).some((id) => !used.has(id))
@@ -3141,7 +3151,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             : null;
         });
 
-        const restoredImages = await loadImageAssets([...new Set(storedDocuments.flatMap((doc) => (doc.edits ?? []).flatMap((edit) => edit.type === "image" || edit.type === "signature" ? [edit.imageId] : [])))]);
+        const restoredImages = await loadImageAssets([...new Set(storedDocuments.flatMap((doc) => (doc.edits ?? []).flatMap((edit) => edit.type === "image" || edit.type === "signature" || (edit.type === "stamp" && Boolean(edit.imageId)) ? [edit.imageId!] : [])))]);
         if (isCancelled) { restoredDocuments.forEach(releasePdfDocument); return; }
         setSignatureImages(restoredImages);
         unrestoredDocumentIds.current = failedIds;
@@ -3248,7 +3258,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         getDocumentEditingState(pdfEditsByDocument, document.id).edits.filter((edit): edit is PdfFormStateEdit => edit.type === "form_field" || edit.type === "form_lock"),
       ), edits: getDocumentEditingState(pdfEditsByDocument, document.id).edits,
         editsDirty: getDocumentEditingState(pdfEditsByDocument, document.id).isDirty,
-        imageAssets: [...new Set(getDocumentEditingState(pdfEditsByDocument, document.id).edits.flatMap((edit) => edit.type === "image" || edit.type === "signature" ? [edit.imageId] : []))].flatMap((id) => signatureImages[id] ? [signatureImages[id]] : []),
+        imageAssets: [...new Set(getDocumentEditingState(pdfEditsByDocument, document.id).edits.flatMap((edit) => edit.type === "image" || edit.type === "signature" || (edit.type === "stamp" && Boolean(edit.imageId)) ? [edit.imageId!] : []))].flatMap((id) => signatureImages[id] ? [signatureImages[id]] : []),
       }))).then((results) => {
         if (generation !== persistenceGeneration.current) return;
         setLocalPersistenceState(results.every(Boolean) ? "saved" : "failed");
@@ -3529,6 +3539,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     },
     [activeDocument],
   );
+
+  const addStampEdit = useCallback((page: number, rect: PdfRect) => {
+    if (!activeDocument) return;
+    const edit = createTextStamp(page, rect, stampLabel, stampWithDate);
+    dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
+    setSelectedEditId(edit.id);
+    setActiveEditingTool("select");
+    setExportFeedback(null);
+  }, [activeDocument, stampLabel, stampWithDate]);
 
   const addRedactionEdit = useCallback((page: number, rect: PdfRect) => {
     if (!activeDocument || !Object.values(rect).every(Number.isFinite) || rect.x1 <= rect.x0 || rect.y1 <= rect.y0) return;
@@ -3838,8 +3857,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     return () => window.removeEventListener("keydown", handleSelectedEditDeletion);
   }, [deletePdfEdit, selectedEditId]);
 
+  const stampImageInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const insertImage = async (event: ChangeEvent<HTMLInputElement>) => {
+  const insertImage = async (event: ChangeEvent<HTMLInputElement>, asStamp = false) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     const document = activeDocument;
@@ -3851,7 +3871,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const pdfPage = await document.pdfDocument.getPage(page.sourcePageIndex + 1);
       const image: SignatureImage = { ...draft, id: `image-${Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")}` };
       validateImageSession(Object.values(signatureImages), image);
-      const edit: ImageEdit = { id: `image-edit-${crypto.randomUUID()}`, type: "image", page: page.sourcePageIndex + 1, imageId: image.id, aspectLocked: false, rect: initialImageRect(pdfPage.view, image.width, image.height) };
+      const imageEdit: ImageEdit = { id: `image-edit-${crypto.randomUUID()}`, type: "image", page: page.sourcePageIndex + 1, imageId: image.id, aspectLocked: false, rect: initialImageRect(pdfPage.view, image.width, image.height) };
+      const edit: PdfEdit = asStamp ? { ...createTextStamp(page.sourcePageIndex + 1, imageEdit.rect, "", false), text: "", imageId: image.id, border: false } : imageEdit;
       setSignatureImages((images) => images[image.id] ? images : { ...images, [image.id]: image });
       dispatchPdfEdits({ type: "add", documentId: document.id, edit });
       setSelectedEditId(edit.id);
@@ -4613,7 +4634,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const desktopSource = document?.saveDestination ?? null;
       const nativeSave = isDesktopRuntime()
         ? hasRedactions || operation === "save_as" || operation === "export"
-          ? await saveDesktopPdfAs(exported.downloadedName, exported.pdfBlob)
+          ? await saveDesktopPdfAs(exported.downloadedName, exported.pdfBlob, Boolean(hasRedactions))
           : desktopSource
             ? await saveDesktopPdf(desktopSource.documentId, exported.pdfBlob)
             : null
@@ -5453,6 +5474,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <span>Sélection</span>
           </button>
 
+          <button type="button" aria-label="Tampon" title="Tampon visuel" aria-pressed={activeEditingTool === "stamp"} disabled={!activeDocument || workspaceMode !== "read"} onClick={() => { setActiveEditingTool("stamp"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); setIsPropertiesPanelVisible(true); }}><span aria-hidden="true">▣</span><span>Tampon</span></button>
+          <input ref={stampImageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier tampon image" hidden onChange={(event) => void insertImage(event, true)} />
           <button type="button" aria-label="Biffer" title="Biffage sécurisé par zones" aria-pressed={activeEditingTool === "redaction"} disabled={!activeDocument || workspaceMode !== "read"} onClick={() => { setActiveEditingTool("redaction"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }}><span aria-hidden="true">▰</span><span>Biffer</span></button>
           <button type="button" onClick={() => { setActiveEditingTool("freehand"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }} disabled={!activeDocument || workspaceMode !== "read"} aria-label="Dessiner" aria-pressed={activeEditingTool === "freehand"} title="Dessiner">
             <ToolbarIcon name="freehand" /><span>Dessin</span>
@@ -5683,6 +5706,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onScrollPositionChange={updateDocumentScrollPosition}
             onAddText={addTextEdit}
             onAddNativeText={addNativeTextEdit}
+            onAddStamp={addStampEdit}
             onAddRedaction={addRedactionEdit}
             onAddShape={addShapeEdit}
             onAddFreehand={addFreehandEdit}
@@ -5749,7 +5773,19 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <div><span>Inspecteur</span><h2>Propriétés</h2></div>
             <button type="button" aria-label="Masquer les propriétés" title="Masquer les propriétés" onClick={() => setIsPropertiesPanelVisible(false)}>❯</button>
           </header>
-          {workspaceMode === "read" && (activeEditingTool === "redaction" || selectedPdfEdit?.type === "redaction") ? (
+          {workspaceMode === "read" && selectedPdfEdit?.type === "stamp" ? (
+            <StampInspector edit={selectedPdfEdit} onUpdate={(edit, key) => updatePdfEdit(edit, key ? `${edit.id}:${key}` : undefined)} onFinish={(key) => finishPdfEditCoalescing(selectedPdfEdit.id, key)} onDelete={() => deletePdfEdit(selectedPdfEdit.id)} />
+          ) : workspaceMode === "read" && activeEditingTool === "stamp" ? (
+            <section className="shape-edit-toolbar" aria-label="Bibliothèque de tampons">
+              <strong>Tampon visuel</strong>
+              <label>Tampon prédéfini<select aria-label="Tampon prédéfini" value={STAMP_PRESETS.includes(stampLabel as typeof STAMP_PRESETS[number]) ? stampLabel : "custom"} onChange={(event) => setStampLabel(event.target.value === "custom" ? "" : event.target.value)}>{STAMP_PRESETS.map((label) => <option key={label}>{label}</option>)}<option value="custom">Personnalisé</option></select></label>
+              <label>Texte personnalisé<input aria-label="Texte personnalisé du tampon" maxLength={170} value={stampLabel} onChange={(event) => setStampLabel(event.target.value)} /></label>
+              <label><input type="checkbox" checked={stampWithDate} onChange={(event) => setStampWithDate(event.target.checked)} />Date à l’insertion (UTC)</label>
+              <p>Cliquez sur une page pour placer le tampon. La date reste figée.</p>
+              <button type="button" disabled={activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourceDocumentId !== activeDocument?.id} onClick={() => stampImageInputRef.current?.click()}>Tampon image PNG ou JPEG</button>
+              <p>Image locale insérée sur la page active. Ce marquage ne constitue pas une signature électronique.</p>
+            </section>
+          ) : workspaceMode === "read" && (activeEditingTool === "redaction" || selectedPdfEdit?.type === "redaction") ? (
             <section className="properties-panel__empty" aria-label="Biffage sécurisé">
               <strong>Biffage · En attente</strong>
               <p>Tracez des rectangles. Le biffage ne devient irréversible que dans le PDF exporté.</p>

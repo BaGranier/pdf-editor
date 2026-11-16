@@ -241,3 +241,9 @@ Pour valider la configuration desktop :
 cd apps/desktop
 npm run desktop:check
 ```
+
+Les outils **Biffer** (caviardage réel dans une copie exportée) et **Tampon**
+(marquage visuel texte ou PNG/JPEG) sont décrits dans [REDACTION_STAMPS.md](REDACTION_STAMPS.md).
+Le biffage reste en attente dans le travail original ; certaines structures PDF
+complexes sont refusées par sécurité. Il n'anonymise pas les métadonnées ni les
+informations hors zones. Un tampon ne constitue pas une signature électronique.

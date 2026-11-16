@@ -58,6 +58,14 @@ describe("desktop file bridge", () => {
     await expect(save).rejects.toThrow("Le répertoire de destination n’est pas disponible.");
   });
 
+  it("asks Rust to preserve every registered source for a redacted copy", async () => {
+    invokeMock.mockResolvedValue(null);
+    await saveDesktopPdfAs("copy.pdf", new Blob(["%PDF"]), true);
+    expect(invokeMock).toHaveBeenCalledWith("save_pdf_as", expect.any(Uint8Array), {
+      headers: { "x-pdf-name": "copy.pdf", "x-preserve-open-sources": "true" },
+    });
+  });
+
   it("materializes every PDF supplied at application startup", async () => {
     invokeMock.mockResolvedValue([{ documentId: "desktop-pdf-2", fileName: "launch.pdf", bytes: [37] }]);
     const files = await getDesktopStartupPdfs();

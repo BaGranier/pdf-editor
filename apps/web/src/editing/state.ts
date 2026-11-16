@@ -105,6 +105,8 @@ function editsAreEqual(left: PdfEdit, right: PdfEdit) {
     );
   }
 
+  if (left.type === "stamp" && right.type === "stamp") return JSON.stringify(left) === JSON.stringify(right);
+
   if (left.type === "redaction" && right.type === "redaction") return true;
 
   if (left.type === "shape" && right.type === "shape") {

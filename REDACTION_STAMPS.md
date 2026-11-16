@@ -30,7 +30,7 @@ Aucune rasterisation globale ni sauvegarde incrémentale.
 Périmètre conservateur : l'export avec biffage refuse les PDF réparés/chiffrés,
 annotations (y compris liens), formulaires et signatures numériques, calques
 optionnels, contenu alternatif/tagué, pièces jointes et scripts détectés.
-Les images partagées ou inline touchées sont également refusées : une autre
+Les images partagées, inline ou avec masque de transparence touchées sont également refusées : une autre
 occurrence pourrait exposer les pixels originaux. Les commentaires et deltas de
 formulaires ajoutés sont refusés avec un biffage. Les erreurs sont explicites.
 Aucune promesse de conserver une signature cryptographique après modification.
@@ -50,3 +50,39 @@ objets et flux décodés ainsi que les octets et les anciennes révisions incré
 Les contrôles de chaîne sentinelle, seuls, ne constituent pas une preuve générale
 contre toutes les représentations/encodages possibles d'une information. Les
 structures refusées restent à qualifier séparément avant élargissement du support.
+
+## Tampons
+
+Galerie française : APPROUVÉ, REFUSÉ, BROUILLON, CONFIDENTIEL, COPIE, REÇU.
+Choisir un libellé personnalisé et éventuellement une date UTC, figée à l'insertion,
+puis cliquer sur la page. L'inspecteur permet de modifier le texte, la police standard
+(Helvetica, Times, Courier, avec repli écran explicite), la taille, l'alignement,
+la couleur, le cadre, l'opacité et la rotation. Déplacement et dimensions utilisent
+les poignées existantes ; les propriétés continues partagent une entrée d'historique.
+Le texte est limité à 200 caractères Latin-1 imprimables (sans € ni Œ) et aux lignes
+explicites : aucun retour automatique à la ligne. Si le texte dépasse le cadre,
+l'export est refusé avec une invitation à agrandir le cadre ou réduire la police.
+Le contenu tourné est ajusté proportionnellement à l'intérieur du rectangle PDF.
+Les métriques des polices écran de repli peuvent différer légèrement du PDF standard.
+
+PNG transparent et JPEG locaux sont acceptés, avec contrôle du MIME réel/dimensions
+avant décodage et validation backend. Budget existant : 32 Mio compressés par image,
+40 Mpx, 20 000 pixels par axe ; budgets de session 512 Mio RGBA et 192 Mio encodés.
+Le bouton image place le tampon sur la page active ; on peut ensuite le déplacer.
+SVG et ressources réseau ne sont pas acceptés. Les images utilisent le même store
+IndexedDB que les images/signatures existantes ; références conservées pendant
+undo/redo et nettoyage des ressources orphelines lors des sauvegardes/suppressions.
+Pas de nouveau format de base ni de migration des anciens documents nécessaire.
+
+Les objets du document survivent au rechargement. Une bibliothèque personnalisée
+globale entre documents reste une amélioration ultérieure (les objets peuvent être
+copiés/collés dans la session). Les tampons exportés sont du contenu de page
+imprimable : texte vectoriel ou bitmap embarqué, sans annotation masquable. Ils
+restent éditables dans le travail original, mais la copie rouverte n'importe pas
+ces marquages comme objets de tampon éditables. Un tampon n'est ni une signature
+électronique ni une certification. Les PDF avec signatures/champs de signature
+sont refusés lors d'un export avec tampon pour éviter toute invalidation silencieuse.
+
+La protection desktop du biffage demande explicitement à Rust de refuser une
+nouvelle destination correspondant à un PDF déjà enregistré dans son registre de
+sources/destinations, y compris les alias résolus par canonicalisation.

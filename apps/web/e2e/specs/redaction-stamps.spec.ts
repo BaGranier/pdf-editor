@@ -1,0 +1,104 @@
+import path from "node:path";
+import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { expect, test } from "../helpers/qa-test";
+import { enterOrganizeMode, fixtureDirectory, getStoredDocuments, openApp, openPdf } from "../helpers/app";
+import { validatePdf } from "../helpers/pdf-validation";
+
+const fixture = path.join(fixtureDirectory, "redaction-stamps.pdf");
+
+test("redaction stamp: two pages, history, persistence and secure copy", async ({ page }, testInfo) => {
+  const original = readFileSync(fixture);
+  await openApp(page);
+  await openPdf(page, fixture);
+  await page.getByRole("button", { name: "Biffer", exact: true }).click();
+  for (const number of [1, 2]) {
+    const layer = page.getByLabel(`Couche d'édition de la page ${number}`, { exact: true });
+    await layer.scrollIntoViewIfNeeded();
+    const box = await layer.boundingBox();
+    if (!box) throw new Error("Missing layer");
+    const scale = box.width / 400;
+    await page.mouse.move(box.x + 30 * scale, box.y + 90 * scale);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 220 * scale, box.y + 140 * scale, { steps: 5 });
+    await page.mouse.up();
+    await expect(page.getByLabel(`Biffage en attente page ${number}`, { exact: true })).toBeVisible();
+  }
+  await page.getByRole("button", { name: "Annuler", exact: true }).click();
+  await expect(page.getByLabel("Biffage en attente page 2", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Rétablir", exact: true }).click();
+  await expect(page.getByLabel("Biffage en attente page 2", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Tampon", exact: true }).click();
+  await page.getByLabel("Tampon prédéfini").selectOption("APPROUVÉ");
+  const layer = page.getByLabel("Couche d'édition de la page 2", { exact: true });
+  await layer.click({ position: { x: 50, y: 260 } });
+  const stamp = page.getByLabel("Tampon page 2", { exact: true });
+  await expect(stamp).toBeVisible();
+  for (let i = 0; i < 15; i++) await page.getByLabel("Rotation du tampon", { exact: true }).press("ArrowRight");
+  for (let i = 0; i < 20; i++) await page.getByLabel("Opacité du tampon", { exact: true }).press("ArrowLeft");
+  const box = await stamp.boundingBox();
+  if (!box) throw new Error("Missing stamp");
+  await page.mouse.move(box.x + 20, box.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 30, box.y + 30, { steps: 3 });
+  await page.mouse.up();
+  const handle = stamp.getByRole("button", { name: "Redimensionner la forme depuis se" });
+  const handleBox = await handle.boundingBox();
+  if (!handleBox) throw new Error("Missing handle");
+  await page.mouse.move(handleBox.x + 3, handleBox.y + 3);
+  await page.mouse.down();
+  await page.mouse.move(handleBox.x + 23, handleBox.y + 13, { steps: 3 });
+  await page.mouse.up();
+  await expect.poll(async () => JSON.stringify(await getStoredDocuments(page))).toContain('"rotation":15');
+  await page.reload();
+  await expect(page.getByLabel("Tampon page 2", { exact: true })).toHaveCount(1);
+  await expect(page.getByLabel("Biffage en attente page 1", { exact: true })).toHaveCount(1);
+  const pendingZone = page.getByLabel("Biffage en attente page 1", { exact: true });
+  for (const [button, clicks] of [["Réduire le zoom", 5], ["Augmenter le zoom", 10], ["Réduire le zoom", 5]] as const) {
+    for (let i = 0; i < clicks; i++) await page.getByRole("button", { name: button, exact: true }).click();
+    await pendingZone.scrollIntoViewIfNeeded();
+    const zoneBox = await pendingZone.boundingBox();
+    const pageBox = await page.getByLabel("Couche d'édition de la page 1", { exact: true }).boundingBox();
+    expect(zoneBox && pageBox && zoneBox.width / pageBox.width).toBeCloseTo(190 / 400, 2);
+  }
+  await page.getByRole("switch", { name: "Basculer le thème" }).click();
+  await page.screenshot({ path: testInfo.outputPath("pending-dark.png") });
+  await page.getByRole("switch", { name: "Basculer le thème" }).click();
+  await page.getByLabel("Tampon page 2", { exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("stamp-pending.png") });
+  await enterOrganizeMode(page);
+  await page.getByLabel("Nom du PDF exporté").fill("redacted-copy.pdf");
+  page.once("dialog", (dialog) => dialog.accept());
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Exporter le PDF", exact: true }).click();
+  const output = testInfo.outputPath("redacted-copy.pdf");
+  await (await download).saveAs(output);
+  const checked = validatePdf(output, 2);
+  expect(checked.text).not.toContain("SECRET_TEST_12345");
+  expect(checked.text).toContain("APPROUVÉ");
+  expect(checked.text).toContain("PUBLIC_NEIGHBOR_PAGE_1");
+  execFileSync("uv", ["run", "--project", "../../services/pdf-engine", "python", "-c", "import fitz,sys; d=fitz.open(sys.argv[1]); assert all(d[i].get_pixmap().pixel(50,110)==(0,0,0) for i in range(2)); assert b'SECRET_TEST_12345' not in open(sys.argv[1],'rb').read()", output], { env: { ...process.env, UV_CACHE_DIR: path.resolve("../../.uv-cache") } });
+  await expect(page.getByRole("button", { name: "redacted-copy.pdf, document actif" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("exported-copy.png") });
+  expect(readFileSync(fixture)).toEqual(original);
+});
+
+test("stamp image: local PNG persists and exports", async ({ page }, testInfo) => {
+  await openApp(page);
+  await openPdf(page, fixture);
+  await page.getByRole("button", { name: "Tampon", exact: true }).click();
+  await page.getByLabel("Fichier tampon image", { exact: true }).setInputFiles(path.join(fixtureDirectory, "editor-image.png"));
+  const stamp = page.getByLabel("Tampon page 1", { exact: true });
+  await expect(stamp).toBeVisible();
+  for (let i = 0; i < 20; i++) await page.getByLabel("Opacité du tampon", { exact: true }).press("ArrowLeft");
+  await expect.poll(async () => JSON.stringify(await getStoredDocuments(page))).toContain('"opacity":0.8');
+  await page.reload();
+  await expect(page.getByLabel("Tampon page 1", { exact: true }).locator("image")).toHaveAttribute("href", /^data:image\/png;base64,/);
+  await enterOrganizeMode(page);
+  await page.getByLabel("Nom du PDF exporté").fill("image-stamp-copy.pdf");
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Exporter le PDF", exact: true }).click();
+  const output = testInfo.outputPath("image-stamp-copy.pdf");
+  await (await download).saveAs(output);
+  expect(validatePdf(output, 2).imageCount).toBeGreaterThan(0);
+});

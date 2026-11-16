@@ -78,6 +78,18 @@ impl DesktopFileStore {
         Ok(id)
     }
 
+    fn ensure_copy_destination(&self, path: &Path) -> Result<(), String> {
+        let destination = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let paths = self.paths.lock()
+            .map_err(|_| "Le stockage des fichiers Desktop est indisponible.".to_owned())?;
+        if paths.values().any(|source| {
+            source.canonicalize().unwrap_or_else(|_| source.clone()) == destination
+        }) {
+            return Err("Le biffage doit être enregistré dans une nouvelle copie. Choisissez un autre fichier ; le source reste inchangé.".to_owned());
+        }
+        Ok(())
+    }
+
     fn path_for(&self, document_id: &str) -> Result<PathBuf, String> {
         self.paths
             .lock()
@@ -683,6 +695,12 @@ fn save_pdf_as(
         return Ok(None);
     };
     let path = pdf_save_path(selected_path);
+    if request.headers()
+        .get("x-preserve-open-sources")
+        .and_then(|value| value.to_str().ok()) == Some("true")
+    {
+        files.ensure_copy_destination(&path)?;
+    }
     write_pdf_atomically(&path, content)?;
     let file_name = path
         .file_name()
@@ -874,6 +892,20 @@ mod tests {
         ));
         fs::create_dir(&path).expect("temporary directory");
         path
+    }
+
+    #[test]
+    fn redacted_copy_refuses_registered_sources_and_path_aliases() {
+        let directory = temporary_directory();
+        let source = directory.join("source.pdf");
+        fs::write(&source, b"synthetic source").unwrap();
+        let files = super::DesktopFileStore::new();
+        files.register(source.clone()).unwrap();
+        assert!(files.ensure_copy_destination(&source).is_err());
+        assert!(files.ensure_copy_destination(&directory.join(".").join("source.pdf")).is_err());
+        assert!(files.ensure_copy_destination(&directory.join("copy.pdf")).is_ok());
+        assert_eq!(fs::read(&source).unwrap(), b"synthetic source");
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

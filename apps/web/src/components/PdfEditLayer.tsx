@@ -22,6 +22,7 @@ import { FreehandEditBlock } from "./FreehandEditLayer";
 import { TextMarkupLayer } from "./TextMarkupLayer";
 import { CommentEditMarker } from "./CommentEditLayer";
 import { SignatureEditBlock } from "./SignatureEditLayer";
+import { StampEditBlock } from "./StampEditBlock";
 import { ShapeEditBlock } from "./ShapeEditLayer";
 import { TextEditBlock } from "./TextEditLayer";
 
@@ -35,6 +36,7 @@ type PdfEditLayerProps = {
   freehandStyle: FreehandStyle;
   pendingSignatureImage: SignatureImage | null;
   onAddText: (rect: PdfRect) => void;
+  onAddStamp?: (rect: PdfRect) => void;
   onAddRedaction: (rect: PdfRect) => void;
   onAddShape: (shapeType: ShapeType, rect: PdfRect, line?: LineGeometry) => void;
   onPlaceSignature: (rect: PdfRect) => void;
@@ -57,6 +59,7 @@ export function PdfEditLayer({
   onAddText,
   onAddShape,
   onAddRedaction,
+  onAddStamp,
   onPlaceSignature,
   onAddFreehand,
   onStartComment,
@@ -75,6 +78,7 @@ export function PdfEditLayer({
     setCreation(next);
   };
   const creationActive =
+    activeTool === "stamp" ||
     activeTool === "redaction" ||
     activeTool === "add_text" ||
     activeTool === "freehand" || activeTool === "comment" ||
@@ -130,6 +134,11 @@ export function PdfEditLayer({
     event.currentTarget.releasePointerCapture?.(event.pointerId);
     const end = pointForEvent(event);
     setCreationState(null);
+    if (activeTool === "stamp") {
+      ignoreCompletionClickRef.current = true;
+      onAddStamp?.(createPdfRectAtScreenPoint(viewport, end, 220, 90));
+      return;
+    }
     if (
       Math.hypot(end.x - currentCreation.start.x, end.y - currentCreation.start.y) < 6
     ) {
@@ -288,6 +297,8 @@ export function PdfEditLayer({
             </div>
           );
         }
+
+        if (edit.type === "stamp") return <div key={edit.id} className="pdf-edit-object" style={{ zIndex: order }}><StampEditBlock edit={edit} image={edit.imageId ? images[edit.imageId] : undefined} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} onMove={(rect) => onUpdate({ ...edit, rect })} /></div>;
 
         if (edit.type === "redaction") {
           return <div key={edit.id} className="pdf-edit-object" style={{ zIndex: 10000 + order }}>

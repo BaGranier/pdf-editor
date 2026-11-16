@@ -57,6 +57,19 @@ async function payloadFor(
 }
 
 describe("buildPdfExportPayload", () => {
+  it("exports redactions separately and includes local stamp assets in the common contract", async () => {
+    const rect = { x0: 10, y0: 10, x1: 230, y1: 100 };
+    const stamp: PdfEdit = { id: "s", type: "stamp", page: 2, rect, text: "", imageId: "asset", fontFamily: "Helvetica", fontSize: 20, color: "#b91c1c", rotation: 15, opacity: 0.5, border: false };
+    const result = await payloadFor([{ id: "r", type: "redaction", page: 1, rect }, stamp], { asset: { id: "asset", mimeType: "image/png", dataUrl: "data:image/png;base64,YQ==", width: 1, height: 1 } });
+    if (!result.ok) throw new Error(result.message);
+    const exported = JSON.parse(String(result.formData.get("plan")));
+    expect(exported.redactions).toEqual([expect.objectContaining({ type: "redaction", sourceDocumentId: "source", page: 1 })]);
+    expect(exported.stamps).toEqual([expect.objectContaining({ type: "stamp", sourceDocumentId: "source", opacity: 0.5, rotation: 15 })]);
+    expect(result.formData.getAll("imageFiles")).toHaveLength(1);
+    expect(exported.signatureImages[0]).not.toHaveProperty("dataUrl");
+    const missing = await payloadFor([stamp]);
+    expect(missing.ok).toBe(false);
+  });
   it("builds the common multipart payload for a simple organized document", async () => {
     const result = await payloadFor();
     if (!result.ok) throw new Error(result.message);

@@ -93,3 +93,10 @@ effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 - Refus explicite des structures complexes non qualifiées et des images partagées touchées.
 - Qualification synthétique : texte, pixels, vecteurs, rotations/CropBox et historique incrémental.
 - Périmètre et limites décrits dans `REDACTION_STAMPS.md` ; aucun push.
+
+### 2026-11-16 — FEAT-PDF-REDACTION-STAMPS / tampons
+- Galerie française, texte personnalisé/date figée, import PNG/JPEG local et inspecteur intégrés.
+- Texte vectoriel, transparence, rotation et opacité exportés comme contenu imprimable.
+- Réutilisation du stockage d'assets, de l'historique et du contrat d'export existants.
+- Refus des tampons sur PDF signés ; protection native des sources pour les copies biffées.
+- Bibliothèque personnalisée globale et sélection native de biffage restent hors MVP livré.

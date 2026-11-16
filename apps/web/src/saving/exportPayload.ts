@@ -119,7 +119,7 @@ export function buildPdfExportPayload(
   });
   const missingImage = requiredDocumentIds.some((documentId) =>
     getDocumentEditingState(input.editsByDocument, documentId).edits.some((edit) =>
-      (edit.type === "image" || edit.type === "signature") && exportedPagesByDocument.get(documentId)?.has(edit.page) && !input.signatureImages[edit.imageId]));
+      (edit.type === "image" || edit.type === "signature" || (edit.type === "stamp" && edit.imageId)) && exportedPagesByDocument.get(documentId)?.has(edit.page) && !input.signatureImages[edit.imageId!]));
   if (missingImage) return { ok: false, message: "Une image insérée est indisponible. Restaurez-la ou supprimez son objet avant l’export." };
   type ExportedEdit = PdfEdit & { sourceDocumentId: string; order: number };
   const exportedEdits: ExportedEdit[] = requiredDocumentIds.flatMap((documentId) =>
@@ -147,7 +147,8 @@ export function buildPdfExportPayload(
       edit.type === "form_lock" ? [{ ...edit, sourceDocumentId: documentId, order }] : [],
     ),
   ) as Array<PdfFormLockEdit & { sourceDocumentId: string; order: number }>;
-  const signatureImages = [...new Set([...signatureEdits, ...imageEdits].map((edit) => edit.imageId))].flatMap((imageId) => {
+  const stampEdits = exportedEdits.filter((edit) => edit.type === "stamp");
+  const signatureImages = [...new Set([...signatureEdits, ...imageEdits, ...stampEdits].flatMap((edit) => edit.imageId ? [edit.imageId] : []))].flatMap((imageId) => {
     const image = input.signatureImages[imageId];
     return image ? [image] : [];
   });
@@ -191,6 +192,7 @@ export function buildPdfExportPayload(
       ...(signatureEdits.length > 0 ? { signatures: signatureEdits } : {}),
       ...(imageEdits.length > 0 ? { images: imageEdits } : {}),
       ...(signatureImages.length > 0 ? { signatureImages: signatureImages.map(({ dataUrl: _dataUrl, ...metadata }) => metadata) } : {}),
+      ...(stampEdits.length ? { stamps: stampEdits } : {}),
       ...(exportedEdits.some((edit) => edit.type === "redaction") ? { redactions: exportedEdits.filter((edit) => edit.type === "redaction") } : {}),
       ...(shapeEdits.length > 0 ? { shapes: shapeEdits } : {}),
       ...(freehandEdits.length > 0 ? { freehands: freehandEdits } : {}),

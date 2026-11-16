@@ -85,11 +85,12 @@ export async function saveDesktopPdf(
 export async function saveDesktopPdfAs(
   suggestedName: string,
   content: Blob,
+  preserveOpenSources = false,
 ): Promise<DesktopPdfSave | null> {
   validateSaveSize(content);
   const bytes = new Uint8Array(await content.arrayBuffer());
   markSavePhase("invoke", bytes.byteLength);
   return invoke<DesktopPdfSave | null>("save_pdf_as", bytes, {
-    headers: { "x-pdf-name": encodeURIComponent(suggestedName) },
+    headers: { "x-pdf-name": encodeURIComponent(suggestedName), ...(preserveOpenSources ? { "x-preserve-open-sources": "true" } : {}) },
   }).catch((error: unknown) => { throw desktopFileError(error); });
 }

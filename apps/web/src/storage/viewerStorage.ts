@@ -424,7 +424,7 @@ async function putStoredDocument(snapshot: ViewerDocumentSnapshot) {
     // Prune assets that no persisted document references in the same transaction.
     const records = store.getAll();
     records.onsuccess = () => {
-      const used = new Set((records.result as StoredPdfDocument[]).flatMap((doc) => (doc.edits ?? []).flatMap((edit) => edit.type === "image" || edit.type === "signature" ? [edit.imageId] : [])));
+      const used = new Set((records.result as StoredPdfDocument[]).flatMap((doc) => (doc.edits ?? []).flatMap((edit) => edit.type === "image" || edit.type === "signature" || (edit.type === "stamp" && edit.imageId) ? [edit.imageId!] : [])));
       const images = transaction.objectStore(IMAGE_STORE);
       const keys = images.getAllKeys();
       keys.onsuccess = () => { for (const key of keys.result) if (!used.has(String(key))) images.delete(key); };
@@ -529,7 +529,7 @@ export async function removeStoredDocument(documentId: string) {
     store.delete(documentId);
     const records = store.getAll();
     records.onsuccess = () => {
-      const used = new Set((records.result as StoredPdfDocument[]).flatMap((doc) => (doc.edits ?? []).flatMap((edit) => edit.type === "image" || edit.type === "signature" ? [edit.imageId] : [])));
+      const used = new Set((records.result as StoredPdfDocument[]).flatMap((doc) => (doc.edits ?? []).flatMap((edit) => edit.type === "image" || edit.type === "signature" || (edit.type === "stamp" && edit.imageId) ? [edit.imageId!] : [])));
       const images = transaction.objectStore(IMAGE_STORE);
       const keys = images.getAllKeys();
       keys.onsuccess = () => { for (const key of keys.result) if (!used.has(String(key))) images.delete(key); };
@@ -619,6 +619,6 @@ export async function loadImageAssets(ids: string[]): Promise<Record<string, Sig
 }
 
 function pruneMemoryImages() {
-  const used = new Set([...memoryDocuments.values()].flatMap((doc) => (doc.edits ?? []).flatMap((edit) => edit.type === "image" || edit.type === "signature" ? [edit.imageId] : [])));
+  const used = new Set([...memoryDocuments.values()].flatMap((doc) => (doc.edits ?? []).flatMap((edit) => edit.type === "image" || edit.type === "signature" || (edit.type === "stamp" && edit.imageId) ? [edit.imageId!] : [])));
   for (const id of memoryImages.keys()) if (!used.has(id)) memoryImages.delete(id);
 }

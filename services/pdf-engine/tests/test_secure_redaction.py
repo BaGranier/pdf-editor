@@ -171,3 +171,61 @@ def test_outside_page_and_missing_page_refused():
     for edit in [zone(rect=(-1, 0, 20, 30)), zone(page=2)]:
         with pytest.raises(HTTPException):
             export(source, [edit])
+
+
+@pytest.mark.parametrize("size", [(400, 600), (600, 400)])
+def test_portrait_landscape_multiline_and_invisible_ocr(size):
+    width, height = size
+    with fitz.open() as doc:
+        page = doc.new_page(width=width, height=height)
+        page.insert_text((40, 110), SECRET)
+        page.insert_text((40, 125), SECRET, render_mode=3)  # Invisible OCR layer.
+        page.insert_text((40, 220), "PUBLIC_NEIGHBOR")
+        source = doc.tobytes()
+    result = export(source, [zone(rect=(30, height - 140, 230, height - 90))])
+    assert_no_secret(result)
+    with fitz.open(stream=result, filetype="pdf") as doc:
+        assert "PUBLIC_NEIGHBOR" in doc[0].get_text()
+
+
+def test_malformed_and_encrypted_sources_fail_with_readable_error():
+    with pytest.raises(HTTPException) as malformed:
+        main._check_redaction_source(b"not a PDF")
+    assert malformed.value.status_code == 422
+    with fitz.open() as doc:
+        doc.new_page()
+        source = doc.tobytes(
+            encryption=fitz.PDF_ENCRYPT_AES_256, user_pw="synthetic-password"
+        )
+    with pytest.raises(HTTPException) as encrypted:
+        main._check_redaction_source(source)
+    assert "chiffré" in encrypted.value.detail
+
+
+def test_encoded_alternative_text_name_is_refused():
+    with fitz.open() as doc:
+        page = doc.new_page(width=400, height=400)
+        page.insert_text((40, 110), SECRET)
+        stream = page.get_contents()[0]
+        doc.update_stream(
+            stream,
+            b"/Span << /Actual#54ext (SECRET_TEST_12345) >> BDC\n"
+            + doc.xref_stream(stream)
+            + b"\nEMC",
+        )
+        source = doc.tobytes()
+    with pytest.raises(HTTPException):
+        export(source, [zone()])
+
+
+def test_image_soft_mask_under_zone_is_refused():
+    pixels = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 100, 100), True)
+    pixels.clear_with(255)
+    pixels.set_alpha(bytes([128] * 10_000))
+    with fitz.open() as doc:
+        page = doc.new_page(width=400, height=400)
+        page.insert_image(page.rect, stream=pixels.tobytes("png"))
+        source = doc.tobytes()
+    with pytest.raises(HTTPException) as error:
+        export(source, [zone()])
+    assert "transparence" in error.value.detail

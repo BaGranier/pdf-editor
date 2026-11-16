@@ -335,6 +335,122 @@ class PdfFormLock(BaseModel):
     locked: bool = True
 
 
+class StampEdit(BaseModel):
+    align: Literal["left", "center", "right"] = "center"
+    id: str = Field(min_length=1, max_length=200)
+    type: Literal["stamp"]
+    source_document_id: str | None = Field(default=None, alias="sourceDocumentId")
+    page: int = Field(ge=1)
+    rect: PdfEditRect
+    text: str = Field(default="", max_length=200)
+    image_id: str | None = Field(default=None, alias="imageId", max_length=200)
+    font_family: Literal["Helvetica", "Times", "Courier"] = Field(
+        default="Helvetica", alias="fontFamily"
+    )
+    font_size: float = Field(
+        default=20, alias="fontSize", ge=6, le=144, allow_inf_nan=False
+    )
+    color: str = Field(default="#b91c1c", pattern=r"^#[0-9A-Fa-f]{6}$")
+    opacity: float = Field(default=1, ge=0, le=1, allow_inf_nan=False)
+    rotation: float = Field(default=0, ge=-180, le=180, allow_inf_nan=False)
+    border: bool = True
+    created_at: str | None = Field(default=None, alias="createdAt", max_length=40)
+    order: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def validate_content(self) -> "StampEdit":
+        if not self.image_id and not self.text.strip():
+            raise ValueError("Le tampon doit contenir un texte ou une image.")
+        try:
+            self.text.encode("latin-1")
+            if any(
+                ord(char) < 32 and char != "\n" or 127 <= ord(char) < 160
+                for char in self.text
+            ):
+                raise UnicodeEncodeError(
+                    "latin-1", self.text, 0, len(self.text), "control character"
+                )
+        except UnicodeEncodeError as error:
+            raise ValueError(
+                "Tampon : seuls les caractères Latin-1 des polices standard sont pris en charge (sans € ni Œ)."
+            ) from error
+        return self
+
+
+def _insert_stamp(
+    page: fitz.Page, rect: fitz.Rect, edit: StampEdit, images: dict[str, bytes]
+) -> None:
+    """Vector text / embedded local bitmap, painted page content (also printable)."""
+    with fitz.open() as stamp:
+        canvas = stamp.new_page(width=rect.width, height=rect.height)
+        color = _parse_hex_color(edit.color)
+        if edit.image_id:
+            if edit.image_id not in images:
+                raise HTTPException(
+                    status_code=422, detail="Image du tampon indisponible."
+                )
+            canvas.insert_image(
+                canvas.rect, stream=images[edit.image_id], keep_proportion=False
+            )
+        else:
+            font = {"Helvetica": "hebo", "Times": "tibo", "Courier": "cobo"}[
+                edit.font_family
+            ]
+            metrics = fitz.Font(font)
+            lines = edit.text.split("\n")
+            for index, line in enumerate(lines):
+                length = fitz.get_text_length(
+                    line, fontname=font, fontsize=edit.font_size
+                )
+                baseline = (
+                    8 + edit.font_size * metrics.ascender + index * edit.font_size * 1.4
+                )
+                if (
+                    length > rect.width - 16
+                    or baseline - metrics.descender * edit.font_size > rect.height - 8
+                ):
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Le texte du tampon dépasse son cadre. Agrandissez le tampon ou réduisez sa police.",
+                    )
+                x = (
+                    8
+                    if edit.align == "left"
+                    else rect.width - 8 - length
+                    if edit.align == "right"
+                    else rect.width / 2 - length / 2
+                )
+                canvas.insert_text(
+                    (x, baseline),
+                    line,
+                    fontname=font,
+                    fontsize=edit.font_size,
+                    color=color,
+                )
+        if edit.border:
+            canvas.draw_rect(
+                canvas.rect + (1, 1, -1, -1),
+                color=color,
+                width=2,
+            )
+        if edit.opacity != 1:
+            canvas.clean_contents()
+            state = stamp.get_new_xref()
+            stamp.update_object(
+                state, f"<< /Type /ExtGState /ca {edit.opacity} /CA {edit.opacity} >>"
+            )
+            stamp.xref_set_key(
+                canvas.xref, "Resources/ExtGState/StampOpacity", f"{state} 0 R"
+            )
+            stream = canvas.get_contents()[0]
+            stamp.update_stream(
+                stream, b"q /StampOpacity gs\n" + stamp.xref_stream(stream) + b"\nQ"
+            )
+        page.show_pdf_page(
+            rect, stamp, 0, rotate=-edit.rotation, keep_proportion=True, overlay=True
+        )
+
+
 class RedactionEdit(BaseModel):
     id: str = Field(min_length=1, max_length=200)
     type: Literal["redaction"]
@@ -357,6 +473,7 @@ class OrganizeExportPlan(BaseModel):
     )
     signatures: list[SignatureEdit] = Field(default_factory=list)
     images: list[ImageEdit] = Field(default_factory=list)
+    stamps: list[StampEdit] = Field(default_factory=list, max_length=2000)
     redactions: list[RedactionEdit] = Field(default_factory=list, max_length=2000)
     shapes: list[ShapeEdit] = Field(default_factory=list)
     freehands: list[FreehandEdit] = Field(default_factory=list)
@@ -1157,7 +1274,9 @@ def apply_visual_edits(
     comment_edits_by_output_page: dict[int, list[PdfCommentEdit]] | None = None,
     native_text_edits_by_output_page: dict[int, list[NativeTextEdit]] | None = None,
     font_resources: dict[str, bytes] | None = None,
+    stamp_edits_by_output_page: dict[int, list[StampEdit]] | None = None,
 ) -> bytes:
+    stamp_edits_by_output_page = stamp_edits_by_output_page or {}
     shape_edits_by_output_page = shape_edits_by_output_page or {}
     freehand_edits_by_output_page = freehand_edits_by_output_page or {}
     text_markup_edits_by_output_page = text_markup_edits_by_output_page or {}
@@ -1165,7 +1284,8 @@ def apply_visual_edits(
     native_text_edits_by_output_page = native_text_edits_by_output_page or {}
     font_resources = font_resources or {}
     if (
-        not text_edits_by_output_page
+        not stamp_edits_by_output_page
+        and not text_edits_by_output_page
         and not signature_edits_by_output_page
         and not shape_edits_by_output_page
         and not freehand_edits_by_output_page
@@ -1178,7 +1298,8 @@ def apply_visual_edits(
     try:
         with fitz.open(stream=source, filetype="pdf") as document:
             output_page_indexes = (
-                set(text_edits_by_output_page)
+                set(stamp_edits_by_output_page)
+                | set(text_edits_by_output_page)
                 | set(signature_edits_by_output_page)
                 | set(shape_edits_by_output_page)
                 | set(freehand_edits_by_output_page)
@@ -1281,13 +1402,15 @@ def apply_visual_edits(
                             overlay=True,
                         )
                 visual_edits: list[
-                    AddTextEdit
+                    StampEdit
+                    | AddTextEdit
                     | SignatureEdit
                     | ShapeEdit
                     | FreehandEdit
                     | TextMarkupEdit
                     | PdfCommentEdit
                 ] = [
+                    *stamp_edits_by_output_page.get(output_page_index, []),
                     *text_edits_by_output_page.get(output_page_index, []),
                     *signature_edits_by_output_page.get(output_page_index, []),
                     *shape_edits_by_output_page.get(output_page_index, []),
@@ -1303,7 +1426,13 @@ def apply_visual_edits(
                         edit.rect.y1,
                     )
                     page_rect = pdf_rect * page.transformation_matrix
-                    if isinstance(edit, AddTextEdit):
+                    if isinstance(edit, StampEdit):
+                        rotation = page.rotation
+                        page.set_rotation(0)
+                        page_rect = pdf_rect * page.transformation_matrix
+                        _insert_stamp(page, page_rect, edit, signature_images)
+                        page.set_rotation(rotation)
+                    elif isinstance(edit, AddTextEdit):
                         if not edit.text:
                             continue
                         fontname = _resolve_insert_font(
@@ -1862,32 +1991,51 @@ def _check_redaction_source(source: bytes) -> None:
     representations we cannot safely qualify, including accessible annotation
     metadata, forms/signatures, optional layers and marked-content replacement text.
     """
-    with fitz.open(stream=source, filetype="pdf") as document:
-        if document.is_encrypted or document.is_repaired:
-            raise _redaction_error("PDF chiffré ou réparé non pris en charge.")
-        forbidden = re.compile(
-            r"/(?:Annots|AcroForm|FT|OCProperties|OC|ActualText|Alt|StructTreeRoot|"
-            r"EmbeddedFiles|Filespec|JavaScript|JS|AA|OpenAction|Collection|AF|"
-            r"RichMedia|XFA|PieceInfo)\b"
-        )
-        for xref in range(1, document.xref_length()):
-            if forbidden.search(document.xref_object(xref)):
-                raise _redaction_error(
-                    "annotations, formulaires/signatures, calques, pièces jointes, "
-                    "scripts ou contenu alternatif non qualifiés."
-                )
-            if document.xref_is_stream(xref):
-                # Marked content may carry extractable alternative strings in streams.
-                if re.search(rb"/(?:ActualText|Alt|OC)\b", document.xref_stream(xref)):
-                    raise _redaction_error("contenu alternatif ou calque non qualifié.")
+    try:
+        with fitz.open(stream=source, filetype="pdf") as document:
+            if document.is_encrypted or document.is_repaired:
+                raise _redaction_error("PDF chiffré ou réparé non pris en charge.")
+            forbidden = re.compile(
+                r"/(?:Annots|AcroForm|FT|OCProperties|OC|ActualText|Alt|StructTreeRoot|"
+                r"EmbeddedFiles|Filespec|JavaScript|JS|AA|OpenAction|Collection|AF|"
+                r"RichMedia|XFA|PieceInfo)\b"
+            )
+            content_streams: set[int] = set()
+            for page in document:
+                content_streams.update(page.get_contents())
+                content_streams.update(item[0] for item in page.get_xobjects())
+            for xref in range(1, document.xref_length()):
+                if forbidden.search(document.xref_object(xref)):
+                    raise _redaction_error(
+                        "annotations, formulaires/signatures, calques, pièces jointes, "
+                        "scripts ou contenu alternatif non qualifiés."
+                    )
+                if xref in content_streams and document.xref_is_stream(xref):
+                    # Marked content may carry extractable alternative strings in streams.
+                    if re.search(
+                        rb"/(?:ActualText|Alt|OC)\b|\b(?:BDC|BMC|DP|MP)\b",
+                        document.xref_stream(xref),
+                    ):
+                        raise _redaction_error(
+                            "contenu alternatif ou calque non qualifié."
+                        )
+    except HTTPException:
+        raise
+    except (RuntimeError, ValueError) as error:
+        raise _redaction_error("PDF malformé ou illisible.") from error
 
 
-def _redaction_rect(page: fitz.Page, edit: RedactionEdit) -> fitz.Rect:
+def _redaction_rect(page: fitz.Page, edit: RedactionEdit | StampEdit) -> fitz.Rect:
     # Same native bottom-left PDF coordinates as PDF.js convertToPdfPoint.
     # Call with rotation temporarily set to zero (CropBox offsets are retained).
     rect = fitz.Rect(edit.rect.x0, edit.rect.y0, edit.rect.x1, edit.rect.y1)
     rect = rect * page.transformation_matrix
     if rect.is_empty or rect.is_infinite or not page.rect.contains(rect):
+        if isinstance(edit, StampEdit):
+            raise HTTPException(
+                status_code=422,
+                detail="Le rectangle du tampon est hors page ou invalide.",
+            )
         raise _redaction_error("zone hors page ou géométrie invalide.")
     return rect
 
@@ -1916,8 +2064,17 @@ def _apply_secure_redactions(
                 rotation = page.rotation
                 page.set_rotation(0)
                 rects = [_redaction_rect(page, edit) for edit in edits]
+                masked_images = {
+                    item[0]
+                    for item in page.get_images(full=True)
+                    if item[1] or document.xref_get_key(item[0], "Mask")[0] != "null"
+                }
                 for image in page.get_image_info(xrefs=True):
                     if any(fitz.Rect(image["bbox"]).intersects(rect) for rect in rects):
+                        if image["xref"] in masked_images:
+                            raise _redaction_error(
+                                "image avec masque de transparence sous une zone non qualifiée."
+                            )
                         if not image["xref"] or image_uses[image["xref"]] > 1:
                             raise _redaction_error(
                                 "image partagée ou inline sous une zone ; "
@@ -1958,6 +2115,25 @@ def export_organized_pdf(
             status_code=422, detail="Le plan d'organisation ne contient aucune page."
         )
 
+    if plan.stamps:
+        for source in sources.values():
+            try:
+                with fitz.open(stream=source, filetype="pdf") as document:
+                    if document.get_sigflags() > 0 or any(
+                        re.search(
+                            r"/(?:FT\s*/Sig|Type\s*/Sig|ByteRange)\b",
+                            document.xref_object(xref),
+                        )
+                        for xref in range(1, document.xref_length())
+                    ):
+                        raise HTTPException(
+                            status_code=422,
+                            detail="Tampons refusés sur un PDF signé ou comportant des champs de signature. La modification invaliderait la signature numérique.",
+                        )
+            except (RuntimeError, ValueError) as error:
+                raise HTTPException(
+                    status_code=422, detail="PDF source du tampon illisible."
+                ) from error
     if plan.redactions:
         for source in sources.values():
             _check_redaction_source(source)
@@ -1968,6 +2144,17 @@ def export_organized_pdf(
         document_id: read_source_pdf(source) for document_id, source in sources.items()
     }
 
+    stamps_by_source_page: dict[tuple[str, int], list[StampEdit]] = {}
+    for edit in plan.stamps:
+        source_id = _resolve_source_document_id(edit.source_document_id, readers)
+        if edit.page > len(readers[source_id].pages):
+            raise HTTPException(status_code=422, detail="Page du tampon invalide.")
+        with fitz.open(stream=sources[source_id], filetype="pdf") as source_doc:
+            source_page = source_doc[edit.page - 1]
+            source_page.set_rotation(0)
+            _redaction_rect(source_page, edit)
+        stamps_by_source_page.setdefault((source_id, edit.page - 1), []).append(edit)
+    stamps_by_output_page: dict[int, list[StampEdit]] = {}
     redactions_by_source_page: dict[tuple[str, int], list[RedactionEdit]] = {}
     for edit in plan.redactions:
         source_id = _resolve_source_document_id(edit.source_document_id, readers)
@@ -2167,6 +2354,11 @@ def export_organized_pdf(
             readers,
         )
         reader = readers[source_document_id]
+        page_stamps = stamps_by_source_page.get(
+            (source_document_id, page_plan.source_page_index), []
+        )
+        if page_stamps:
+            stamps_by_output_page[output_page_index] = page_stamps
         page_redactions = redactions_by_source_page.get(
             (source_document_id, page_plan.source_page_index), []
         )
@@ -2245,6 +2437,7 @@ def export_organized_pdf(
         comment_edits_by_output_page=comments_by_output_page,
         native_text_edits_by_output_page=native_text_edits_by_output_page,
         font_resources=font_resources,
+        stamp_edits_by_output_page=stamps_by_output_page,
     )
     composed = _apply_secure_redactions(composed, redactions_by_output_page)
     return finalize_export(composed, plan.export_options)
