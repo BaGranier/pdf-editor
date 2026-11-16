@@ -35,6 +35,7 @@ type PdfEditLayerProps = {
   freehandStyle: FreehandStyle;
   pendingSignatureImage: SignatureImage | null;
   onAddText: (rect: PdfRect) => void;
+  onAddRedaction: (rect: PdfRect) => void;
   onAddShape: (shapeType: ShapeType, rect: PdfRect, line?: LineGeometry) => void;
   onPlaceSignature: (rect: PdfRect) => void;
   onAddFreehand: (points: PdfPoint[]) => void;
@@ -55,6 +56,7 @@ export function PdfEditLayer({
   pendingSignatureImage,
   onAddText,
   onAddShape,
+  onAddRedaction,
   onPlaceSignature,
   onAddFreehand,
   onStartComment,
@@ -73,6 +75,7 @@ export function PdfEditLayer({
     setCreation(next);
   };
   const creationActive =
+    activeTool === "redaction" ||
     activeTool === "add_text" ||
     activeTool === "freehand" || activeTool === "comment" ||
     activeTool.startsWith("shape_") ||
@@ -134,7 +137,10 @@ export function PdfEditLayer({
     }
     const rect = createPdfRectFromScreenPoints(viewport, currentCreation.start, end);
 
-    if (activeTool === "add_text") {
+    if (activeTool === "redaction") {
+      ignoreCompletionClickRef.current = true;
+      if (rect.x1 > rect.x0 && rect.y1 > rect.y0) onAddRedaction(rect);
+    } else if (activeTool === "add_text") {
       ignoreCompletionClickRef.current = true;
       onAddText(rect);
     } else if (activeTool.startsWith("shape_")) {
@@ -281,6 +287,16 @@ export function PdfEditLayer({
             />
             </div>
           );
+        }
+
+        if (edit.type === "redaction") {
+          return <div key={edit.id} className="pdf-edit-object" style={{ zIndex: 10000 + order }}>
+            <ShapeEditBlock edit={{ ...edit, type: "shape", shapeType: "rectangle", style: { strokeColor: "#dc2626", strokeWidth: 2, fillColor: "#111111", opacity: 0.65 } }}
+              label={`Biffage en attente page ${edit.page}`} viewport={viewport} selected={edit.id === selectedEditId}
+              onSelect={() => onSelect(edit.id)} onMove={(rect) => onUpdate({ ...edit, rect })}>
+              <span className="pdf-redaction-label">En attente</span>
+            </ShapeEditBlock>
+          </div>;
         }
 
         if (edit.type === "shape") {

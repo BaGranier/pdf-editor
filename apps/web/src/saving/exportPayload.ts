@@ -191,6 +191,7 @@ export function buildPdfExportPayload(
       ...(signatureEdits.length > 0 ? { signatures: signatureEdits } : {}),
       ...(imageEdits.length > 0 ? { images: imageEdits } : {}),
       ...(signatureImages.length > 0 ? { signatureImages: signatureImages.map(({ dataUrl: _dataUrl, ...metadata }) => metadata) } : {}),
+      ...(exportedEdits.some((edit) => edit.type === "redaction") ? { redactions: exportedEdits.filter((edit) => edit.type === "redaction") } : {}),
       ...(shapeEdits.length > 0 ? { shapes: shapeEdits } : {}),
       ...(freehandEdits.length > 0 ? { freehands: freehandEdits } : {}),
       ...(textMarkupEdits.length > 0 ? { textMarkups: textMarkupEdits } : {}),

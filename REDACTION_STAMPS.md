@@ -1,0 +1,52 @@
+# Biffage sécurisé et tampons
+
+## Inspection et architecture
+
+Inspection initiale : branche `agent/20261116T122234979691Z`, HEAD `293f064`,
+worktree propre. Aucun fichier local préexistant à préserver. Aucun nouvel endpoint
+ni dépendance. Les objets `PdfEdit` sont persistés avec le document dans IndexedDB ;
+`pdfEditsReducer` gère révisions, dirty state et undo/redo. Les déplacements et
+redimensionnements utilisent les helpers existants et valident au relâchement.
+Le viewport PDF.js convertit les coordonnées écran en points PDF natifs (origine
+bas gauche, CropBox comprise), indépendamment du zoom et du DPR. L'export multipart
+unique compose les pages, applique les éditions, puis finalise le PDF. Tauri
+utilise ce même contrat et les dialogues natifs.
+
+## Biffage
+
+« Biffer » crée des rectangles **en attente**, déplaçables et redimensionnables.
+Le biffage ne devient irréversible que dans le PDF exporté. Le texte barré existant
+reste un marquage visuel et n'efface aucune donnée. L'export demande confirmation,
+et le biffage est appliqué après toutes les éditions, avant compression/chiffrement.
+Sur desktop, un biffage passe systématiquement par Enregistrer sous afin de garder
+le fichier source. Les zones restent éditables dans l'état de travail original.
+
+PyMuPDF verrouillé en 1.26.3 : `add_redact_annot`, `apply_redactions` avec suppression
+du texte, remplacement des pixels d'images, suppression des tracés vectoriels
+**touchés** (le tracé entier peut disparaître). Nettoyage des ressources de pages
+et réécriture complète `garbage=4, clean=True, deflate=True, incremental=False`.
+Aucune rasterisation globale ni sauvegarde incrémentale.
+
+Périmètre conservateur : l'export avec biffage refuse les PDF réparés/chiffrés,
+annotations (y compris liens), formulaires et signatures numériques, calques
+optionnels, contenu alternatif/tagué, pièces jointes et scripts détectés.
+Les images partagées ou inline touchées sont également refusées : une autre
+occurrence pourrait exposer les pixels originaux. Les commentaires et deltas de
+formulaires ajoutés sont refusés avec un biffage. Les erreurs sont explicites.
+Aucune promesse de conserver une signature cryptographique après modification.
+
+Ce n'est **pas une anonymisation globale** : les métadonnées et les informations
+ailleurs dans le document ne sont pas effacées. L'utilisateur doit choisir toutes
+les zones nécessaires. La sélection native multiligne reste une évolution distincte ;
+le MVP utilise le tracé rectangulaire. Agrandir les rectangles pour inclure les
+caractères de bordure. Le moteur retire tout caractère dont la boîte intersecte
+une zone, et non uniquement sa portion visuelle.
+
+## Qualification
+
+Les fixtures sont créées en Python, sans documents personnels. Les tests rouvrent
+la sortie et contrôlent extraction/recherche, pixels, dessins, ressources d'images,
+objets et flux décodés ainsi que les octets et les anciennes révisions incrémentales.
+Les contrôles de chaîne sentinelle, seuls, ne constituent pas une preuve générale
+contre toutes les représentations/encodages possibles d'une information. Les
+structures refusées restent à qualifier séparément avant élargissement du support.

@@ -335,6 +335,14 @@ class PdfFormLock(BaseModel):
     locked: bool = True
 
 
+class RedactionEdit(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    type: Literal["redaction"]
+    source_document_id: str | None = Field(default=None, alias="sourceDocumentId")
+    page: int = Field(ge=1)
+    rect: PdfEditRect
+
+
 class OrganizeExportPlan(BaseModel):
     schema_version: Literal[1, 2] = Field(default=1, alias="schemaVersion")
     export_options: ExportOptions | None = Field(default=None, alias="exportOptions")
@@ -349,6 +357,7 @@ class OrganizeExportPlan(BaseModel):
     )
     signatures: list[SignatureEdit] = Field(default_factory=list)
     images: list[ImageEdit] = Field(default_factory=list)
+    redactions: list[RedactionEdit] = Field(default_factory=list, max_length=2000)
     shapes: list[ShapeEdit] = Field(default_factory=list)
     freehands: list[FreehandEdit] = Field(default_factory=list)
     text_markups: list[TextMarkupEdit] = Field(
@@ -1842,6 +1851,102 @@ def _apply_acroform_read_only_lock(writer: PdfWriter) -> None:
         field[NameObject("/Ff")] = NumberObject(flags | 1)
 
 
+def _redaction_error(reason: str) -> HTTPException:
+    return HTTPException(status_code=422, detail=f"Biffage sécurisé refusé : {reason}")
+
+
+def _check_redaction_source(source: bytes) -> None:
+    """Conservative qualification boundary, checked BEFORE page composition.
+
+    Metadata and content outside the zones are not anonymized. Reject alternate
+    representations we cannot safely qualify, including accessible annotation
+    metadata, forms/signatures, optional layers and marked-content replacement text.
+    """
+    with fitz.open(stream=source, filetype="pdf") as document:
+        if document.is_encrypted or document.is_repaired:
+            raise _redaction_error("PDF chiffré ou réparé non pris en charge.")
+        forbidden = re.compile(
+            r"/(?:Annots|AcroForm|FT|OCProperties|OC|ActualText|Alt|StructTreeRoot|"
+            r"EmbeddedFiles|Filespec|JavaScript|JS|AA|OpenAction|Collection|AF|"
+            r"RichMedia|XFA|PieceInfo)\b"
+        )
+        for xref in range(1, document.xref_length()):
+            if forbidden.search(document.xref_object(xref)):
+                raise _redaction_error(
+                    "annotations, formulaires/signatures, calques, pièces jointes, "
+                    "scripts ou contenu alternatif non qualifiés."
+                )
+            if document.xref_is_stream(xref):
+                # Marked content may carry extractable alternative strings in streams.
+                if re.search(rb"/(?:ActualText|Alt|OC)\b", document.xref_stream(xref)):
+                    raise _redaction_error("contenu alternatif ou calque non qualifié.")
+
+
+def _redaction_rect(page: fitz.Page, edit: RedactionEdit) -> fitz.Rect:
+    # Same native bottom-left PDF coordinates as PDF.js convertToPdfPoint.
+    # Call with rotation temporarily set to zero (CropBox offsets are retained).
+    rect = fitz.Rect(edit.rect.x0, edit.rect.y0, edit.rect.x1, edit.rect.y1)
+    rect = rect * page.transformation_matrix
+    if rect.is_empty or rect.is_infinite or not page.rect.contains(rect):
+        raise _redaction_error("zone hors page ou géométrie invalide.")
+    return rect
+
+
+def _apply_secure_redactions(
+    source: bytes, zones: dict[int, list[RedactionEdit]]
+) -> bytes:
+    """Last content mutation: remove text, intersecting vectors and image pixels.
+
+    Shared touched images are refused: another placement could retain the original
+    bitmap. Resource cleaning and full garbage collection discard orphan streams.
+    No incremental save is used, even when the input has historical revisions.
+    """
+    if not zones:
+        return source
+    try:
+        with fitz.open(stream=source, filetype="pdf") as document:
+            image_uses: dict[int, int] = {}
+            for page in document:
+                for image in page.get_image_info(xrefs=True):
+                    xref = image["xref"]
+                    if xref:
+                        image_uses[xref] = image_uses.get(xref, 0) + 1
+            for index, edits in zones.items():
+                page = document[index]
+                rotation = page.rotation
+                page.set_rotation(0)
+                rects = [_redaction_rect(page, edit) for edit in edits]
+                for image in page.get_image_info(xrefs=True):
+                    if any(fitz.Rect(image["bbox"]).intersects(rect) for rect in rects):
+                        if not image["xref"] or image_uses[image["xref"]] > 1:
+                            raise _redaction_error(
+                                "image partagée ou inline sous une zone ; "
+                                "isolez cette image avant de biffer."
+                            )
+                for rect in rects:
+                    page.add_redact_annot(rect, fill=(0, 0, 0), cross_out=False)
+                page.apply_redactions(
+                    images=fitz.PDF_REDACT_IMAGE_PIXELS,
+                    graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,
+                    text=fitz.PDF_REDACT_TEXT_REMOVE,
+                )
+                page.set_rotation(rotation)
+            for page in document:
+                page.clean_contents(sanitize=True)
+            return document.tobytes(
+                garbage=4,
+                clean=True,
+                deflate=True,
+                incremental=False,
+            )
+    except HTTPException:
+        raise
+    except (RuntimeError, ValueError) as error:
+        raise _redaction_error(
+            "le moteur ne peut pas garantir cette opération."
+        ) from error
+
+
 def export_organized_pdf(
     sources: dict[str, bytes],
     plan: OrganizeExportPlan,
@@ -1853,9 +1958,25 @@ def export_organized_pdf(
             status_code=422, detail="Le plan d'organisation ne contient aucune page."
         )
 
+    if plan.redactions:
+        for source in sources.values():
+            _check_redaction_source(source)
+        if plan.comments or plan.form_values or plan.form_locks:
+            raise _redaction_error("commentaires ou formulaires ajoutés non qualifiés.")
+
     readers = {
         document_id: read_source_pdf(source) for document_id, source in sources.items()
     }
+
+    redactions_by_source_page: dict[tuple[str, int], list[RedactionEdit]] = {}
+    for edit in plan.redactions:
+        source_id = _resolve_source_document_id(edit.source_document_id, readers)
+        if edit.page > len(readers[source_id].pages):
+            raise _redaction_error("page de biffage invalide.")
+        redactions_by_source_page.setdefault((source_id, edit.page - 1), []).append(
+            edit
+        )
+    redactions_by_output_page: dict[int, list[RedactionEdit]] = {}
 
     writer = PdfWriter()
     preserve_acroform = _can_preserve_acroform(plan, readers)
@@ -2046,6 +2167,11 @@ def export_organized_pdf(
             readers,
         )
         reader = readers[source_document_id]
+        page_redactions = redactions_by_source_page.get(
+            (source_document_id, page_plan.source_page_index), []
+        )
+        if page_redactions:
+            redactions_by_output_page[output_page_index] = page_redactions
 
         if page_plan.source_page_index >= len(reader.pages):
             raise HTTPException(
@@ -2120,6 +2246,7 @@ def export_organized_pdf(
         native_text_edits_by_output_page=native_text_edits_by_output_page,
         font_resources=font_resources,
     )
+    composed = _apply_secure_redactions(composed, redactions_by_output_page)
     return finalize_export(composed, plan.export_options)
 
 

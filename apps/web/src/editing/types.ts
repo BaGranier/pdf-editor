@@ -50,6 +50,7 @@ export type TextMarkupKind = "highlight" | "underline" | "strikeout";
 export type PdfCommentType = "text" | "free_text" | "highlight" | "underline" | "strikeout" | "other";
 
 export type EditingTool =
+  | "redaction"
   | "select"
   | "add_text"
   | "edit_text"
@@ -173,7 +174,9 @@ export type PdfFormLockEdit = BasePdfEdit & {
 
 export type PdfFormStateEdit = PdfFormEdit | PdfFormLockEdit;
 
-export type PdfEdit = AddTextEdit | NativeTextEdit | SignatureEdit | ImageEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit | PdfFormStateEdit;
+export type RedactionEdit = BasePdfEdit & { type: "redaction" };
+
+export type PdfEdit = RedactionEdit | AddTextEdit | NativeTextEdit | SignatureEdit | ImageEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit | PdfFormStateEdit;
 
 export type SignatureImage = {
   id: string;

@@ -12,10 +12,13 @@ import {
   translatePdfRectByScreenDelta,
   type ResizeHandle,
 } from "../editing/coordinates";
+import type { ReactNode } from "react";
 import type { PdfRect, ShapeEdit, LineGeometry } from "../editing/types";
 
 type ShapeEditBlockProps = {
   edit: ShapeEdit;
+  label?: string;
+  children?: ReactNode;
   viewport: PageViewport;
   selected: boolean;
   onSelect: () => void;
@@ -26,6 +29,8 @@ const RESIZE_HANDLES: ResizeHandle[] = ["nw", "ne", "sw", "se"];
 
 export function ShapeEditBlock({
   edit,
+  label,
+  children,
   viewport,
   selected,
   onSelect,
@@ -159,7 +164,7 @@ export function ShapeEditBlock({
       className={selected ? "pdf-shape-edit is-selected" : "pdf-shape-edit"}
       data-shape-edit-id={edit.id}
       data-shape-type={edit.shapeType}
-      aria-label={`${{ rectangle: "Rectangle", square: "Carré", ellipse: "Ellipse", circle: "Cercle", line: edit.lineStyle === "arrow" ? "Flèche" : "Ligne" }[edit.shapeType]} page ${edit.page}`}
+      aria-label={label ?? `${{ rectangle: "Rectangle", square: "Carré", ellipse: "Ellipse", circle: "Cercle", line: edit.lineStyle === "arrow" ? "Flèche" : "Ligne" }[edit.shapeType]} page ${edit.page}`}
       tabIndex={0}
       style={{
         left: style.left,
@@ -189,6 +194,7 @@ export function ShapeEditBlock({
         </> : null}
         </g>
       </svg>
+      {children}
       {selected && edit.shapeType === "line" ? <>
         <button type="button" className="pdf-shape-edit__endpoint" style={{ left: start.x, top: start.y }} aria-label="Déplacer le début du trait" onMouseDown={(event) => startInteraction("start", event)} />
         <button type="button" className="pdf-shape-edit__endpoint" style={{ left: end.x, top: end.y }} aria-label="Déplacer la fin du trait" onMouseDown={(event) => startInteraction("end", event)} />

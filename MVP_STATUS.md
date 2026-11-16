@@ -86,3 +86,10 @@ effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 - validation : provenance/hashes/imports, chargement réel, Save/OCR installés, `release:verify` et `qa:mvp` exit 0 ;
 - décision : app-local conservé, copies System32/CPython supprimées du payload ;
 - reste : validation manuelle de cette candidate sur VM Windows clean uniquement.
+
+### 2026-11-16 — FEAT-PDF-REDACTION-STAMPS / biffage
+- Zones rectangulaires en attente intégrées au viewer, historique et persistance existants.
+- Biffage natif PyMuPDF en dernière étape de contenu ; copie réécrite et nettoyée.
+- Refus explicite des structures complexes non qualifiées et des images partagées touchées.
+- Qualification synthétique : texte, pixels, vecteurs, rotations/CropBox et historique incrémental.
+- Périmètre et limites décrits dans `REDACTION_STAMPS.md` ; aucun push.

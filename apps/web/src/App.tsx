@@ -353,6 +353,7 @@ type PdfPageCanvasProps = {
   registerPageRef: (pageNumber: number, node: HTMLElement | null) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddNativeText: (span: NativeTextSpan, text: string) => void;
+  onAddRedaction: (pageNumber: number, rect: PdfRect) => void;
   onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect, line?: LineGeometry) => void;
   onAddFreehand: (pageNumber: number, points: import("./editing/types").PdfPoint[]) => void;
   onStartComment: (pageNumber: number, point: import("./editing/types").PdfPoint) => void;
@@ -400,6 +401,7 @@ function PdfPageCanvas({
   onAddText,
   onAddNativeText,
   onAddShape,
+  onAddRedaction,
   onAddFreehand,
   onStartComment,
   onPlaceSignature,
@@ -945,6 +947,7 @@ function PdfPageCanvas({
             freehandStyle={freehandStyle}
             pendingSignatureImage={pendingSignatureImage}
             onAddText={(rect) => onAddText(sourcePageNumber, rect)}
+            onAddRedaction={(rect) => onAddRedaction(sourcePageNumber, rect)}
             onAddShape={(shapeType, rect, line) =>
               onAddShape(sourcePageNumber, shapeType, rect, line)
             }
@@ -980,6 +983,7 @@ type PdfViewerProps = {
   onScrollPositionChange: (documentId: string, scrollLeft: number, scrollTop: number) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddNativeText: (span: NativeTextSpan, text: string) => void;
+  onAddRedaction: (pageNumber: number, rect: PdfRect) => void;
   onAddShape: (pageNumber: number, shapeType: ShapeType, rect: PdfRect, line?: LineGeometry) => void;
   onAddFreehand: (pageNumber: number, points: import("./editing/types").PdfPoint[]) => void;
   onStartComment: (pageNumber: number, point: import("./editing/types").PdfPoint) => void;
@@ -1025,6 +1029,7 @@ function PdfViewer({
   onAddText,
   onAddNativeText,
   onAddShape,
+  onAddRedaction,
   onAddFreehand,
   onStartComment,
   onPlaceSignature,
@@ -1618,6 +1623,7 @@ function PdfViewer({
               registerPageRef={registerPageRef}
               onAddText={onAddText}
               onAddNativeText={onAddNativeText}
+                onAddRedaction={onAddRedaction}
                 onAddShape={onAddShape}
                 onAddFreehand={onAddFreehand}
                 onStartComment={onStartComment}
@@ -3524,6 +3530,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     [activeDocument],
   );
 
+  const addRedactionEdit = useCallback((page: number, rect: PdfRect) => {
+    if (!activeDocument || !Object.values(rect).every(Number.isFinite) || rect.x1 <= rect.x0 || rect.y1 <= rect.y0) return;
+    const edit: PdfEdit = { id: `redaction-${crypto.randomUUID()}`, type: "redaction", page, rect };
+    dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
+    setSelectedEditId(edit.id);
+    setExportFeedback(null);
+  }, [activeDocument]);
+
   const addShapeEdit = useCallback(
     (pageNumber: number, shapeType: ShapeType, rect: PdfRect, line?: LineGeometry) => {
       if (!activeDocument) {
@@ -4565,6 +4579,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         setExportFeedback({ kind: "error", message: payload.message });
         return false;
       }
+      const hasRedactions = JSON.parse(String(payload.formData.get("plan"))).redactions?.length > 0;
+      if (hasRedactions && !window.confirm("Les informations biffées ne pourront pas être restaurées dans la copie exportée. Le document source reste inchangé. Les données ailleurs et les métadonnées ne sont pas anonymisées.")) return false;
       const exported = await executePdfExport({
         backendUrl,
         formData: payload.formData,
@@ -4596,7 +4612,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const document = documents.find((candidate) => candidate.id === documentId);
       const desktopSource = document?.saveDestination ?? null;
       const nativeSave = isDesktopRuntime()
-        ? operation === "save_as" || operation === "export"
+        ? hasRedactions || operation === "save_as" || operation === "export"
           ? await saveDesktopPdfAs(exported.downloadedName, exported.pdfBlob)
           : desktopSource
             ? await saveDesktopPdf(desktopSource.documentId, exported.pdfBlob)
@@ -4630,7 +4646,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           : `PDF ${operationLabel} avec succès : ${savedFileName}.`;
 
       try {
-        if ((isDesktopRuntime() && operation !== "export") || Boolean(exportOptions?.openPassword || exportOptions?.ownerPassword)) {
+        if ((!hasRedactions && isDesktopRuntime() && operation !== "export") || Boolean(exportOptions?.openPassword || exportOptions?.ownerPassword)) {
           if (operation === "save_as" && nativeSave) {
             setDocuments((currentDocuments) => currentDocuments.map((candidate) =>
               candidate.id === documentId
@@ -5437,6 +5453,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <span>Sélection</span>
           </button>
 
+          <button type="button" aria-label="Biffer" title="Biffage sécurisé par zones" aria-pressed={activeEditingTool === "redaction"} disabled={!activeDocument || workspaceMode !== "read"} onClick={() => { setActiveEditingTool("redaction"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }}><span aria-hidden="true">▰</span><span>Biffer</span></button>
           <button type="button" onClick={() => { setActiveEditingTool("freehand"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }} disabled={!activeDocument || workspaceMode !== "read"} aria-label="Dessiner" aria-pressed={activeEditingTool === "freehand"} title="Dessiner">
             <ToolbarIcon name="freehand" /><span>Dessin</span>
           </button>
@@ -5666,6 +5683,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onScrollPositionChange={updateDocumentScrollPosition}
             onAddText={addTextEdit}
             onAddNativeText={addNativeTextEdit}
+            onAddRedaction={addRedactionEdit}
             onAddShape={addShapeEdit}
             onAddFreehand={addFreehandEdit}
             onStartComment={startComment}
@@ -5731,7 +5749,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <div><span>Inspecteur</span><h2>Propriétés</h2></div>
             <button type="button" aria-label="Masquer les propriétés" title="Masquer les propriétés" onClick={() => setIsPropertiesPanelVisible(false)}>❯</button>
           </header>
-          {workspaceMode === "read" && (selectedTextEdit || selectedNativeTextEdit) ? (
+          {workspaceMode === "read" && (activeEditingTool === "redaction" || selectedPdfEdit?.type === "redaction") ? (
+            <section className="properties-panel__empty" aria-label="Biffage sécurisé">
+              <strong>Biffage · En attente</strong>
+              <p>Tracez des rectangles. Le biffage ne devient irréversible que dans le PDF exporté.</p>
+              <p>Le biffage par zones ne supprime pas les données ailleurs dans le document, notamment les métadonnées.</p>
+              {selectedPdfEdit?.type === "redaction" ? <button type="button" onClick={() => deletePdfEdit(selectedPdfEdit.id)}>Supprimer le biffage</button> : null}
+            </section>
+          ) : workspaceMode === "read" && (selectedTextEdit || selectedNativeTextEdit) ? (
             <TextEditToolbar
               edit={(selectedTextEdit ?? selectedNativeTextEdit)!}
               onUpdate={(patch) =>

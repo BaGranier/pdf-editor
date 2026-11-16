@@ -3687,3 +3687,5 @@ button:disabled {
 .presentation-render-error { position: absolute; bottom: 1rem; left: 1rem; z-index: 50; padding: .5rem; background: var(--surface); color: var(--text); }
 
 .pdf-shape-edit__endpoint { position: absolute; z-index: 5; transform: translate(-50%, -50%); width: 12px; height: 12px; border: 1px solid var(--accent); border-radius: 50%; background: var(--surface); cursor: crosshair; }
+
+.pdf-redaction-label { position: absolute; top: 2px; left: 3px; color: white; background: #991b1b; font: 11px sans-serif; pointer-events: none; }
