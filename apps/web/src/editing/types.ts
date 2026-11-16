@@ -177,6 +177,18 @@ export type PdfFormStateEdit = PdfFormEdit | PdfFormLockEdit;
 
 export type StampEdit = BasePdfEdit & {
   type: "stamp";
+  /** Missing means historical fixed-size / no-background rendering. */
+  layoutVersion?: 2;
+  fontSizeMode?: "fit" | "manual";
+  linkedColors?: boolean;
+  textColor?: string;
+  borderColor?: string;
+  fillColor?: string;
+  textOpacity?: number;
+  borderOpacity?: number;
+  fillOpacity?: number;
+  borderWidth?: number;
+  paddingRatio?: number;
   align?: "left" | "center" | "right";
   text: string;
   imageId?: string;

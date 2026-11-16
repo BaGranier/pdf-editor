@@ -31,6 +31,7 @@ from pypdf.errors import PdfReadError
 from pypdf.generic import NameObject, NumberObject
 
 from app.image_dimensions import raster_dimensions
+from app.stamp_layout import layout_stamp
 from app.export_options import ExportOptions, finalize_export
 from app.conversion import router as conversion_router
 from app.conversion.errors import ConversionError
@@ -336,6 +337,35 @@ class PdfFormLock(BaseModel):
 
 
 class StampEdit(BaseModel):
+    layout_version: Literal[2] | None = Field(default=None, alias="layoutVersion")
+    font_size_mode: Literal["fit", "manual"] = Field(
+        default="manual", alias="fontSizeMode"
+    )
+    linked_colors: bool = Field(default=True, alias="linkedColors")
+    text_color: str | None = Field(
+        default=None, alias="textColor", pattern=r"^#[0-9A-Fa-f]{6}$"
+    )
+    border_color: str | None = Field(
+        default=None, alias="borderColor", pattern=r"^#[0-9A-Fa-f]{6}$"
+    )
+    fill_color: str | None = Field(
+        default=None, alias="fillColor", pattern=r"^#[0-9A-Fa-f]{6}$"
+    )
+    text_opacity: float = Field(
+        default=1, alias="textOpacity", ge=0, le=1, allow_inf_nan=False
+    )
+    border_opacity: float = Field(
+        default=1, alias="borderOpacity", ge=0, le=1, allow_inf_nan=False
+    )
+    fill_opacity: float = Field(
+        default=0, alias="fillOpacity", ge=0, le=1, allow_inf_nan=False
+    )
+    border_width: float = Field(
+        default=2, alias="borderWidth", ge=0, le=12, allow_inf_nan=False
+    )
+    padding_ratio: float = Field(
+        default=0.1, alias="paddingRatio", ge=0, le=0.4, allow_inf_nan=False
+    )
     align: Literal["left", "center", "right"] = "center"
     id: str = Field(min_length=1, max_length=200)
     type: Literal["stamp"]
@@ -392,6 +422,61 @@ def _insert_stamp(
             canvas.insert_image(
                 canvas.rect, stream=images[edit.image_id], keep_proportion=False
             )
+        elif edit.layout_version == 2:
+            font_ref = {
+                "Helvetica": "bundled:noto-sans:400:normal",
+                "Times": "bundled:liberation-serif:400:normal",
+                "Courier": "bundled:liberation-mono:400:normal",
+            }[edit.font_family]
+            fontname = _resolve_insert_font(
+                canvas,
+                AddTextStyle(
+                    fontFamily=edit.font_family,
+                    fontRef=font_ref,
+                    fontSize=20,
+                    color=edit.color,
+                ),
+                edit.text,
+                {},
+            )
+            metrics = fitz.Font(
+                fontfile=str(BUNDLED_FONT_DIR / BUNDLED_FONT_FILES[font_ref])
+            )
+            size, lines = layout_stamp(
+                edit.text,
+                metrics,
+                rect.width,
+                rect.height,
+                edit.font_size,
+                edit.font_size_mode,
+                edit.padding_ratio,
+                edit.border_width if edit.border else 0,
+                edit.align,
+            )
+            text_color = _parse_hex_color(
+                edit.color if edit.linked_colors else edit.text_color or edit.color
+            )
+            if edit.fill_opacity > 0:
+                canvas.draw_rect(
+                    canvas.rect,
+                    color=None,
+                    fill=_parse_hex_color(
+                        edit.color
+                        if edit.linked_colors
+                        else edit.fill_color or edit.color
+                    ),
+                    fill_opacity=edit.fill_opacity,
+                )
+            for line, x, y in lines:
+                if line:
+                    canvas.insert_text(
+                        (x, y),
+                        line,
+                        fontname=fontname,
+                        fontsize=size,
+                        color=text_color,
+                        fill_opacity=edit.text_opacity,
+                    )
         else:
             font = {"Helvetica": "hebo", "Times": "tibo", "Courier": "cobo"}[
                 edit.font_family
@@ -430,8 +515,15 @@ def _insert_stamp(
         if edit.border:
             canvas.draw_rect(
                 canvas.rect + (1, 1, -1, -1),
-                color=color,
-                width=2,
+                color=_parse_hex_color(
+                    edit.color
+                    if edit.linked_colors
+                    else edit.border_color or edit.color
+                )
+                if edit.layout_version == 2
+                else color,
+                width=edit.border_width if edit.layout_version == 2 else 2,
+                stroke_opacity=edit.border_opacity if edit.layout_version == 2 else 1,
             )
         if edit.opacity != 1:
             canvas.clean_contents()

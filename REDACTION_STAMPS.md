@@ -86,3 +86,25 @@ sont refusés lors d'un export avec tampon pour éviter toute invalidation silen
 La protection desktop du biffage demande explicitement à Rust de refuser une
 nouvelle destination correspondant à un PDF déjà enregistré dans son registre de
 sources/destinations, y compris les alias résolus par canonicalisation.
+
+## Évolution : palette et taille automatique des nouveaux tampons
+
+Les nouveaux tampons texte utilisent un style versionné : texte et bordure liés
+à la couleur principale, fond de même teinte à 10 %, opacités individuelles et
+globale, option Aucun fond et couleurs déliables dans Style avancé. L'alpha global
+multiplie une seule fois les alpha des primitives. Aucun recoloriage des images.
+Les anciens objets sans `layoutVersion` gardent le rendu historique ; le bouton
+« Adopter le style harmonisé et la taille automatique » est une conversion explicite.
+
+La taille automatique utilise les avances et les boîtes d'encre de chaque glyphe,
+les lignes explicites, les deux dimensions, la bordure et les marges. Le texte est
+centré visuellement avant rotation ; les glyphes ne sont pas étirés. Le mode manuel
+signale les débordements et l'export les refuse. Les très petits cadres peuvent
+produire une police inférieure à 6 points en mode automatique, sans découpe cachée.
+
+Le style nouveau emploie les polices existantes Noto Sans, Liberation Serif et
+Liberation Mono (respectivement sous les choix Helvetica, Times, Courier).
+Le viewer charge les mêmes fichiers que le backend. Les métriques frontend sont
+générées par `scripts/generate-stamp-metrics.py` depuis ces fichiers ; un test
+compare chaque métrique aux polices réellement utilisées à l'export. L'ancien
+texte des limites de taille fixe ci-dessus ne concerne plus ce style nouveau.

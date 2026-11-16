@@ -100,3 +100,10 @@ effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 - Réutilisation du stockage d'assets, de l'historique et du contrat d'export existants.
 - Refus des tampons sur PDF signés ; protection native des sources pour les copies biffées.
 - Bibliothèque personnalisée globale et sélection native de biffage restent hors MVP livré.
+
+### 2026-11-16 — Recherche/biffage et marquages : tampons harmonisés
+- Style versionné pour les nouveaux tampons : palette liée et fond teinté à 10 %.
+- Adaptation aux boîtes réelles des glyphes, centrage visuel, mode manuel conservé.
+- Polices embarquées communes au viewer/PDF ; métriques frontend générées et vérifiées.
+- Ancien rendu préservé ; conversion explicite, contrôles de couleur/alpha/marge/bordure.
+- Tests ciblés : 21 backend et 9 frontend réussis ; aucune dépendance ajoutée.
