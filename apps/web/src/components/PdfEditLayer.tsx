@@ -78,6 +78,7 @@ export function PdfEditLayer({
     setCreation(next);
   };
   const creationActive =
+    activeTool === "visual_mask" ||
     activeTool === "stamp" ||
     activeTool === "redaction" ||
     activeTool === "add_text" ||
@@ -152,9 +153,9 @@ export function PdfEditLayer({
     } else if (activeTool === "add_text") {
       ignoreCompletionClickRef.current = true;
       onAddText(rect);
-    } else if (activeTool.startsWith("shape_")) {
+    } else if ((activeTool.startsWith("shape_") || activeTool === "visual_mask")) {
       ignoreCompletionClickRef.current = true;
-      const tool = activeTool.replace("shape_", "");
+      const tool = activeTool === "visual_mask" ? "rectangle" : activeTool.replace("shape_", "");
       const isLine = tool === "line" || tool === "arrow";
       const [sx, sy] = viewport.convertToPdfPoint(currentCreation.start.x, currentCreation.start.y);
       const [ex, ey] = viewport.convertToPdfPoint(end.x, end.y);
@@ -250,8 +251,8 @@ export function PdfEditLayer({
         const point = pointForEvent(event as unknown as ReactPointerEvent<HTMLDivElement>);
         if (activeTool === "add_text") {
           onAddText(createPdfRectAtScreenPoint(viewport, point));
-        } else if (activeTool.startsWith("shape_")) {
-          const tool = activeTool.replace("shape_", "");
+        } else if ((activeTool.startsWith("shape_") || activeTool === "visual_mask")) {
+          const tool = activeTool === "visual_mask" ? "rectangle" : activeTool.replace("shape_", "");
           const shapeType = tool === "arrow" ? "line" : tool as ShapeType;
           const rect = createPdfRectAtScreenPoint(viewport, point, 160, shapeType === "line" ? 80 : 120);
           onAddShape(shapeType, constrained ? constrainSquare(rect) : rect, { lineStyle: tool === "arrow" ? "arrow" : "line" });

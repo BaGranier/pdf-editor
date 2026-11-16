@@ -177,7 +177,7 @@ export function usePdfSearch({
     if (!activeDocument) return;
     setSearchByDocument((current) => ({ ...current, [activeDocument.id]: {
       ...(current[activeDocument.id] ?? EMPTY_SEARCH_STATE), options, isOpen: true,
-      hits: [], activeHitIndex: 0, status: "searching", error: null,
+      hits: [], activeHitIndex: 0, status: current[activeDocument.id]?.query.trim() ? "searching" : "idle", error: null,
     } }));
   }, [activeDocument]);
 

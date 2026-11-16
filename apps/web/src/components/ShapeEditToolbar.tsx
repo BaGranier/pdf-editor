@@ -39,6 +39,7 @@ export function ShapeEditToolbar({
 
   return (
     <section className="shape-edit-toolbar" aria-label="Propriétés de la forme">
+      {edit.visualMask ? <p role="note">Ce masque ne supprime pas les informations : elles peuvent être copiées ou récupérées. Pour cacher des données sensibles, utiliser Biffage sécurisé.</p> : null}
       <label>
         Type
         <select

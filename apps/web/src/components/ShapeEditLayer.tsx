@@ -18,6 +18,7 @@ import type { PdfRect, ShapeEdit, LineGeometry } from "../editing/types";
 type ShapeEditBlockProps = {
   edit: ShapeEdit;
   label?: string;
+  className?: string;
   children?: ReactNode;
   viewport: PageViewport;
   selected: boolean;
@@ -30,6 +31,7 @@ const RESIZE_HANDLES: ResizeHandle[] = ["nw", "ne", "sw", "se"];
 export function ShapeEditBlock({
   edit,
   label,
+  className,
   children,
   viewport,
   selected,
@@ -161,7 +163,7 @@ export function ShapeEditBlock({
   const head = arrowHead(start, end, strokeWidth);
   return (
     <div
-      className={selected ? "pdf-shape-edit is-selected" : "pdf-shape-edit"}
+      className={`${selected ? "pdf-shape-edit is-selected" : "pdf-shape-edit"}${className ? ` ${className}` : ""}`}
       data-shape-edit-id={edit.id}
       data-shape-type={edit.shapeType}
       aria-label={label ?? `${{ rectangle: "Rectangle", square: "Carré", ellipse: "Ellipse", circle: "Cercle", line: edit.lineStyle === "arrow" ? "Flèche" : "Ligne" }[edit.shapeType]} page ${edit.page}`}

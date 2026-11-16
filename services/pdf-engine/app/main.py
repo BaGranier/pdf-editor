@@ -32,6 +32,7 @@ from pypdf.generic import NameObject, NumberObject
 
 from app.image_dimensions import raster_dimensions
 from app.stamp_layout import layout_stamp
+from app.stamp_font_metrics import write_stamp_unicode_map
 from app.redaction_geometry import ResolveMatches, resolve_matches
 from app.export_options import ExportOptions, finalize_export
 from app.conversion import router as conversion_router
@@ -338,6 +339,19 @@ class PdfFormLock(BaseModel):
 
 
 class StampEdit(BaseModel):
+    purpose: Literal["watermark"] | None = None
+    group_id: str | None = Field(
+        default=None, alias="groupId", min_length=1, max_length=200
+    )
+    watermark_scale: float = Field(
+        default=0.9, alias="watermarkScale", ge=0.1, le=1, allow_inf_nan=False
+    )
+    offset_x: float = Field(
+        default=0, alias="offsetX", ge=-0.4, le=0.4, allow_inf_nan=False
+    )
+    offset_y: float = Field(
+        default=0, alias="offsetY", ge=-0.4, le=0.4, allow_inf_nan=False
+    )
     layout_version: Literal[2] | None = Field(default=None, alias="layoutVersion")
     font_size_mode: Literal["fit", "manual"] = Field(
         default="manual", alias="fontSizeMode"
@@ -390,6 +404,16 @@ class StampEdit(BaseModel):
 
     @model_validator(mode="after")
     def validate_content(self) -> "StampEdit":
+        if self.purpose == "watermark" and (
+            self.layout_version != 2
+            or self.image_id
+            or self.border
+            or self.fill_opacity != 0
+            or self.align != "center"
+        ):
+            raise ValueError(
+                "Un filigrane doit être un texte centré de style v2, sans cadre ni fond."
+            )
         if not self.image_id and not self.text.strip():
             raise ValueError("Le tampon doit contenir un texte ou une image.")
         try:
@@ -415,6 +439,7 @@ def _insert_stamp(
     with fitz.open() as stamp:
         canvas = stamp.new_page(width=rect.width, height=rect.height)
         color = _parse_hex_color(edit.color)
+        modern = edit.layout_version == 2 and not edit.image_id
         if edit.image_id:
             if edit.image_id not in images:
                 raise HTTPException(
@@ -453,6 +478,11 @@ def _insert_stamp(
                 edit.padding_ratio,
                 edit.border_width if edit.border else 0,
                 edit.align,
+                rotation=edit.rotation if edit.purpose == "watermark" else 0,
+                scale=edit.watermark_scale if edit.purpose == "watermark" else 1,
+                offset_x=edit.offset_x if edit.purpose == "watermark" else 0,
+                offset_y=edit.offset_y if edit.purpose == "watermark" else 0,
+                watermark=edit.purpose == "watermark",
             )
             text_color = _parse_hex_color(
                 edit.color if edit.linked_colors else edit.text_color or edit.color
@@ -466,7 +496,7 @@ def _insert_stamp(
                         if edit.linked_colors
                         else edit.fill_color or edit.color
                     ),
-                    fill_opacity=edit.fill_opacity,
+                    fill_opacity=edit.fill_opacity * edit.opacity,
                 )
             for line, x, y in lines:
                 if line:
@@ -476,7 +506,7 @@ def _insert_stamp(
                         fontname=fontname,
                         fontsize=size,
                         color=text_color,
-                        fill_opacity=edit.text_opacity,
+                        fill_opacity=edit.text_opacity * edit.opacity,
                     )
         else:
             font = {"Helvetica": "hebo", "Times": "tibo", "Courier": "cobo"}[
@@ -521,12 +551,29 @@ def _insert_stamp(
                     if edit.linked_colors
                     else edit.border_color or edit.color
                 )
-                if edit.layout_version == 2
+                if modern
                 else color,
-                width=edit.border_width if edit.layout_version == 2 else 2,
-                stroke_opacity=edit.border_opacity if edit.layout_version == 2 else 1,
+                width=edit.border_width if modern else 2,
+                stroke_opacity=edit.border_opacity * edit.opacity if modern else 1,
             )
-        if edit.opacity != 1:
+        if edit.purpose == "watermark" and edit.rotation:
+            canvas.clean_contents()
+            angle = math.radians(-edit.rotation)
+            a, b, c, d = (
+                math.cos(angle),
+                math.sin(angle),
+                -math.sin(angle),
+                math.cos(angle),
+            )
+            cx, cy = (
+                rect.width * (0.5 + edit.offset_x),
+                rect.height * (0.5 - edit.offset_y),
+            )
+            e, f = cx - a * cx - c * cy, cy - b * cx - d * cy
+            stream = canvas.get_contents()[0]
+            matrix = f"q {a} {b} {c} {d} {e} {f} cm\n".encode()
+            stamp.update_stream(stream, matrix + stamp.xref_stream(stream) + b"\nQ")
+        if edit.opacity != 1 and not modern:
             canvas.clean_contents()
             state = stamp.get_new_xref()
             stamp.update_object(
@@ -539,8 +586,21 @@ def _insert_stamp(
             stamp.update_stream(
                 stream, b"q /StampOpacity gs\n" + stamp.xref_stream(stream) + b"\nQ"
             )
+        if modern:
+            font_xref = next(
+                (item[0] for item in canvas.get_fonts() if item[4] == fontname), None
+            )
+            if font_xref is None:
+                raise ValueError("Stamp font resource unavailable")
+            write_stamp_unicode_map(stamp, font_xref, metrics, edit.text)
+            stamp.subset_fonts()
         page.show_pdf_page(
-            rect, stamp, 0, rotate=-edit.rotation, keep_proportion=True, overlay=True
+            rect,
+            stamp,
+            0,
+            rotate=0 if edit.purpose == "watermark" else -edit.rotation,
+            keep_proportion=True,
+            overlay=True,
         )
 
 

@@ -3695,3 +3695,7 @@ button:disabled {
 .redaction-search-results { max-height: 22rem; overflow: auto; display: grid; gap: .6rem; }
 .redaction-search-results > div { display: grid; gap: .3rem; }
 .redaction-search-results button { overflow-wrap: anywhere; }
+
+.pdf-watermark-edit { pointer-events: none; }
+.pdf-watermark-edit .pdf-stamp-content text { pointer-events: visiblePainted; }
+.pdf-watermark-edit .pdf-shape-edit__resize { pointer-events: none; display: none; }

@@ -50,6 +50,8 @@ export type TextMarkupKind = "highlight" | "underline" | "strikeout";
 export type PdfCommentType = "text" | "free_text" | "highlight" | "underline" | "strikeout" | "other";
 
 export type EditingTool =
+  | "watermark"
+  | "visual_mask"
   | "stamp"
   | "redaction"
   | "select"
@@ -126,6 +128,7 @@ export type LineGeometry = {
 
 export type ShapeEdit = BasePdfEdit & {
   type: "shape";
+  visualMask?: boolean;
   shapeType: ShapeType;
   lineStyle?: "line" | "arrow";
   start?: PdfPoint;
@@ -177,6 +180,11 @@ export type PdfFormStateEdit = PdfFormEdit | PdfFormLockEdit;
 
 export type StampEdit = BasePdfEdit & {
   type: "stamp";
+  purpose?: "watermark";
+  groupId?: string;
+  watermarkScale?: number;
+  offsetX?: number;
+  offsetY?: number;
   /** Missing means historical fixed-size / no-background rendering. */
   layoutVersion?: 2;
   fontSizeMode?: "fit" | "manual";

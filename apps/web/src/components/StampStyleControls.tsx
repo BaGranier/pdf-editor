@@ -16,7 +16,7 @@ export function StampStyleControls({ edit, onUpdate, onFinish }: Props) {
     ["paddingRatio", "Marge interne", 0, 40, 1, 100, "%", edit.paddingRatio ?? 0.1],
   ] as const;
   return <>
-    <label>Taille du texte<select aria-label="Mode de taille du tampon" value={edit.fontSizeMode ?? "manual"} onChange={(event) => onUpdate({ ...edit, fontSizeMode: event.target.value as StampEdit["fontSizeMode"] })}><option value="fit">Taille automatique / Adapter au cadre</option><option value="manual">Taille manuelle</option></select></label>
+    <label>Taille du texte<select aria-label="Mode de taille du tampon" value={edit.fontSizeMode ?? "manual"} onChange={(event) => onUpdate({ ...edit, fontSizeMode: event.target.value as StampEdit["fontSizeMode"], ...(event.target.value === "manual" ? { fontSize: Math.min(144, Math.max(6, layout.fontSize)) } : {}) })}><option value="fit">Taille automatique / Adapter au cadre</option><option value="manual">Taille manuelle</option></select></label>
     <output aria-label="Taille calculée du tampon">{layout.fontSize.toFixed(1)} pt</output>
     {layout.overflow ? <p role="alert">Le texte dépasse le cadre ou contient un caractère non pris en charge. L’export sera refusé ; adaptez le texte ou activez la taille automatique.</p> : null}
     <label><input type="checkbox" checked={edit.linkedColors ?? true} onChange={(event) => onUpdate({ ...edit, linkedColors: event.target.checked })} />Lier texte, bordure et fond</label>

@@ -87,6 +87,9 @@ import { NativeTextLayer } from "./components/NativeTextLayer";
 import { createTextStamp, STAMP_PRESETS } from "./editing/stamps";
 import { RedactionSearchPanel } from "./components/RedactionSearchPanel";
 import { prepareSearchRedactions } from "./editing/redactionSearch";
+import { WatermarkComposer } from "./components/WatermarkComposer";
+import { createWatermark, watermarkPages, type WatermarkDraft } from "./editing/watermarks";
+import type { StampEdit } from "./editing/types";
 import { StampInspector } from "./components/StampInspector";
 import { ShapeEditToolbar } from "./components/ShapeEditToolbar";
 import { FreehandEditToolbar } from "./components/FreehandEditToolbar";
@@ -2737,6 +2740,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [formUiLockedByDocument, setFormUiLockedByDocument] = useState<Record<string, boolean>>({});
   const [isFormLockConfirmOpen, setIsFormLockConfirmOpen] = useState(false);
   const [redactionSearchDocumentId, setRedactionSearchDocumentId] = useState<string | null>(null);
+  const [watermarkPreview, setWatermarkPreview] = useState<{ documentId: string; edits: StampEdit[] } | null>(null);
+  const watermarkGeneration = useRef(0);
+  useEffect(() => { watermarkGeneration.current++; setWatermarkPreview(null); }, [activeDocumentId, activeEditingTool]);
   const [stampLabel, setStampLabel] = useState("APPROUVÉ");
   const [stampWithDate, setStampWithDate] = useState(false);
   const [selectedEditId, setSelectedEditId] = useState<string | null>(null);
@@ -3545,6 +3551,23 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     [activeDocument],
   );
 
+  const clearWatermarkPreview = useCallback(() => { watermarkGeneration.current++; setWatermarkPreview(null); }, []);
+  const previewWatermark = useCallback(async (draft: WatermarkDraft) => {
+    if (!activeDocument || !activeOrganizationPlan) return;
+    const generation = ++watermarkGeneration.current;
+    const pages = watermarkPages(draft.scope, draft.range, activePageNumber, activeOrganizationPlan.pages.length);
+    if (activeOrganizationPlan.pages.some((page) => page.sourceDocumentId !== activeDocument.id) || new Set(activeOrganizationPlan.pages.map((page) => page.sourcePageIndex)).size !== activeOrganizationPlan.pages.length) throw new Error("Filigrane : appliquez-le dans chaque document source avant la composition ou la duplication des pages.");
+    const groupId = `watermarks-${crypto.randomUUID()}`;
+    const edits: StampEdit[] = [];
+    for (const displayPage of pages) {
+      const sourceIndex = activeOrganizationPlan.pages[displayPage - 1].sourcePageIndex;
+      const page = await activeDocument.pdfDocument.getPage(sourceIndex + 1);
+      const [x0, y0, x1, y1] = page.view;
+      edits.push(createWatermark(sourceIndex + 1, { x0, y0, x1, y1 }, draft, groupId));
+    }
+    if (generation === watermarkGeneration.current) setWatermarkPreview({ documentId: activeDocument.id, edits });
+  }, [activeDocument, activeOrganizationPlan, activePageNumber]);
+
   const addStampEdit = useCallback((page: number, rect: PdfRect) => {
     if (!activeDocument) return;
     const edit = createTextStamp(page, rect, stampLabel, stampWithDate);
@@ -3570,11 +3593,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const edit: ShapeEdit = {
         id: `shape-${Date.now()}-${nextShapeEditId.current++}`,
         type: "shape",
+        visualMask: activeEditingTool === "visual_mask",
         shapeType,
         ...line,
         page: pageNumber,
         rect,
-        style: { ...DEFAULT_SHAPE_STYLE },
+        style: activeEditingTool === "visual_mask" ? { strokeColor: "#000000", strokeWidth: 1, fillColor: "#000000", opacity: 1 } : { ...DEFAULT_SHAPE_STYLE },
       };
       dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
       setSelectedEditId(edit.id);
@@ -3582,7 +3606,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       setEyedropperTarget(null);
       setExportFeedback(null);
     },
-    [activeDocument],
+    [activeDocument, activeEditingTool],
   );
 
   const addFreehandEdit = useCallback((pageNumber: number, points: import("./editing/types").PdfPoint[]) => {
@@ -3671,7 +3695,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         setExportFeedback(null);
         return;
       }
-      dispatchPdfEdits({ type: "replace", documentId: activeDocument.id, edit, coalesceKey });
+      if (edit.type === "stamp" && edit.purpose === "watermark" && edit.groupId) {
+        const replace = current.edits.filter((item): item is StampEdit => item.type === "stamp" && item.purpose === "watermark" && item.groupId === edit.groupId)
+          .map((item) => ({ ...edit, id: item.id, page: item.page, rect: item.rect }));
+        dispatchPdfEdits({ type: "batch", documentId: activeDocument.id, replace, coalesceKey });
+      } else dispatchPdfEdits({ type: "replace", documentId: activeDocument.id, edit, coalesceKey });
       setExportFeedback(null);
     },
     [activeDocument, pdfEditsByDocument],
@@ -3788,7 +3816,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       y: offset,
     });
     let edit: PdfEdit;
-    if (sourceEdit.type === "add_text") {
+    if (sourceEdit.type === "stamp" && sourceEdit.purpose === "watermark") {
+      const [x0, y0, x1, y1] = page.view;
+      edit = { ...sourceEdit, id: `watermark-${crypto.randomUUID()}`, groupId: `watermarks-${crypto.randomUUID()}`, page: pageNumber, rect: { x0, y0, x1, y1 } };
+    } else if (sourceEdit.type === "add_text") {
       edit = {
         ...clonePdfEdit(sourceEdit),
         id: `text-${Date.now()}-${nextTextEditId.current++}`,
@@ -5479,9 +5510,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <span>Sélection</span>
           </button>
 
+          <button type="button" aria-label="Filigrane" title="Filigrane non destructif" aria-pressed={activeEditingTool === "watermark"} disabled={!activeDocument || workspaceMode !== "read"} onClick={() => { setActiveEditingTool("watermark"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); closePdfSearch(); setIsPropertiesPanelVisible(true); }}><span aria-hidden="true">╱</span><span>Filigrane</span></button>
+          <button type="button" aria-label="Masquage visuel" title="Masquage visuel réversible — ne supprime pas les données" aria-pressed={activeEditingTool === "visual_mask"} disabled={!activeDocument || workspaceMode !== "read"} onClick={() => { setActiveEditingTool("visual_mask"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); setIsPropertiesPanelVisible(true); }}><span aria-hidden="true">▧</span><span>Masquage visuel</span></button>
           <button type="button" aria-label="Tampon" title="Tampon visuel" aria-pressed={activeEditingTool === "stamp"} disabled={!activeDocument || workspaceMode !== "read"} onClick={() => { setActiveEditingTool("stamp"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); setIsPropertiesPanelVisible(true); }}><span aria-hidden="true">▣</span><span>Tampon</span></button>
           <input ref={stampImageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier tampon image" hidden onChange={(event) => void insertImage(event, true)} />
-          <button type="button" aria-label="Biffer" title="Biffage sécurisé par zones" aria-pressed={activeEditingTool === "redaction"} disabled={!activeDocument || workspaceMode !== "read"} onClick={() => { setActiveEditingTool("redaction"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }}><span aria-hidden="true">▰</span><span>Biffer</span></button>
+          <button type="button" aria-label="Biffer" title="Biffage sécurisé par zones" aria-pressed={activeEditingTool === "redaction"} disabled={!activeDocument || workspaceMode !== "read"} onClick={() => { setIsPropertiesPanelVisible(true); setActiveEditingTool("redaction"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }}><span aria-hidden="true">▰</span><span>Biffer</span></button>
           <button type="button" onClick={() => { setActiveEditingTool("freehand"); setSelectedEditId(null); setPendingSignatureImageId(null); setEyedropperTarget(null); }} disabled={!activeDocument || workspaceMode !== "read"} aria-label="Dessiner" aria-pressed={activeEditingTool === "freehand"} title="Dessiner">
             <ToolbarIcon name="freehand" /><span>Dessin</span>
           </button>
@@ -5698,7 +5731,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             document={activeDocument}
             documents={documents}
             pagePlan={activeOrganizationPlan}
-            edits={activePdfEdits}
+            edits={watermarkPreview?.documentId === activeDocument.id ? [...activePdfEdits, ...watermarkPreview.edits] : activePdfEdits}
             signatureImages={signatureImages}
             selectedEditId={selectedEditId}
             activeTool={activeEditingTool}
@@ -5778,7 +5811,18 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <div><span>Inspecteur</span><h2>Propriétés</h2></div>
             <button type="button" aria-label="Masquer les propriétés" title="Masquer les propriétés" onClick={() => setIsPropertiesPanelVisible(false)}>❯</button>
           </header>
-          {workspaceMode === "read" && activeDocument && activeSearch.isOpen && redactionSearchDocumentId === activeDocument.id ? (
+          {workspaceMode === "read" && activeEditingTool === "watermark" ? (
+            <WatermarkComposer key={activeDocument?.id} previewReady={watermarkPreview?.documentId === activeDocument?.id && Boolean(watermarkPreview?.edits.length)}
+              onPreview={previewWatermark} onClear={clearWatermarkPreview}
+              onCancel={() => { clearWatermarkPreview(); setActiveEditingTool("select"); }}
+              onApply={() => {
+                if (!activeDocument || watermarkPreview?.documentId !== activeDocument.id) return;
+                const existing = getDocumentEditingState(pdfEditsByDocument, activeDocument.id).edits;
+                const add = watermarkPreview.edits.filter((candidate) => !existing.some((edit) => edit.type === "stamp" && edit.purpose === "watermark" && edit.page === candidate.page && edit.text === candidate.text && edit.color === candidate.color && edit.rotation === candidate.rotation && edit.opacity === candidate.opacity));
+                dispatchPdfEdits({ type: "batch", documentId: activeDocument.id, add });
+                setSelectedEditId(add[0]?.id ?? null); clearWatermarkPreview(); setActiveEditingTool("select");
+              }} />
+          ) : workspaceMode === "read" && activeDocument && activeSearch.isOpen && redactionSearchDocumentId === activeDocument.id ? (
             <RedactionSearchPanel search={activeSearch}
               currentPage={(activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourcePageIndex ?? activePageNumber - 1) + 1}
               onQuery={updatePdfSearchQuery} onOptions={updatePdfSearchOptions} onNavigate={selectPdfSearchHit}
@@ -5792,7 +5836,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 return edits.length;
               }} />
           ) : workspaceMode === "read" && selectedPdfEdit?.type === "stamp" ? (
-            <StampInspector edit={selectedPdfEdit} onUpdate={(edit, key) => updatePdfEdit(edit, key ? `${edit.id}:${key}` : undefined)} onFinish={(key) => finishPdfEditCoalescing(selectedPdfEdit.id, key)} onDelete={() => deletePdfEdit(selectedPdfEdit.id)} />
+            <StampInspector edit={selectedPdfEdit} onUpdate={(edit, key) => updatePdfEdit(edit, key ? `${edit.id}:${key}` : undefined)} onFinish={(key) => finishPdfEditCoalescing(selectedPdfEdit.id, key)} onDelete={() => deletePdfEdit(selectedPdfEdit.id)} onDeleteGroup={selectedPdfEdit.purpose === "watermark" && selectedPdfEdit.groupId ? () => {
+              if (!activeDocument) return;
+              const deleteIds = activePdfEdits.filter((edit) => edit.type === "stamp" && edit.groupId === selectedPdfEdit.groupId).map((edit) => edit.id);
+              dispatchPdfEdits({ type: "batch", documentId: activeDocument.id, deleteIds }); setSelectedEditId(null);
+            } : undefined} />
           ) : workspaceMode === "read" && activeEditingTool === "stamp" ? (
             <section className="shape-edit-toolbar" aria-label="Bibliothèque de tampons">
               <strong>Tampon visuel</strong>
@@ -5803,10 +5851,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               <button type="button" disabled={activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourceDocumentId !== activeDocument?.id} onClick={() => stampImageInputRef.current?.click()}>Tampon image PNG ou JPEG</button>
               <p>Image locale insérée sur la page active. Ce marquage ne constitue pas une signature électronique.</p>
             </section>
+          ) : workspaceMode === "read" && activeEditingTool === "visual_mask" ? (
+            <section className="properties-panel__empty"><strong>Masquage visuel (réversible)</strong><p>Ce masque ne supprime pas les informations : elles peuvent être copiées ou récupérées. Pour cacher des données sensibles, utiliser Biffage sécurisé.</p><p>Tracez un rectangle ; ajustez ensuite ses propriétés.</p></section>
           ) : workspaceMode === "read" && (activeEditingTool === "redaction" || selectedPdfEdit?.type === "redaction") ? (
             <section className="properties-panel__empty" aria-label="Biffage sécurisé">
               <strong>Biffage sécurisé · En attente</strong>
-              <button type="button" onClick={() => { if (!activeDocument) return; setRedactionSearchDocumentId(activeDocument.id); updatePdfSearchOptions({ geometryProof: true }); openPdfSearch(); }}>Rechercher et biffer…</button>
+              <button type="button" onClick={() => { if (!activeDocument) return; if (activeOrganizationPlan?.pages.some((page) => page.sourceDocumentId !== activeDocument.id)) { setExportFeedback({ kind: "error", message: "Recherche de biffage : ouvrez chaque PDF source avant la composition multi-document." }); return; } setRedactionSearchDocumentId(activeDocument.id); updatePdfSearchOptions({ geometryProof: true }); openPdfSearch(); }}>Rechercher et biffer…</button>
               <p>Tracez des rectangles. Le biffage ne devient irréversible que dans le PDF exporté.</p>
               <p>Le biffage par zones ne supprime pas les données ailleurs dans le document, notamment les métadonnées.</p>
               {selectedPdfEdit?.type === "redaction" ? <button type="button" onClick={() => deletePdfEdit(selectedPdfEdit.id)}>Supprimer le biffage</button> : null}

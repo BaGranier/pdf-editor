@@ -27,10 +27,19 @@ export function layoutStamp(edit: StampEdit, width: number, height: number) {
   const bottom = Math.max(...measured.map((line) => line.y1));
   const inkHeight = Math.max(0.001, bottom - top);
   const padding = Math.min(width, height) * (edit.paddingRatio ?? 0.1) + (edit.border ? (edit.borderWidth ?? 2) / 2 : 0);
-  const size = edit.fontSizeMode === "fit" ? Math.min((width - 2 * padding) / inkWidth, (height - 2 * padding) / inkHeight) : edit.fontSize;
+  const watermark = edit.purpose === "watermark";
+  const cx = width * (0.5 + (watermark ? edit.offsetX ?? 0 : 0));
+  const cy = height * (0.5 + (watermark ? edit.offsetY ?? 0 : 0));
+  const radians = edit.rotation * Math.PI / 180;
+  const cosine = Math.abs(Math.cos(radians)), sine = Math.abs(Math.sin(radians));
+  const boxWidth = watermark ? inkWidth * cosine + inkHeight * sine : inkWidth;
+  const boxHeight = watermark ? inkWidth * sine + inkHeight * cosine : inkHeight;
+  const availableWidth = 2 * Math.min(cx - padding, width - padding - cx);
+  const availableHeight = 2 * Math.min(cy - padding, height - padding - cy);
+  const size = watermark ? edit.fontSizeMode === "fit" ? Math.min(availableWidth / boxWidth, availableHeight / boxHeight) * (edit.watermarkScale ?? 0.9) : edit.fontSize : edit.fontSizeMode === "fit" ? Math.min((width - 2 * padding) / inkWidth, (height - 2 * padding) / inkHeight) : edit.fontSize;
   const fontSize = Math.max(0.01, Math.min(1000, size));
-  const overflow = measured.some((line) => line.invalid) || !Number.isFinite(top) || size <= 0 || inkWidth * fontSize > width - 2 * padding + 0.01 || inkHeight * fontSize > height - 2 * padding + 0.01;
-  const baseline = height / 2 - (top + bottom) / 2 * fontSize;
-  const align = edit.align ?? "center";
-  return { fontSize, overflow, lines: measured.map((line, index) => ({ text: line.text, x: align === "left" ? padding - line.x0 * fontSize : align === "right" ? width - padding - line.x1 * fontSize : width / 2 - (line.x0 + line.x1) / 2 * fontSize, y: baseline + index * 1.4 * fontSize, advance: line.advance * fontSize })) };
+  const overflow = measured.some((line) => line.invalid) || !Number.isFinite(top) || size <= 0 || boxWidth * fontSize > availableWidth + 0.01 || boxHeight * fontSize > availableHeight + 0.01;
+  const baseline = cy - (top + bottom) / 2 * fontSize;
+  const align = watermark ? "center" : edit.align ?? "center";
+  return { fontSize, overflow, lines: measured.map((line, index) => ({ text: line.text, x: align === "left" ? padding - line.x0 * fontSize : align === "right" ? width - padding - line.x1 * fontSize : cx - (line.x0 + line.x1) / 2 * fontSize, y: baseline + index * 1.4 * fontSize, advance: line.advance * fontSize })) };
 }
