@@ -59,6 +59,12 @@ effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 
 ## Journal MVP
 
+### 2026-11-19 — FEAT-PDF-IMAGE-DOCUMENTS
+- Ouverture de PNG, JPEG et WebP statiques avec conservation locale des originaux.
+- Rotation, miroirs et recadrage visuel du fond avec historique et annotations.
+- PDF multipage ordonné, formats A4, Lettre ou image et réglages de cadrage.
+- Résultats Chromium, Firefox, backend et limites Desktop dans [le rapport QA](docs/QA_IMAGE_DOCUMENTS.md).
+
 ### 2026-11-19 — FIX-PDF-SIDEBAR-ICONS
 - Catégories, sous-outils et coches de navigation passent aux SVG monochromes intégrés.
 - ToolbarIcon existant partagé, mapping typé, tailles 20/18 px, aucun ajout de dépendance.

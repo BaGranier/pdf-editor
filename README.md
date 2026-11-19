@@ -247,3 +247,27 @@ Les outils **Biffer** (caviardage réel dans une copie exportée) et **Tampon**
 Le biffage reste en attente dans le travail original ; certaines structures PDF
 complexes sont refusées par sécurité. Il n'anonymise pas les métadonnées ni les
 informations hors zones. Un tampon ne constitue pas une signature électronique.
+
+## Ouvrir et convertir des images
+
+**Ouvrir**, Ctrl+O ou le glisser-déposer dans l’espace de travail acceptent les
+PNG, JPEG et WebP statiques. Le navigateur vérifie le contenu du fichier. Le
+format et les dimensions orientées sont affichés dans l’inspecteur. Utilisez
+**Éditer le fond image** pour pivoter par quarts de tour, retourner, recadrer ou
+réinitialiser le fond. Le format de page reste fixe et les annotations gardent
+leurs positions. L’historique de la session couvre les transformations et les
+annotations.
+
+**Exporter en PDF** produit une copie que l’éditeur ouvre dans un nouvel onglet.
+Pour réunir plusieurs images, utilisez **Fichier → Nouveau PDF à partir d’images**.
+Réordonnez les miniatures par glisser-déposer ou avec les boutons Monter et
+Descendre. Choisissez A4, Lettre ou la taille de chaque image à 96 dpi, puis
+l’orientation, les marges, le fond et l’ajustement. Le fond par défaut est blanc
+et la mise en page préserve le ratio. Les JPEG sont intégrés sans réencodage à
+l’import. Les profils de compression PDF peuvent réencoder les images à l’export.
+
+Le projet conserve l’original et le résultat des modifications dans le stockage
+local. Le moteur local reconstruit le PDF de travail pour l’affichage, l’export
+et la restauration. Le recadrage et le masquage sont visuels. Des pixels hors
+cadre restent récupérables dans le PDF. Le texte photographié reste une image.
+Voir [les limites et les résultats de validation](docs/QA_IMAGE_DOCUMENTS.md).
