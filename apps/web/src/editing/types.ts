@@ -1,3 +1,4 @@
+import type { ImageTransform } from "../images/imageDocument";
 export const TEXT_FONT_FAMILIES = ["Helvetica", "Times", "Courier"] as const;
 
 export type TextFontFamily = (typeof TEXT_FONT_FAMILIES)[number];
@@ -214,7 +215,9 @@ export type StampEdit = BasePdfEdit & {
 
 export type RedactionEdit = BasePdfEdit & { type: "redaction" };
 
-export type PdfEdit = StampEdit | RedactionEdit | AddTextEdit | NativeTextEdit | SignatureEdit | ImageEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit | PdfFormStateEdit;
+export type ImageBackgroundEdit = BasePdfEdit & { type: "image_background"; transforms: ImageTransform[] };
+
+export type PdfEdit = ImageBackgroundEdit | StampEdit | RedactionEdit | AddTextEdit | NativeTextEdit | SignatureEdit | ImageEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit | PdfFormStateEdit;
 
 export type SignatureImage = {
   id: string;

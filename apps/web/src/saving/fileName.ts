@@ -45,7 +45,7 @@ export function getSuggestedPdfSaveName(
     }
   }
 
-  const currentResult = normalizePdfFileName(currentFileName);
+  const currentResult = normalizePdfFileName(currentFileName.replace(/\.(?:png|jpe?g|webp)$/i, ""));
   const currentStem = currentResult.fileName?.slice(0, -4) || "document";
 
   return currentStem.toLocaleLowerCase().endsWith("-modifie")

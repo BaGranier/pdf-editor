@@ -1,4 +1,7 @@
+import { ImageDocumentDialog } from "./components/ImageDocumentDialog";
 import { ToolbarIcon } from "./components/ToolbarIcon";
+import { DOCUMENT_ACCEPT, readImageSource, createImagePdf, type ImageSource, type ImageLayout, DEFAULT_IMAGE_LAYOUT, type ImageTransform, validateImageDocumentSession } from "./images/imageDocument";
+import { ImagesPdfDialog } from "./components/ImagesPdfDialog";
 import { requestToolChange } from "./editing/toolTransition";
 import { SidebarNavigation, type NavigationAction } from "./components/SidebarNavigation";
 import { PdfPasswordDialog } from "./components/PdfPasswordDialog";
@@ -2444,9 +2447,9 @@ function DocumentTabs({
                 aria-label={`${document.fileName}${isActive ? ", document actif" : ""}`}
                 aria-describedby={isDirty ? `document-dirty-${document.id}` : undefined}
                 tabIndex={isActive ? 0 : -1}
-                title={document.fileName}
+                title={document.media?.kind === "image" ? `${document.fileName} · Image · ${document.media.mimeType.slice(6).toUpperCase()} · ${document.media.widthPx} × ${document.media.heightPx} px · ratio ${(document.media.widthPx / document.media.heightPx).toFixed(2)}` : document.fileName}
               >
-                <span className="document-title">{document.fileName}</span>
+                <span className="document-title">{document.fileName}{document.media?.kind === "image" ? ` · Image · ${document.media.mimeType.slice(6).toUpperCase()}` : ""}</span>
                 {isDirty ? <span className="document-tab__dirty" title="Modifications non sauvegardées" aria-hidden="true">●</span> : null}
                 {isDirty ? <span id={`document-dirty-${document.id}`} className="visually-hidden">Modifications non sauvegardées.</span> : null}
               </button>
@@ -2537,7 +2540,7 @@ function DocumentSidebar({
         className="visually-hidden"
         data-testid="pdf-file-input"
         type="file"
-        accept="application/pdf,.pdf"
+        accept={DOCUMENT_ACCEPT}
         multiple
         onChange={onFileChange}
         aria-label="Ouvrir un PDF"
@@ -2611,6 +2614,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setPasswordPrompt({ error, answer });
   }), []);
   const documentsRef = useRef<OpenPdfDocument[]>([]);
+  const [isImageDocumentOpen, setIsImageDocumentOpen] = useState(false);
+  const [imageBackgroundError, setImageBackgroundError] = useState<string | null>(null);
+  const [isImagesPdfOpen, setIsImagesPdfOpen] = useState(false);
   const openFileInputRef = useRef<HTMLInputElement | null>(null);
   const presentationContainerRef = useRef<HTMLElement | null>(null);
   const documentButtonRefs = useRef(new Map<string, HTMLButtonElement | null>());
@@ -3022,7 +3028,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
         for (const storedDocument of storedDocuments) {
           try {
-            restoredDocuments.push(await restoreOpenDocument(storedDocument));
+            restoredDocuments.push(await restoreOpenDocument(storedDocument, backendUrl));
           } catch (error) {
             failedCount += 1;
             failedIds.push(storedDocument.id);
@@ -3490,7 +3496,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, [activeDocument, stampLabel, stampWithDate]);
 
   const addRedactionEdit = useCallback((page: number, rect: PdfRect) => {
-    if (!activeDocument || !Object.values(rect).every(Number.isFinite) || rect.x1 <= rect.x0 || rect.y1 <= rect.y0) return;
+    if (!activeDocument || activeDocument.media?.kind === "image" || !Object.values(rect).every(Number.isFinite) || rect.x1 <= rect.x0 || rect.y1 <= rect.y0) return;
     const edit: PdfEdit = { id: `redaction-${crypto.randomUUID()}`, type: "redaction", page, rect };
     dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
     setSelectedEditId(edit.id);
@@ -3681,6 +3687,47 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setExportFeedback(null);
   }, [activeDocument, activePdfFormLock]);
 
+  const imageJobs = documents.filter((document) => document.media?.kind === "image" && (document.imageBackgroundKey ?? "[]") !== JSON.stringify(getDocumentEditingState(pdfEditsByDocument, document.id).edits.find((edit) => edit.type === "image_background")?.transforms ?? []));
+  const imageJobsKey = JSON.stringify(imageJobs.map((document) => [document.id, getDocumentEditingState(pdfEditsByDocument, document.id).edits.find((edit) => edit.type === "image_background")]));
+  useEffect(() => {
+    if (!imageJobs.length) return;
+    const controller = new AbortController();
+    setImageBackgroundError(null);
+    void (async () => {
+      for (const document of imageJobs) {
+        if (document.media?.kind !== "image") continue;
+        const transforms = getDocumentEditingState(pdfEditsByDocument, document.id).edits.find((edit) => edit.type === "image_background")?.transforms ?? [];
+        const blob = await createImagePdf(backendUrl, [document.media], { ...DEFAULT_IMAGE_LAYOUT, transforms }, controller.signal);
+        if (controller.signal.aborted) return;
+        const file = new File([blob], document.file.name, { type: "application/pdf" });
+        const task = pdfjsLib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) });
+        try {
+          const pdfDocument = await task.promise;
+          if (controller.signal.aborted) { void task.destroy(); return; }
+          const next = { ...document, file, pdfDocument, loadingTask: task, imageBackgroundKey: JSON.stringify(transforms) };
+          setDocuments((current) => current.map((candidate) => candidate.id === document.id ? { ...candidate, file: next.file, pdfDocument: next.pdfDocument, loadingTask: next.loadingTask, imageBackgroundKey: next.imageBackgroundKey } : candidate));
+          releasePdfDocument(document);
+        } catch (error) { void task.destroy(); throw error; }
+      }
+    })().catch((error: unknown) => { if (!controller.signal.aborted) setImageBackgroundError(error instanceof Error ? error.message : "Transformation impossible."); });
+    return () => controller.abort();
+    // Only background history changes trigger regeneration; annotations reuse the same PDF.
+  }, [backendUrl, imageJobsKey]);
+
+  function updateImageBackground(transform?: ImageTransform) {
+    if (!activeDocument || activeDocument.media?.kind !== "image") return;
+    const current = activeDocumentEditingState?.edits.find((edit) => edit.type === "image_background");
+    if (!transform) {
+      if (current) dispatchPdfEdits({ type: "delete", documentId: activeDocument.id, editId: current.id });
+    } else {
+      const transforms = [...(current?.transforms ?? []), transform];
+      if (transforms.length > 64) { setExportFeedback({ kind: "error", message: "64 transformations maximum. Réinitialisez le fond avant de poursuivre." }); return; }
+      const edit = { id: "image-background", type: "image_background" as const, page: 1, rect: { x0: 0, y0: 0, x1: 1, y1: 1 }, transforms };
+      dispatchPdfEdits(current ? { type: "replace", documentId: activeDocument.id, edit } : { type: "add", documentId: activeDocument.id, edit });
+    }
+    setIsImageDocumentOpen(false);
+  }
+
   const undoPdfEdit = useCallback(() => {
     if (!activeDocument) {
       return;
@@ -3708,7 +3755,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const pastePdfEdit = useCallback(async () => {
     const sourceEdit = clipboardEditRef.current;
     const targetDocument = activeDocument;
-    if (!sourceEdit || !targetDocument) {
+    if (!sourceEdit || !targetDocument || sourceEdit.type === "image_background" || (targetDocument.media?.kind === "image" && sourceEdit.type === "redaction")) {
       return;
     }
 
@@ -4250,6 +4297,16 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     source: DocumentSource = { type: "web" },
   ): Promise<OpenPdfDocument> => {
     if (protectedOpeningRef.current) throw new PdfUnlockError("Une ouverture protégée est déjà en cours.");
+    let media: OpenPdfDocument["media"] = { kind: "pdf" };
+    const originalName = file.name;
+    const header = new Uint8Array(await file.slice(0, 5).arrayBuffer());
+    if (String.fromCharCode(...header) !== "%PDF-" && (!/\.pdf$/i.test(file.name) || header[0] === 137 || header[0] === 255 || String.fromCharCode(...header.slice(0, 4)) === "RIFF")) {
+      media = await readImageSource(file);
+      validateImageDocumentSession([...documentsRef.current.flatMap((document) => document.media?.kind === "image" ? [document.media] : []), media]);
+      const pdf = await createImagePdf(backendUrl, [media]);
+      file = new File([pdf], `${originalName}.pdf`, { type: "application/pdf" });
+      source = { type: "web" }; // An image original is never a PDF save destination.
+    }
     let data = new Uint8Array(await file.arrayBuffer());
     let loadingTask = pdfjsLib.getDocument({ data });
     try {
@@ -4278,7 +4335,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       nextDocumentId.current += 1;
       const openedDocument: OpenPdfDocument = {
         id: documentId,
-        fileName: file.name,
+        media,
+        imageBackgroundKey: "[]",
+        fileName: media.kind === "image" ? originalName : file.name,
         workingSaveName,
         source,
         file,
@@ -4299,7 +4358,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       void loadingTask.destroy().catch(() => undefined);
       throw new PdfUnlockError("La copie de travail PDF n’a pas pu être ouverte.");
     }
-  }, [authenticateWorkingFile]);
+  }, [authenticateWorkingFile, backendUrl]);
 
   const openGeneratedPdfDocument = useCallback(
     async (
@@ -4525,6 +4584,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     requestedOutputName?: string,
     exportOptions?: ExportOptions,
   ): Promise<boolean> => {
+    if (imageJobs.length) { setExportFeedback({ kind: "error", message: imageBackgroundError ?? "Transformation du fond en cours. Attendez la fin de l’aperçu avant d’exporter." }); return false; }
     setIsExporting(true);
     setExportFeedback(null);
     try {
@@ -4582,7 +4642,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const desktopSource = document?.saveDestination ?? null;
       const nativeSave = isDesktopRuntime()
         ? hasRedactions || operation === "save_as" || operation === "export"
-          ? await saveDesktopPdfAs(exported.downloadedName, exported.pdfBlob, Boolean(hasRedactions))
+          ? await saveDesktopPdfAs(exported.downloadedName, exported.pdfBlob, Boolean(hasRedactions || document?.media?.kind === "image"))
           : desktopSource
             ? await saveDesktopPdf(desktopSource.documentId, exported.pdfBlob)
             : null
@@ -4615,7 +4675,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           : `PDF ${operationLabel} avec succès : ${savedFileName}.`;
 
       try {
-        if ((!hasRedactions && isDesktopRuntime() && operation !== "export") || Boolean(exportOptions?.openPassword || exportOptions?.ownerPassword)) {
+        if ((!hasRedactions && document?.media?.kind !== "image" && isDesktopRuntime() && operation !== "export") || Boolean(exportOptions?.openPassword || exportOptions?.ownerPassword)) {
           if (operation === "save_as" && nativeSave) {
             setDocuments((currentDocuments) => currentDocuments.map((candidate) =>
               candidate.id === documentId
@@ -4675,7 +4735,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     } finally {
       setIsExporting(false);
     }
-  }, [activeDocumentId, backendUrl, documents, openGeneratedPdfDocument, organizationPlans, outputName, pdfEditsByDocument, saveToOutputDir, signatureImages]);
+  }, [imageJobsKey, imageBackgroundError, activeDocumentId, backendUrl, documents, openGeneratedPdfDocument, organizationPlans, outputName, pdfEditsByDocument, saveToOutputDir, signatureImages]);
 
   const exportActiveOrganizationPlan = useCallback(() => {
     if (!activeDocument) {
@@ -4979,22 +5039,20 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     const selectedFiles = Array.from(event.currentTarget.files ?? []);
     event.currentTarget.value = "";
 
+    await importDocumentFiles(selectedFiles);
+  }
+
+  async function importDocumentFiles(selectedFiles: File[]) {
+    if (isRestoringDocuments) { setStatus("Restauration en cours..."); return; }
     if (selectedFiles.length === 0) {
       return;
     }
 
-    const pdfFiles = selectedFiles.filter(
-      (file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"),
-    );
-
-    if (pdfFiles.length === 0) {
-      setStatus("Choisissez un fichier PDF.");
-      return;
-    }
+    const pdfFiles = selectedFiles;
 
     setExportFeedback(null);
     setStatus(
-      pdfFiles.length === 1 ? "Ouverture du PDF..." : `Ouverture de ${pdfFiles.length} PDF...`,
+      pdfFiles.length === 1 ? "Ouverture du document..." : `Ouverture de ${pdfFiles.length} documents...`,
     );
 
     const openedDocuments: OpenPdfDocument[] = [];
@@ -5002,11 +5060,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
     for (const file of pdfFiles) {
       try {
-        openedDocuments.push(await loadOpenPdfDocument(file));
+        const opened = await loadOpenPdfDocument(file);
+        try {
+          validateImageDocumentSession([...documents, ...openedDocuments, opened].flatMap((document) => document.media?.kind === "image" ? [document.media] : []));
+        } catch (error) { releasePdfDocument(opened); void removeStoredDocument(opened.id); throw error; }
+        openedDocuments.push(opened);
       } catch (error) {
         if (!(error instanceof PdfOpenCancelled)) {
           failedFileNames.push(file.name);
-          if (error instanceof PdfUnlockError) setExportFeedback({ kind: "error", message: error.message });
+          if (error instanceof Error) setExportFeedback({ kind: "error", message: error.message });
         }
       }
     }
@@ -5030,7 +5092,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const failureMessage =
         failedFileNames.length === 1
           ? `Impossible d'ouvrir ${failedFileNames[0]}.`
-          : `${failedFileNames.length} PDF n'ont pas pu être ouverts.`;
+          : `${failedFileNames.length} documents n'ont pas pu être ouverts.`;
       setStatus([failureMessage, ...usageWarnings.map((warning) => `Avertissement: ${warning}`)].join(" "));
       return;
     }
@@ -5058,6 +5120,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, [propertiesPanelWidth]);
 
   const selectNavigationTool = (tool: NavigationAction) => {
+    if (activeDocument?.media?.kind === "image" && (tool === "redaction" || tool === "edit_text")) return false;
     if (!requestToolChange()) return false;
     setExportFeedback(null);
     if (tool === "ocr") { setIsOcrDialogOpen(true); return; }
@@ -5111,6 +5174,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       ref={presentationContainerRef}
       data-persistence-state={localPersistenceState}
       className={viewerMode === "presentation" ? "app-shell app-shell--presentation" : "app-shell"}
+      onDragOver={(event) => { if (event.dataTransfer.types.includes("Files")) event.preventDefault(); }}
+      onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); void importDocumentFiles(Array.from(event.dataTransfer.files)); } }}
     >
       <header
         className="toolbar toolbar--sticky"
@@ -5124,7 +5189,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
         <div className="toolbar-actions" aria-label="Actions PDF">
           <div className="toolbar-action-group toolbar-actions__primary" aria-label="Actions principales">
-            <button type="button" className="toolbar-icon-button" aria-label="Ouvrir un PDF" title={`Ouvrir un PDF (${getAppCommandShortcutLabel("file.open")})`} onClick={() => void openPdfFromUser()}><ToolbarIcon name="open" /></button>
+            <button type="button" className="toolbar-icon-button" aria-label="Ouvrir un PDF" title={`Ouvrir un PDF ou une image (${getAppCommandShortcutLabel("file.open")})`} onClick={() => void openPdfFromUser()}><ToolbarIcon name="open" /></button>
             <button
               type="button"
               className="toolbar-icon-button"
@@ -5145,14 +5210,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 type="button"
                 ref={fileMenuTriggerRef}
                 onClick={() => setIsFileMenuOpen((isOpen) => !isOpen)}
-                disabled={!activeDocument}
                 aria-haspopup="menu"
                 aria-expanded={isFileMenuOpen}
               >
                 Fichier <span aria-hidden="true">▾</span>
               </button>
-              {isFileMenuOpen && activeDocument ? (
+              {isFileMenuOpen ? (
                 <div className="insert-menu__items file-menu__items" role="menu" aria-label="Fichier">
+                  <button type="button" role="menuitem" onClick={() => { setIsFileMenuOpen(false); setIsImagesPdfOpen(true); }}>Nouveau PDF à partir d’images</button>
+                  {activeDocument?.media?.kind === "image" ? <button type="button" role="menuitem" disabled={imageJobs.length > 0 && !imageBackgroundError} onClick={() => { setIsFileMenuOpen(false); setIsImageDocumentOpen(true); }}>Éditer le fond image…</button> : null}
                   {isDesktopRuntime() ? (
                     <button
                       type="button"
@@ -5167,16 +5233,16 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                     type="button"
                     role="menuitem"
                     onClick={openActiveSaveAsDialog}
-                    disabled={isExporting}
+                    disabled={!activeDocument || isExporting}
                   >
-                    Enregistrer sous… <span aria-hidden="true">{getAppCommandShortcutLabel("file.saveAs")}</span>
+                    {activeDocument?.media?.kind === "image" ? "Exporter en PDF…" : "Enregistrer sous…"} <span aria-hidden="true">{getAppCommandShortcutLabel("file.saveAs")}</span>
                   </button>
-                  <button type="button" role="menuitem" disabled={isExporting} onClick={() => { setIsFileMenuOpen(false); setIsAdvancedExportOpen(true); }}>Exporter / Finaliser…</button>
+                  <button type="button" role="menuitem" disabled={!activeDocument || isExporting} onClick={() => { setIsFileMenuOpen(false); setIsAdvancedExportOpen(true); }}>Exporter / Finaliser…</button>
                   <button
                     type="button"
                     role="menuitem"
                     onClick={printActiveDocument}
-                    disabled={isExporting}
+                    disabled={!activeDocument || isExporting}
                   >
                     Imprimer (expérimental) <span aria-hidden="true">{isDesktopRuntime() ? getAppCommandShortcutLabel("print.document") : ""}</span>
                   </button>
@@ -5342,6 +5408,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         </div>
       ) : null}
 
+      {imageBackgroundError ? <p role="alert">{imageBackgroundError} Annulez la transformation ou réinitialisez le fond pour réessayer.</p> : imageJobs.length ? <p role="status">Transformation du fond image…</p> : null}
+      {isImageDocumentOpen && activeDocument ? <ImageDocumentDialog pdf={activeDocument.pdfDocument} onCancel={() => setIsImageDocumentOpen(false)} onTransform={updateImageBackground} onReset={() => updateImageBackground()} /> : null}
+      {isImagesPdfOpen ? <ImagesPdfDialog backendUrl={backendUrl} onCancel={() => setIsImagesPdfOpen(false)} onCreate={async (sources: ImageSource[], layout: ImageLayout, signal: AbortSignal) => {
+        const blob = await createImagePdf(backendUrl, sources, layout, signal);
+        if (signal.aborted) return;
+        await openGeneratedPdfDocument(new File([blob], "images.pdf", { type: "application/pdf" }));
+        setIsImagesPdfOpen(false);
+      }} /> : null}
       {passwordPrompt ? <PdfPasswordDialog error={passwordPrompt.error} onAnswer={passwordPrompt.answer} /> : null}
       {isOcrDialogOpen && activeDocument ? (
         <OcrDialog
@@ -5370,7 +5444,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         aria-label="Espace de travail PDF"
         style={{ "--properties-panel-width": `${propertiesPanelWidth}px` } as CSSProperties}
       >
-        <SidebarNavigation activeTool={activeEditingTool} organizing={workspaceMode === "organize"}
+        <SidebarNavigation rasterSource={activeDocument?.media?.kind === "image"} activeTool={activeEditingTool} organizing={workspaceMode === "organize"}
           disabled={!activeDocument || workspaceMode !== "read"}
           processingDisabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
           imageDisabled={!activeDocument || workspaceMode !== "read" || activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourceDocumentId !== activeDocument.id}
@@ -5671,6 +5745,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           ) : (
             <section className="properties-panel__empty">
               <strong>{workspaceMode === "organize" ? "Organisation" : "Document"}</strong>
+              {activeDocument?.media?.kind === "image" ? <>
+                <p>Image · {activeDocument.media.mimeType.slice(6).toUpperCase()} · {activeDocument.media.widthPx} × {activeDocument.media.heightPx} px · ratio {(activeDocument.media.widthPx / activeDocument.media.heightPx).toFixed(2)}</p>
+                <p>Le projet conserve l’original et les modifications localement. Exporter en PDF crée une copie ; le texte dans les pixels reste une image.</p>
+                <button type="button" disabled={imageJobs.length > 0 && !imageBackgroundError} onClick={() => setIsImageDocumentOpen(true)}>Éditer le fond image…</button>
+                <button type="button" disabled={isExporting || imageJobs.length > 0} onClick={openActiveSaveAsDialog}>Exporter en PDF</button>
+              </> : null}
               <p>
                 {activeDocument
                   ? `${activeOrganizationPlan?.pages.length ?? activeDocument.pageCount} page${(activeOrganizationPlan?.pages.length ?? activeDocument.pageCount) > 1 ? "s" : ""}`

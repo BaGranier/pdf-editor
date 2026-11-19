@@ -349,7 +349,7 @@ export function PdfEditLayer({
           return <div key={edit.id} className="pdf-edit-object" style={{ zIndex: order }}><CommentEditMarker edit={edit} viewport={viewport} selected={edit.id === selectedEditId} onSelect={() => onSelect(edit.id)} /></div>;
         }
 
-        if (edit.type === "native_text") return null;
+        if (edit.type === "native_text" || edit.type === "image_background") return null;
 
         if (edit.type === "form_field" || edit.type === "form_lock") return null;
 

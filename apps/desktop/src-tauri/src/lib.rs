@@ -109,8 +109,16 @@ fn is_pdf_path(path: &Path) -> bool {
 }
 
 fn validated_pdf_path(path: PathBuf) -> Result<PathBuf, String> {
-    if !is_pdf_path(&path) {
-        return Err("Le fichier choisi n'est pas un PDF.".to_owned());
+    let supported = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| {
+            ["pdf", "png", "jpg", "jpeg", "webp"]
+                .iter()
+                .any(|allowed| ext.eq_ignore_ascii_case(allowed))
+        });
+    if !supported {
+        return Err("Choisissez un PDF, PNG, JPEG ou WebP statique.".to_owned());
     }
     let metadata = fs::metadata(&path)
         .map_err(|error| format!("Impossible d'accéder au fichier PDF: {error}"))?;
@@ -129,6 +137,11 @@ fn read_native_pdf(path: PathBuf, files: &DesktopFileStore) -> Result<NativePdfF
         .filter(|name| !name.is_empty())
         .ok_or_else(|| "Le fichier PDF doit avoir un nom valide.".to_owned())?
         .to_owned();
+    if !is_pdf_path(&path)
+        && fs::metadata(&path).map_err(|error| error.to_string())?.len() > 32 * 1024 * 1024
+    {
+        return Err("Image trop volumineuse (32 Mio maximum).".to_owned());
+    }
     let bytes =
         fs::read(&path).map_err(|error| format!("Impossible de lire le fichier PDF: {error}"))?;
     if bytes.is_empty() {
@@ -622,8 +635,11 @@ fn get_backend_status(runtime: State<'_, BackendRuntime>) -> BackendStatus {
 #[tauri::command]
 fn open_pdf(files: State<'_, DesktopFileStore>) -> Result<Option<NativePdfFile>, String> {
     let selected_path = rfd::FileDialog::new()
-        .set_title("Ouvrir un PDF")
-        .add_filter("PDF", &["pdf", "PDF"])
+        .set_title("Ouvrir un PDF ou une image")
+        .add_filter(
+            "PDF et images",
+            &["pdf", "PDF", "png", "PNG", "jpg", "JPG", "jpeg", "JPEG", "webp", "WEBP"],
+        )
         .pick_file();
     selected_path
         .map(|path| read_native_pdf(path, &files))

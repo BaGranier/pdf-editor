@@ -51,7 +51,7 @@ function toDesktopPdfFile(response: NativePdfResponse): DesktopPdfFile {
   return {
     documentId: response.documentId,
     file: new File([new Uint8Array(response.bytes)], response.fileName, {
-      type: "application/pdf",
+      type: /\.png$/i.test(response.fileName) ? "image/png" : /\.jpe?g$/i.test(response.fileName) ? "image/jpeg" : /\.webp$/i.test(response.fileName) ? "image/webp" : "application/pdf",
     }),
   };
 }

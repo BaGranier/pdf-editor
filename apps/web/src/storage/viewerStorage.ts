@@ -1,3 +1,4 @@
+import type { ImageSource } from "../images/imageDocument";
 import type { OrganizePagePlan, OrganizedPage, PageRotation } from "../organize/pagePlan";
 import type { NativeTextEdit, PdfFormStateEdit, PdfEdit, SignatureImage } from "../editing/types";
 
@@ -18,6 +19,7 @@ export type StoredPdfDocument = {
   id: string;
   fileName: string;
   workingSaveName?: string | null;
+  media?: { kind: "pdf" } | Omit<ImageSource, "original">;
   mimeType: string;
   content: Blob;
   pageCount: number | null;
@@ -37,6 +39,7 @@ export type ViewerDocumentSnapshot = {
   id: string;
   fileName: string;
   workingSaveName?: string | null;
+  media?: { kind: "pdf" } | Omit<ImageSource, "original">;
   mimeType: string;
   content: Blob;
   pageCount: number | null;
@@ -385,6 +388,7 @@ export function toStoredPdfDocument(snapshot: ViewerDocumentSnapshot): StoredPdf
     id: snapshot.id,
     fileName: snapshot.fileName,
     workingSaveName: snapshot.workingSaveName ?? null,
+    media: snapshot.media,
     mimeType: snapshot.mimeType,
     content: snapshot.content,
     pageCount: snapshot.pageCount,

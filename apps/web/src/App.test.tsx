@@ -757,7 +757,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Fichier/ }));
     const fileMenu = screen.getByRole("menu", { name: "Fichier" });
-    expect(within(fileMenu).getAllByRole("menuitem")).toHaveLength(3);
+    expect(within(fileMenu).getAllByRole("menuitem")).toHaveLength(4);
     expect(
       within(fileMenu).getByRole("menuitem", { name: "Enregistrer sous…" }),
     ).toBeInTheDocument();

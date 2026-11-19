@@ -1,3 +1,4 @@
+import { createImagePdf, readImageSource, DEFAULT_IMAGE_LAYOUT, type SourceMedia } from "../images/imageDocument";
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentLoadingTask, PDFDocumentProxy } from "pdfjs-dist";
 import {
@@ -19,6 +20,8 @@ export type OpenPdfDocument = {
   source: DocumentSource;
   /** Set only after a successful Save As; never persisted. */
   saveDestination?: { documentId: string; fileName: string };
+  media?: SourceMedia;
+  imageBackgroundKey?: string;
   file: File;
   pdfDocument: PDFDocumentProxy;
   loadingTask: PDFDocumentLoadingTask;
@@ -77,7 +80,7 @@ export function getUniqueFileName(fileName: string, existingFileNames: string[])
     return fileName;
   }
 
-  const extensionMatch = /\.pdf$/i.exec(fileName);
+  const extensionMatch = /\.[^.]+$/.exec(fileName);
   const extension = extensionMatch ? extensionMatch[0] : ".pdf";
   const baseName = fileName.slice(0, -extension.length) || "document";
   let suffix = 2;
@@ -113,8 +116,9 @@ export function buildViewerSnapshot(document: OpenPdfDocument, nativeTextEdits: 
     id: document.id,
     fileName: document.fileName,
     workingSaveName: document.workingSaveName,
+    media: document.media?.kind === "image" ? { kind: "image", mimeType: document.media.mimeType, widthPx: document.media.widthPx, heightPx: document.media.heightPx } : document.media,
     mimeType: document.file.type,
-    content: document.file,
+    content: document.media?.kind === "image" ? document.media.original : document.file,
     pageCount: document.pageCount,
     zoom: document.zoom,
     scrollLeft: document.scrollLeft,
@@ -124,7 +128,7 @@ export function buildViewerSnapshot(document: OpenPdfDocument, nativeTextEdits: 
   };
 }
 
-export async function restoreOpenDocument(storedDocument: StoredPdfDocument): Promise<OpenPdfDocument> {
+export async function restoreOpenDocument(storedDocument: StoredPdfDocument, backendUrl = "http://localhost:8000"): Promise<OpenPdfDocument> {
   if (!(storedDocument.content instanceof Blob) || storedDocument.content.size === 0) {
     throw new Error("RESTORE_BLOB_ABSENT");
   }
@@ -136,6 +140,13 @@ export async function restoreOpenDocument(storedDocument: StoredPdfDocument): Pr
   } catch {
     throw new Error("RESTORE_BLOB_UNREADABLE");
   }
+  let restoredMedia: SourceMedia = { kind: "pdf" };
+  if (storedDocument.media?.kind === "image") {
+    restoredMedia = await readImageSource(new Blob([storedBytes]));
+    const transforms = storedDocument.edits?.find((edit) => edit.type === "image_background")?.transforms ?? [];
+    const pdf = await createImagePdf(backendUrl, [restoredMedia], { ...DEFAULT_IMAGE_LAYOUT, transforms });
+    storedBytes = new Uint8Array(await pdf.arrayBuffer());
+  }
   const file = new File([storedBytes], storedDocument.fileName, {
     type: storedDocument.mimeType || "application/pdf",
   });
@@ -146,6 +157,8 @@ export async function restoreOpenDocument(storedDocument: StoredPdfDocument): Pr
     const pdfDocument = await loadingTask.promise;
 
     return {
+      media: restoredMedia,
+      imageBackgroundKey: JSON.stringify(storedDocument.edits?.find((edit) => edit.type === "image_background")?.transforms ?? []),
       id: storedDocument.id,
       fileName: storedDocument.fileName,
       workingSaveName: storedDocument.workingSaveName ?? null,

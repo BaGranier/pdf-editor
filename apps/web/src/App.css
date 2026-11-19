@@ -3688,3 +3688,11 @@ button:disabled {
 .tool-rail > button { position: relative; }
 .tool-rail .tool-rail__label { white-space: normal; overflow: visible; overflow-wrap: anywhere; font-size: 0.62rem; line-height: 1.15; }
 .tool-rail .tool-rail__active-marker { position: absolute; top: 0.15rem; right: 0.15rem; width: 12px; height: 12px; }
+
+.images-pdf-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow: auto; }
+.images-pdf-dialog label { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-block: 8px; }
+.images-pdf-list { max-height: 240px; overflow: auto; padding-inline-start: 24px; }
+.images-pdf-list li { display: flex; gap: 8px; align-items: center; margin-block: 8px; }
+.images-pdf-list li span { flex: 1; overflow-wrap: anywhere; }
+.images-pdf-list img { object-fit: contain; background: white; }
+.image-document-preview { position: relative; max-width: 100%; margin-inline: auto; background: white; }

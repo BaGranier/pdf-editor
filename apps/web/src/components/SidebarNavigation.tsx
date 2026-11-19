@@ -24,8 +24,8 @@ export const NAVIGATION_GROUPS = [
 ] as const;
 export type NavigationAction = EditingTool | "image" | "ocr" | "convert";
 
-export function SidebarNavigation({ activeTool, organizing, disabled, processingDisabled, imageDisabled, onSelect, onOrganize }: {
-  activeTool: EditingTool; organizing: boolean; disabled: boolean; processingDisabled: boolean; imageDisabled: boolean;
+export function SidebarNavigation({ rasterSource = false, activeTool, organizing, disabled, processingDisabled, imageDisabled, onSelect, onOrganize }: {
+  rasterSource?: boolean; activeTool: EditingTool; organizing: boolean; disabled: boolean; processingDisabled: boolean; imageDisabled: boolean;
   onSelect: (tool: NavigationAction) => boolean | void; onOrganize: () => void;
 }) {
   const [openNavigationGroup, setOpenNavigationGroup] = useState<string | null>(null);
@@ -74,7 +74,7 @@ export function SidebarNavigation({ activeTool, organizing, disabled, processing
           buttons[event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length]?.focus();
         }
       }}><strong>{group.label}</strong>{group.tools.map((tool) => <button key={tool.id} type="button" aria-label={tool.label} title={tool.label} aria-pressed={activeTool === tool.id && !organizing}
-        disabled={tool.id === "ocr" || tool.id === "convert" ? processingDisabled : tool.id === "image" ? imageDisabled : disabled}
+        disabled={rasterSource && (tool.id === "redaction" || tool.id === "edit_text") ? true : tool.id === "ocr" || tool.id === "convert" ? processingDisabled : tool.id === "image" ? imageDisabled : disabled}
         onClick={() => { const changed = onSelect(tool.id); close(changed !== false); }}><ToolbarIcon name={tool.icon} /><span>{tool.label}</span>{activeTool === tool.id && !organizing ? <ToolbarIcon name="check" className="navigation-popover__active-marker" /> : null}{"description" in tool ? <small>{tool.description}</small> : null}</button>)}
       {group.id === "annotations" ? <p>Sélectionnez du texte dans la page pour surligner, souligner ou barrer.</p> : null}
     </div>, document.body) : null}
