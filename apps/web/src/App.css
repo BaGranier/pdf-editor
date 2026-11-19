@@ -3695,4 +3695,8 @@ button:disabled {
 .images-pdf-list li { display: flex; gap: 8px; align-items: center; margin-block: 8px; }
 .images-pdf-list li span { flex: 1; overflow-wrap: anywhere; }
 .images-pdf-list img { object-fit: contain; background: white; }
-.image-document-preview { position: relative; max-width: 100%; margin-inline: auto; background: white; }
+.image-document-preview { display: grid; max-width: 100%; margin-inline: auto; }
+.image-document-preview canvas { display: block; background: white; }
+.image-document-preview canvas, .image-document-preview .image-crop-surface { grid-area: 1 / 1; }
+.image-document-preview .image-crop-surface { position: relative; }
+.image-crop-actions-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

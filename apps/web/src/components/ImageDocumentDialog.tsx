@@ -32,12 +32,25 @@ export function ImageDocumentDialog({ pdf, onTransform, onReset, onCancel }: {
   const width = Math.min(1, targetRatio / (size.width / size.height));
   const height = Math.min(1, (size.width / size.height) / targetRatio);
   return <div className="unsaved-dialog-backdrop" role="presentation"><section className="unsaved-dialog images-pdf-dialog" role="dialog" aria-modal="true" aria-label="Éditer le fond image"
-    onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Escape") { event.preventDefault(); onCancel(); } }}>
+    onKeyDown={(event) => {
+      event.stopPropagation();
+      if (event.key === "Escape") { event.preventDefault(); onCancel(); }
+      if (event.key === "Tab") {
+        const controls = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled), select, [tabindex='0']"));
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        const edge = event.shiftKey ? first : last;
+        if (document.activeElement === edge) {
+          event.preventDefault();
+          (event.shiftKey ? last : first)?.focus();
+        }
+      }
+    }}>
     <h2>Éditer le fond image</h2>
     <p>Transformations non destructives du fond, ajusté dans la page d’origine. Les annotations gardent leur position sur la page. Le rognage est visuel et ne supprime pas les données cachées.</p>
-    <div className="image-document-preview" style={{ width: size.width, height: size.height }}>
-      <canvas ref={canvas} style={{ width: "100%", height: "100%" }} aria-label="Aperçu du fond image" />
-      {ready ? <ImageCropEditor key={ratio} initial={{ x: (1 - width) / 2, y: (1 - height) / 2, width, height }} onApply={(crop) => onTransform({ type: "crop", ...crop })} onCancel={onCancel} /> : null}
+    <div className="image-document-preview" style={{ width: size.width }}>
+      <canvas ref={canvas} style={{ width: "100%", aspectRatio: size.width / size.height }} aria-label="Aperçu du fond image" />
+      {ready ? <ImageCropEditor inlineActions key={ratio} initial={{ x: (1 - width) / 2, y: (1 - height) / 2, width, height }} onApply={(crop) => onTransform({ type: "crop", ...crop })} onCancel={onCancel} /> : null}
     </div>
     <label>Ratio du cadre initial<select value={ratio} onChange={(event) => setRatio(event.currentTarget.value)}><option value="free">Libre</option><option value="square">Carré (1:1)</option><option value="photo">Photo (4:3)</option></select></label>
     {error ? <p role="alert">{error}</p> : null}

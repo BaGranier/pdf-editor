@@ -6,8 +6,8 @@ type Handle = "move" | "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 const handles: Handle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-export function ImageCropEditor({ initial, onApply, onCancel, rotation = 0 }: {
-  initial: ImageCrop; onApply: (crop: ImageCrop) => void; onCancel: () => void; rotation?: number;
+export function ImageCropEditor({ initial, onApply, onCancel, rotation = 0, inlineActions = false }: {
+  initial: ImageCrop; onApply: (crop: ImageCrop) => void; onCancel: () => void; rotation?: number; inlineActions?: boolean;
 }) {
   const [crop, setCrop] = useState(initial);
   const surface = useRef<HTMLDivElement>(null);
@@ -26,6 +26,11 @@ export function ImageCropEditor({ initial, onApply, onCancel, rotation = 0 }: {
     surface.current?.setPointerCapture?.(event.pointerId);
     drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, crop, handle };
   };
+  const actions = <div className={inlineActions ? "image-crop-actions-inline" : "image-crop-actions"} role="toolbar" aria-label="Rognage de l’image">
+    <span>Rognage · déplacez le cadre ou ses poignées</span>
+    <button type="button" onClick={() => onApply(crop)}>Valider le rognage</button>
+    <button type="button" onClick={onCancel}>Annuler le rognage</button>
+  </div>;
   return <>
     <div ref={surface} tabIndex={0} className="image-crop-surface" role="group" aria-label="Cadre de rognage"
       onPointerDown={(event) => start(event, "move")}
@@ -63,10 +68,6 @@ export function ImageCropEditor({ initial, onApply, onCancel, rotation = 0 }: {
           }} />)}
       </div>
     </div>
-    {createPortal(<div className="image-crop-actions" role="toolbar" aria-label="Rognage de l’image">
-      <span>Rognage · déplacez le cadre ou ses poignées</span>
-      <button type="button" onClick={() => onApply(crop)}>Valider le rognage</button>
-      <button type="button" onClick={onCancel}>Annuler le rognage</button>
-    </div>, document.body)}
+    {inlineActions ? actions : createPortal(actions, document.body)}
   </>;
 }

@@ -3689,10 +3689,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
   const imageJobs = documents.filter((document) => document.media?.kind === "image" && (document.imageBackgroundKey ?? "[]") !== JSON.stringify(getDocumentEditingState(pdfEditsByDocument, document.id).edits.find((edit) => edit.type === "image_background")?.transforms ?? []));
   const imageJobsKey = JSON.stringify(imageJobs.map((document) => [document.id, getDocumentEditingState(pdfEditsByDocument, document.id).edits.find((edit) => edit.type === "image_background")]));
+  const activeImagePending = imageJobs.some((document) => document.id === activeDocumentId);
   useEffect(() => {
+    setImageBackgroundError(null);
     if (!imageJobs.length) return;
     const controller = new AbortController();
-    setImageBackgroundError(null);
     void (async () => {
       for (const document of imageJobs) {
         if (document.media?.kind !== "image") continue;
@@ -4584,7 +4585,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     requestedOutputName?: string,
     exportOptions?: ExportOptions,
   ): Promise<boolean> => {
-    if (imageJobs.length) { setExportFeedback({ kind: "error", message: imageBackgroundError ?? "Transformation du fond en cours. Attendez la fin de l’aperçu avant d’exporter." }); return false; }
+    const includesPendingImage = imageJobs.some(({ id }) =>
+      id === documentId || organizationPlans[documentId]?.pages.some((page) => page.sourceDocumentId === id));
+    if (includesPendingImage) {
+      setExportFeedback({ kind: "error", message: imageBackgroundError ?? "Transformation du fond en cours. Attendez la fin de l’aperçu avant d’exporter." });
+      return false;
+    }
     setIsExporting(true);
     setExportFeedback(null);
     try {
@@ -5048,17 +5054,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       return;
     }
 
-    const pdfFiles = selectedFiles;
-
     setExportFeedback(null);
     setStatus(
-      pdfFiles.length === 1 ? "Ouverture du document..." : `Ouverture de ${pdfFiles.length} documents...`,
+      selectedFiles.length === 1 ? "Ouverture du document..." : `Ouverture de ${selectedFiles.length} documents...`,
     );
 
     const openedDocuments: OpenPdfDocument[] = [];
     const failedFileNames: string[] = [];
 
-    for (const file of pdfFiles) {
+    for (const file of selectedFiles) {
       try {
         const opened = await loadOpenPdfDocument(file);
         try {
@@ -5097,7 +5101,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       return;
     }
 
-    const ignoredFiles = selectedFiles.length - pdfFiles.length;
+    const ignoredFiles = selectedFiles.length - selectedFiles.length;
     const ignoredFilesMessage = ignoredFiles > 0 ? `${ignoredFiles} fichier non PDF ignoré.` : "";
     setStatus([ignoredFilesMessage, ...usageWarnings.map((warning) => `Avertissement: ${warning}`)].filter(Boolean).join(" "));
   }
@@ -5218,7 +5222,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               {isFileMenuOpen ? (
                 <div className="insert-menu__items file-menu__items" role="menu" aria-label="Fichier">
                   <button type="button" role="menuitem" onClick={() => { setIsFileMenuOpen(false); setIsImagesPdfOpen(true); }}>Nouveau PDF à partir d’images</button>
-                  {activeDocument?.media?.kind === "image" ? <button type="button" role="menuitem" disabled={imageJobs.length > 0 && !imageBackgroundError} onClick={() => { setIsFileMenuOpen(false); setIsImageDocumentOpen(true); }}>Éditer le fond image…</button> : null}
+                  {activeDocument?.media?.kind === "image" ? <button type="button" role="menuitem" disabled={activeImagePending && !imageBackgroundError} onClick={() => { setIsFileMenuOpen(false); setIsImageDocumentOpen(true); }}>Éditer le fond image…</button> : null}
                   {isDesktopRuntime() ? (
                     <button
                       type="button"
@@ -5408,9 +5412,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         </div>
       ) : null}
 
-      {imageBackgroundError ? <p role="alert">{imageBackgroundError} Annulez la transformation ou réinitialisez le fond pour réessayer.</p> : imageJobs.length ? <p role="status">Transformation du fond image…</p> : null}
+      {activeImagePending ? imageBackgroundError
+        ? <p role="alert">{imageBackgroundError} Annulez la transformation ou réinitialisez le fond pour réessayer.</p>
+        : <p role="status">Transformation du fond image…</p> : null}
       {isImageDocumentOpen && activeDocument ? <ImageDocumentDialog pdf={activeDocument.pdfDocument} onCancel={() => setIsImageDocumentOpen(false)} onTransform={updateImageBackground} onReset={() => updateImageBackground()} /> : null}
-      {isImagesPdfOpen ? <ImagesPdfDialog backendUrl={backendUrl} onCancel={() => setIsImagesPdfOpen(false)} onCreate={async (sources: ImageSource[], layout: ImageLayout, signal: AbortSignal) => {
+      {isImagesPdfOpen ? <ImagesPdfDialog onCancel={() => setIsImagesPdfOpen(false)} onCreate={async (sources: ImageSource[], layout: ImageLayout, signal: AbortSignal) => {
         const blob = await createImagePdf(backendUrl, sources, layout, signal);
         if (signal.aborted) return;
         await openGeneratedPdfDocument(new File([blob], "images.pdf", { type: "application/pdf" }));
@@ -5748,8 +5754,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               {activeDocument?.media?.kind === "image" ? <>
                 <p>Image · {activeDocument.media.mimeType.slice(6).toUpperCase()} · {activeDocument.media.widthPx} × {activeDocument.media.heightPx} px · ratio {(activeDocument.media.widthPx / activeDocument.media.heightPx).toFixed(2)}</p>
                 <p>Le projet conserve l’original et les modifications localement. Exporter en PDF crée une copie ; le texte dans les pixels reste une image.</p>
-                <button type="button" disabled={imageJobs.length > 0 && !imageBackgroundError} onClick={() => setIsImageDocumentOpen(true)}>Éditer le fond image…</button>
-                <button type="button" disabled={isExporting || imageJobs.length > 0} onClick={openActiveSaveAsDialog}>Exporter en PDF</button>
+                <button type="button" disabled={activeImagePending && !imageBackgroundError} onClick={() => setIsImageDocumentOpen(true)}>Éditer le fond image…</button>
+                <button type="button" disabled={isExporting || activeImagePending} onClick={openActiveSaveAsDialog}>Exporter en PDF</button>
               </> : null}
               <p>
                 {activeDocument

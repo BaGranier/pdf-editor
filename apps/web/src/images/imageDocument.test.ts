@@ -35,11 +35,16 @@ describe("image document boundaries", () => {
     expect(inspectImage(lossy.buffer)).toMatchObject({ widthPx: 20, heightPx: 10, mimeType: "image/webp" });
     const lossless = webp("VP8L"); lossless[20] = 47;
     expect(inspectImage(lossless.buffer)).toMatchObject({ widthPx: 1, heightPx: 1 });
-    const extended = webp("VP8X"); extended[24] = 39; extended[27] = 19;
-    expect(inspectImage(extended.buffer)).toMatchObject({ widthPx: 40, heightPx: 20 });
+    const extended = webp("VP8X", 48);
+    new DataView(extended.buffer).setUint32(16, 10, true);
+    extended[24] = 19; extended[27] = 9;
+    extended.set(lossy.subarray(12), 30);
+    expect(inspectImage(extended.buffer)).toMatchObject({ widthPx: 20, heightPx: 10 });
+    extended[24] = 39;
+    expect(() => inspectImage(extended.buffer)).toThrow(/incohérentes/);
     extended[20] = 2;
     expect(() => inspectImage(extended.buffer)).toThrow(/animées/);
-    extended[20] = 0; extended.fill(255, 24);
+    extended[20] = 0; extended.fill(255, 24, 30);
     expect(() => inspectImage(extended.buffer)).toThrow(/dimensions/);
   });
   it("rejects unsupported, truncated, empty and oversized inputs before conversion", async () => {

@@ -43,28 +43,52 @@ export function inspectImage(buffer: ArrayBuffer): Omit<ImageSource, "kind" | "o
   } else if (bytes.length >= 30 && String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") {
     mimeType = "image/webp";
     if (view.getUint32(4, true) + 8 !== bytes.length) throw new Error("WebP corrompu.");
-    const kind = String.fromCharCode(...bytes.slice(12, 16));
-    const uint24 = (at: number) => bytes[at] + bytes[at + 1] * 256 + bytes[at + 2] * 65536;
-    if (kind === "VP8X" && bytes.length >= 30) {
-      if (bytes[20] & 2) throw new Error("Les images animées ne sont pas prises en charge.");
-      width = uint24(24) + 1; height = uint24(27) + 1;
-    } else if (kind === "VP8 " && bytes[23] === 157 && bytes[24] === 1 && bytes[25] === 42) {
-      width = view.getUint16(26, true) & 0x3fff; height = view.getUint16(28, true) & 0x3fff;
-    } else if (kind === "VP8L" && bytes[20] === 47) {
-      const packed = view.getUint32(21, true);
-      width = (packed & 0x3fff) + 1; height = ((packed >>> 14) & 0x3fff) + 1;
-    } else throw new Error("Dimensions WebP invalides.");
-    // EXIF in WebP is not qualified; refuse it explicitly rather than rotate twice.
-    for (let at = 12; at + 8 <= bytes.length;) {
-      const chunk = String.fromCharCode(...bytes.slice(at, at + 4)), size = view.getUint32(at + 4, true);
-      if (chunk === "ANIM" || chunk === "ANMF") throw new Error("Les images animées ne sont pas prises en charge.");
-      if (chunk === "EXIF") throw new Error("L’orientation EXIF WebP n’est pas prise en charge. Utilisez PNG ou JPEG.");
-      if (at + 8 + size > bytes.length) throw new Error("WebP corrompu.");
-      at += 8 + size + (size % 2);
-    }
+    [width, height] = webpDimensions(bytes, view);
   } else throw new Error("Format non pris en charge. Choisissez un PDF, PNG, JPEG ou WebP statique.");
   validateImageDimensions(width, height);
   return { mimeType, widthPx: width, heightPx: height };
+}
+
+function webpDimensions(bytes: Uint8Array, view: DataView): [number, number] {
+  let canvas: [number, number] | undefined;
+  let raster: [number, number] | undefined;
+  const uint24 = (offset: number) => view.getUint32(offset, true) & 0xffffff;
+  let offset = 12;
+  while (offset + 8 <= bytes.length) {
+    const kind = String.fromCharCode(...bytes.subarray(offset, offset + 4));
+    const length = view.getUint32(offset + 4, true);
+    const start = offset + 8;
+    offset = start + length + (length % 2);
+    if (offset > bytes.length) throw new Error("WebP corrompu.");
+
+    if (kind === "ANIM" || kind === "ANMF") throw new Error("Les images animées ne sont pas prises en charge.");
+    if (kind === "EXIF") throw new Error("L’orientation EXIF WebP n’est pas prise en charge. Utilisez PNG ou JPEG.");
+    if (kind === "VP8X") {
+      if (start !== 20 || length !== 10) throw new Error("En-tête WebP invalide.");
+      if (bytes[start] & 2) throw new Error("Les images animées ne sont pas prises en charge.");
+      canvas = [
+        uint24(start + 4) + 1,
+        bytes[start + 7] + bytes[start + 8] * 256 + bytes[start + 9] * 65536 + 1,
+      ];
+      validateImageDimensions(...canvas);
+    }
+    if (kind !== "VP8 " && kind !== "VP8L") continue;
+    if (raster) throw new Error("Plusieurs flux d’image WebP.");
+    if (kind === "VP8L" && length >= 5 && bytes[start] === 47) {
+      const packed = view.getUint32(start + 1, true);
+      raster = [(packed & 0x3fff) + 1, ((packed >>> 14) & 0x3fff) + 1];
+    } else if (kind === "VP8 " && length >= 10 &&
+      bytes[start + 3] === 157 && bytes[start + 4] === 1 && bytes[start + 5] === 42) {
+      raster = [view.getUint16(start + 6, true) & 0x3fff, view.getUint16(start + 8, true) & 0x3fff];
+    } else {
+      throw new Error("Dimensions WebP invalides.");
+    }
+    validateImageDimensions(...raster);
+  }
+  if (offset !== bytes.length || !raster || (canvas && (canvas[0] !== raster[0] || canvas[1] !== raster[1]))) {
+    throw new Error("Dimensions WebP incohérentes.");
+  }
+  return raster;
 }
 
 export async function readImageSource(file: Blob): Promise<ImageSource> {
@@ -96,9 +120,13 @@ async function normalizedUpload(source: ImageSource): Promise<Blob> {
 export async function createImagePdf(backendUrl: string, sources: ImageSource[], layout = DEFAULT_IMAGE_LAYOUT, signal?: AbortSignal): Promise<Blob> {
   if (!sources.length || sources.length > 250 || sources.reduce((n, s) => n + s.widthPx * s.heightPx, 0) > 128_000_000 || sources.reduce((n, s) => n + s.original.size, 0) > 192 * 1024 * 1024) throw new Error("Budget de conversion dépassé : 250 images, 128 Mpx ou 192 Mio maximum.");
   const form = new FormData();
+  let uploadBytes = 0;
   for (const source of sources) {
-    if (signal?.aborted) throw new DOMException("Conversion annulée", "AbortError");
+    signal?.throwIfAborted();
     const blob = await normalizedUpload(source);
+    signal?.throwIfAborted();
+    uploadBytes += blob.size;
+    if (uploadBytes > 192 * 1024 * 1024) throw new Error("Les images normalisées dépassent 192 Mio.");
     form.append("files", blob, source.mimeType === "image/jpeg" ? "source.jpg" : "source.png");
   }
   form.append("options", JSON.stringify(layout));

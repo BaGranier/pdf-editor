@@ -3,7 +3,6 @@ import { DEFAULT_IMAGE_LAYOUT, readImageSource, type ImageLayout, type ImageSour
 
 type Entry = { id: number; name: string; source: ImageSource; url: string };
 export function ImagesPdfDialog({ onCancel, onCreate }: {
-  backendUrl: string;
   onCancel: () => void;
   onCreate: (sources: ImageSource[], layout: ImageLayout, signal: AbortSignal) => Promise<void>;
 }) {
@@ -47,7 +46,7 @@ export function ImagesPdfDialog({ onCancel, onCreate }: {
   }
   function cancel() { controller.current?.abort(); onCancel(); }
   return <div className="unsaved-dialog-backdrop" role="presentation"><form className="unsaved-dialog images-pdf-dialog" role="dialog" aria-modal="true" aria-labelledby="images-pdf-title"
-    onSubmit={(event) => { event.preventDefault(); const request = new AbortController(); controller.current = request; setBusy(true); setError(null); void onCreate(entries.map((entry) => entry.source), layout, request.signal).catch((cause: unknown) => { if (mounted.current && !request.signal.aborted) setError(cause instanceof Error ? cause.message : "Conversion impossible."); }).finally(() => { if (mounted.current) setBusy(false); }); }}
+    onSubmit={(event) => { event.preventDefault(); if (busy || !entries.length) return; const request = new AbortController(); controller.current = request; setBusy(true); setError(null); void onCreate(entries.map((entry) => entry.source), layout, request.signal).catch((cause: unknown) => { if (mounted.current && !request.signal.aborted) setError(cause instanceof Error ? cause.message : "Conversion impossible."); }).finally(() => { if (mounted.current) setBusy(false); }); }}
     onKeyDown={(event) => {
       event.stopPropagation();
       if (event.key === "Escape") { event.preventDefault(); cancel(); }

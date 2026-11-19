@@ -207,3 +207,65 @@ def test_invalid_transforms_and_aggregate_pixel_budget():
         ImageLayout(transforms=[{"type": "rotate"}] * 65)
     with pytest.raises(ValueError):
         images_to_pdf([png(), png()], ImageLayout(transforms=[{"type": "rotate"}]))
+
+
+@pytest.mark.parametrize("orientation", range(1, 9))
+def test_all_jpeg_exif_orientations_match_expected_pixel_mapping(orientation):
+    original = (FIXTURES / "editor-image.jpg").read_bytes()
+    exif = (
+        b"Exif\0\0II\x2a\0\x08\0\0\0\x01\0\x12\x01\x03\0\x01\0\0\0"
+        + struct.pack("<H", orientation)
+        + b"\0\0\0\0\0\0"
+    )
+    source = (
+        original[:2]
+        + b"\xff\xe1"
+        + struct.pack(">H", len(exif) + 2)
+        + exif
+        + original[2:]
+    )
+    decoded = fitz.Pixmap(original)
+    w, h = decoded.width, decoded.height
+    with fitz.open(stream=images_to_pdf([source], ImageLayout())) as pdf:
+        pix = pdf[0].get_pixmap(matrix=fitz.Matrix(4 / 3, 4 / 3))
+        assert (pix.width, pix.height) == ((h, w) if orientation >= 5 else (w, h))
+        for x, y in [
+            (pix.width // 4, pix.height // 4),
+            (pix.width * 3 // 4, pix.height * 3 // 4),
+        ]:
+            sx, sy = {
+                1: (x, y),
+                2: (w - 1 - x, y),
+                3: (w - 1 - x, h - 1 - y),
+                4: (x, h - 1 - y),
+                5: (y, x),
+                6: (y, h - 1 - x),
+                7: (w - 1 - y, h - 1 - x),
+                8: (w - 1 - y, x),
+            }[orientation]
+            assert pix.pixel(x, y) == pytest.approx(decoded.pixel(sx, sy), abs=3)
+
+
+def test_four_turns_restore_exact_original_framing():
+    source = quadrants()
+    with (
+        fitz.open(stream=images_to_pdf([source], ImageLayout())) as original,
+        fitz.open(
+            stream=images_to_pdf(
+                [source], ImageLayout(transforms=[{"type": "rotate"}] * 4)
+            )
+        ) as rotated,
+    ):
+        assert rotated[0].get_pixmap().samples == original[0].get_pixmap().samples
+
+
+def test_jpeg_unequal_density_does_not_change_pixel_aspect_ratio():
+    source = bytearray((FIXTURES / "editor-image.jpg").read_bytes())
+    start = source.find(b"JFIF\0")
+    assert start >= 0
+    source[start + 7 : start + 12] = b"\x01\x01\x2c\x00\x48"
+    with fitz.open(stream=images_to_pdf([bytes(source)], ImageLayout())) as pdf:
+        assert pdf[0].rect == fitz.Rect(0, 0, 120, 60)
+        assert tuple(pdf[0].get_image_info()[0]["bbox"]) == pytest.approx(
+            (0, 0, 120, 60)
+        )

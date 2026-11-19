@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
 import zlib
+from typing import Annotated, Literal
 
 import fitz
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, ValidationError, model_validator
-from starlette.concurrency import run_in_threadpool
 
 from app.image_dimensions import raster_dimensions
 
@@ -38,6 +37,8 @@ def transform_background(data: bytes, transforms: list[ImageTransform]) -> bytes
     with fitz.open(stream=data) as initial:
         fixed = initial[0].rect
     for transform in transforms:
+        if transform.type == "crop":
+            data = frame_background(data, fixed)
         with fitz.open(stream=data) as source, fitz.open() as cropped:
             bounds = source[0].rect
             clip = (
@@ -69,12 +70,18 @@ def transform_background(data: bytes, transforms: list[ImageTransform]) -> bytes
                     cropped.update_stream(
                         xref, f"q {matrix} cm\n".encode() + content + b"\nQ"
                     )
-            with fitz.open() as framed:
-                target = framed.new_page(width=fixed.width, height=fixed.height)
-                target.draw_rect(target.rect, color=None, fill=(1, 1, 1))
-                target.show_pdf_page(target.rect, cropped, 0, keep_proportion=True)
-                data = framed.tobytes(garbage=4, deflate=True)
-    return data
+            data = cropped.tobytes(garbage=3)
+    return frame_background(data, fixed)
+
+
+def frame_background(data: bytes, fixed: fitz.Rect) -> bytes:
+    with fitz.open(stream=data) as source, fitz.open() as framed:
+        if source[0].rect == fixed:
+            return data
+        page = framed.new_page(width=fixed.width, height=fixed.height)
+        page.draw_rect(page.rect, color=None, fill=(1, 1, 1))
+        page.show_pdf_page(page.rect, source, 0)
+        return framed.tobytes(garbage=3)
 
 
 class ImageLayout(BaseModel):
@@ -124,7 +131,7 @@ def validate_raster(data: bytes) -> tuple[int, int]:
 
 
 def images_to_pdf(images: list[bytes], layout: ImageLayout) -> bytes:
-    """Called in a worker thread, with per-file and aggregate allocation guards."""
+    """Build a PDF with per-file and aggregate allocation guards."""
     if not 1 <= len(images) <= 250 or sum(map(len, images)) > MAX_TOTAL_BYTES:
         raise ValueError("Budget dépassé : 250 images / 192 Mio maximum.")
     dimensions = [validate_raster(data) for data in images]
@@ -138,49 +145,54 @@ def images_to_pdf(images: list[bytes], layout: ImageLayout) -> bytes:
             if (pixmap.width, pixmap.height) != (w, h):
                 raise ValueError("Dimensions incohérentes.")
             del pixmap
-            with fitz.open(stream=data) as source:
-                # MuPDF's image document applies all EXIF orientations, including mirrors.
-                rect = source[0].rect
-                landscape = rect.width > rect.height
-                iw, ih = (max(w, h), min(w, h)) if landscape else (min(w, h), max(w, h))
-                iw, ih = (
-                    iw * 0.75,
-                    ih * 0.75,
-                )  # Explicit 96 dpi, metadata is not trusted.
-                if layout.page_size == "image":
-                    pw, ph = iw + layout.margin * 2, ih + layout.margin * 2
-                else:
-                    pw, ph = fitz.paper_size(layout.page_size)
-                if layout.orientation == "landscape" or (
-                    layout.orientation == "auto" and landscape
-                ):
-                    pw, ph = max(pw, ph), min(pw, ph)
-                elif layout.orientation == "portrait":
-                    pw, ph = min(pw, ph), max(pw, ph)
-                area = fitz.Rect(
-                    layout.margin, layout.margin, pw - layout.margin, ph - layout.margin
-                )
-                if area.width <= 0 or area.height <= 0:
-                    raise ValueError("Marges trop grandes pour cette page.")
-                scale = min(area.width / iw, area.height / ih)
-                if layout.fit == "no-upscale":
-                    scale = min(scale, 1)
-                width, height = iw * scale, ih * scale
-                target = fitz.Rect(
-                    (pw - width) / 2,
-                    (ph - height) / 2,
-                    (pw + width) / 2,
-                    (ph + height) / 2,
-                )
-                page = output.new_page(width=pw, height=ph)
-                page.draw_rect(page.rect, color=None, fill=color)
-                if data.startswith(b"\x89PNG"):
-                    page.insert_image(target, stream=data, keep_proportion=True)
-                else:
-                    with fitz.open(
-                        stream=source.convert_to_pdf(), filetype="pdf"
-                    ) as oriented:
-                        page.show_pdf_page(target, oriented, 0)
+            is_png = data.startswith(b"\x89PNG")
+            oriented_pdf = None
+            if not is_png:
+                with fitz.open(stream=data) as source:
+                    oriented_pdf = source.convert_to_pdf()
+                with fitz.open(stream=oriented_pdf) as oriented:
+                    a, b, _, _, _, _ = oriented[0].get_image_info()[0]["transform"]
+                    if abs(b) > abs(a):
+                        w, h = h, w
+            iw, ih = w, h
+            landscape = iw > ih
+            iw, ih = (
+                iw * 0.75,
+                ih * 0.75,
+            )  # Explicit 96 dpi, metadata is not trusted.
+            if layout.page_size == "image":
+                pw, ph = iw + layout.margin * 2, ih + layout.margin * 2
+            else:
+                pw, ph = fitz.paper_size(layout.page_size)
+            if layout.orientation == "landscape" or (
+                layout.orientation == "auto" and landscape
+            ):
+                pw, ph = max(pw, ph), min(pw, ph)
+            elif layout.orientation == "portrait":
+                pw, ph = min(pw, ph), max(pw, ph)
+            area = fitz.Rect(
+                layout.margin, layout.margin, pw - layout.margin, ph - layout.margin
+            )
+            if area.width <= 0 or area.height <= 0:
+                raise ValueError("Marges trop grandes pour cette page.")
+            scale = min(area.width / iw, area.height / ih)
+            if layout.fit == "no-upscale":
+                scale = min(scale, 1)
+            width, height = iw * scale, ih * scale
+            target = fitz.Rect(
+                (pw - width) / 2,
+                (ph - height) / 2,
+                (pw + width) / 2,
+                (ph + height) / 2,
+            )
+            page = output.new_page(width=pw, height=ph)
+            page.draw_rect(page.rect, color=None, fill=color)
+            if is_png:
+                page.insert_image(target, stream=data, keep_proportion=True)
+            else:
+                with fitz.open(stream=oriented_pdf, filetype="pdf") as oriented:
+                    # The PDF's original box can reflect unequal X/Y DPI.
+                    page.show_pdf_page(target, oriented, 0, keep_proportion=False)
         result = output.tobytes(garbage=4, deflate=True)
         if layout.transforms:
             if len(images) != 1:
@@ -210,7 +222,8 @@ async def convert_images(
             if total > MAX_TOTAL_BYTES:
                 raise ValueError("Budget dépassé : 192 Mio compressés maximum.")
             images.append(data)
-        result = await run_in_threadpool(images_to_pdf, images, layout)
+        # Keep PyMuPDF on the same thread as the existing PDF export routes.
+        result = images_to_pdf(images, layout)
     except (
         ValueError,
         RuntimeError,
