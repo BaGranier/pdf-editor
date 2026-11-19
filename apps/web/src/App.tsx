@@ -1,3 +1,4 @@
+import { ToolbarIcon } from "./components/ToolbarIcon";
 import { requestToolChange } from "./editing/toolTransition";
 import { SidebarNavigation, type NavigationAction } from "./components/SidebarNavigation";
 import { PdfPasswordDialog } from "./components/PdfPasswordDialog";
@@ -2562,95 +2563,6 @@ function ResetIcon() {
       <path d="M16.4 6.2v4.2h-4.2" />
       <path d="M14.8 11.8A6 6 0 0 1 4 9.6" />
       <path d="M3.6 13.8V9.6h4.2" />
-    </svg>
-  );
-}
-
-type ToolbarIconName =
-  | "save-as"
-  | "open"
-  | "select"
-  | "text"
-  | "signature"
-  | "shape"
-  | "freehand"
-  | "comment"
-  | "organize"
-  | "ocr"
-  | "conversion"
-  | "undo"
-  | "redo";
-
-function ToolbarIcon({ name }: { name: ToolbarIconName }) {
-  return (
-    <svg
-      className="toolbar-icon"
-      aria-hidden="true"
-      viewBox="0 0 20 20"
-      focusable="false"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.7"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {name === "save-as" ? (
-        <>
-          <path d="M4 3h10l2 2v12H4z" />
-          <path d="M7 3v5h6V3" />
-          <path d="M7 17v-5h6v5" />
-        </>
-      ) : null}
-      {name === "open" ? <><path d="M3 6h5l1.5 2H17v8H3z" /><path d="M10 11h5m-2.5-2.5v5" /></> : null}
-      {name === "text" ? (
-        <>
-          <path d="M4 6V3h12v3" />
-          <path d="M10 3v14" />
-          <path d="M7 17h6" />
-        </>
-      ) : null}
-      {name === "select" ? (
-        <path d="m5 3 9.5 8.1-4.2.8 2.3 4.1-2.4 1.3-2.2-4-3 3z" />
-      ) : null}
-      {name === "signature" ? (
-        <>
-          <path d="M3 14c2.4-4.8 3.9-7.2 5.1-7.2 1.9 0-.9 7.5.8 7.5 1.1 0 2.1-3.5 3.2-3.5.7 0 .2 3.2 1.2 3.2.6 0 1.4-1.4 2.1-1.4.6 0 .7.8 1.6.8" />
-          <path d="M3 17h14" />
-        </>
-      ) : null}
-      {name === "shape" ? (
-        <>
-          <rect x="3" y="4" width="7" height="7" rx="1" />
-          <circle cx="13.5" cy="13.5" r="3.5" />
-        </>
-      ) : null}
-      {name === "freehand" ? <path d="M3 15c2-6 3.5-8 5-8 1.8 0-.8 7 1 7 1.5 0 2-5 3.4-5 .9 0-.1 4 1.3 4 .8 0 1.2-1.3 2.3-1.3M3 17h14" /> : null}
-      {name === "comment" ? <path d="M3 3h14v10H8l-5 4V3Z" /> : null}
-      {name === "organize" ? (
-        <>
-          <rect x="3" y="3" width="5" height="6" rx="1" />
-          <rect x="12" y="3" width="5" height="6" rx="1" />
-          <rect x="7.5" y="11" width="5" height="6" rx="1" />
-        </>
-      ) : null}
-      {name === "ocr" ? (
-        <>
-          <path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4" />
-          <path d="M6 10h8M10 6v8" />
-        </>
-      ) : null}
-      {name === "conversion" ? (
-        <>
-          <path d="M3 7h11m-3-3 3 3-3 3" />
-          <path d="M17 13H6m3-3-3 3 3 3" />
-        </>
-      ) : null}
-      {name === "undo" ? (
-        <path d="M7 6 3.5 9.5 7 13M4 9.5h6a5 5 0 0 1 5 5" />
-      ) : null}
-      {name === "redo" ? (
-        <path d="m13 6 3.5 3.5L13 13m3-3.5h-6a5 5 0 0 0-5 5" />
-      ) : null}
     </svg>
   );
 }

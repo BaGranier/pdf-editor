@@ -59,6 +59,13 @@ effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 
 ## Journal MVP
 
+### 2026-11-19 — FIX-PDF-SIDEBAR-ICONS
+- Catégories, sous-outils et coches de navigation passent aux SVG monochromes intégrés.
+- ToolbarIcon existant partagé, mapping typé, tailles 20/18 px, aucun ajout de dépendance.
+- Libellés, commandes, focus, états actifs et historique PDF conservés.
+- Vérification du correctif isolée des ajouts images ; captures et résultats dans docs/QA_SIDEBAR_ICONS.md.
+
+
 ### 2026-11-16 — FEAT-PDF-WATERMARK-TILING
 - Mode Répété ajouté au même filigrane, un objet par page et paramètres en points PDF.
 - Aperçu, police embarquée, angle, densité, phase, opacité et export vectoriel synchronisés.

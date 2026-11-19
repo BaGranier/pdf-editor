@@ -1,25 +1,26 @@
+import { ToolbarIcon } from "./ToolbarIcon";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { EditingTool } from "../editing/types";
 
 export const NAVIGATION_GROUPS = [
-  { id: "editing", label: "Édition", icon: "✎", tools: [
-    { id: "add_text", label: "Ajouter du texte" }, { id: "edit_text", label: "Modifier le texte existant" },
-    { id: "image", label: "Image" }, { id: "freehand", label: "Dessiner" },
-    { id: "shape_rectangle", label: "Rectangle" }, { id: "shape_square", label: "Carré" },
-    { id: "shape_ellipse", label: "Ellipse" }, { id: "shape_circle", label: "Cercle" },
-    { id: "shape_line", label: "Ligne" }, { id: "shape_arrow", label: "Flèche" },
+  { id: "editing", label: "Édition", icon: "pencil", tools: [
+    { id: "add_text", icon: "text", label: "Ajouter du texte" }, { id: "edit_text", icon: "edit-text", label: "Modifier le texte existant" },
+    { id: "image", icon: "image", label: "Image" }, { id: "freehand", icon: "freehand", label: "Dessiner" },
+    { id: "shape_rectangle", icon: "rectangle", label: "Rectangle" }, { id: "shape_square", icon: "square", label: "Carré" },
+    { id: "shape_ellipse", icon: "ellipse", label: "Ellipse" }, { id: "shape_circle", icon: "circle", label: "Cercle" },
+    { id: "shape_line", icon: "line", label: "Ligne" }, { id: "shape_arrow", icon: "arrow", label: "Flèche" },
   ] },
-  { id: "annotations", label: "Annotations", icon: "💬", tools: [
-    { id: "comment", label: "Commentaire" }, { id: "signature", label: "Ajouter une signature" },
+  { id: "annotations", label: "Annotations", icon: "comment", tools: [
+    { id: "comment", icon: "comment", label: "Commentaire" }, { id: "signature", icon: "signature", label: "Ajouter une signature" },
   ] },
-  { id: "marking", label: "Marquage", icon: "▧", tools: [
-    { id: "redaction", label: "Biffer", description: "Biffage sécurisé : supprime les données dans la copie exportée." },
-    { id: "visual_mask", label: "Masquage visuel", description: "Recouvre sans supprimer les données." },
-    { id: "watermark", label: "Filigrane", description: "Marquage non destructif : les données restent récupérables." },
-    { id: "stamp", label: "Tampon", description: "Tampon visuel, sans suppression de données." },
+  { id: "marking", label: "Marquage", icon: "shield", tools: [
+    { id: "redaction", icon: "redaction", label: "Biffer", description: "Biffage sécurisé : supprime les données dans la copie exportée." },
+    { id: "visual_mask", icon: "visual-mask", label: "Masquage visuel", description: "Recouvre sans supprimer les données." },
+    { id: "watermark", icon: "watermark", label: "Filigrane", description: "Marquage non destructif : les données restent récupérables." },
+    { id: "stamp", icon: "stamp", label: "Tampon", description: "Tampon visuel, sans suppression de données." },
   ] },
-  { id: "processing", label: "Conversion", icon: "↗", tools: [ { id: "ocr", label: "OCR" }, { id: "convert", label: "Convertir" } ] },
+  { id: "processing", label: "Conversion", icon: "conversion", tools: [ { id: "ocr", icon: "ocr", label: "OCR" }, { id: "convert", icon: "conversion", label: "Convertir" } ] },
 ] as const;
 export type NavigationAction = EditingTool | "image" | "ocr" | "convert";
 
@@ -54,15 +55,15 @@ export function SidebarNavigation({ activeTool, organizing, disabled, processing
   return <nav ref={rail} className="tool-rail" aria-label="Outils d'édition"
     onKeyDown={(event) => { if (event.key === "Escape" && group) { event.preventDefault(); event.stopPropagation(); close(true); } }}
     onBlur={(event) => { const target = event.relatedTarget; if (!target || (target instanceof Node && !rail.current?.contains(target) && !panel.current?.contains(target))) close(); }}>
-    <button type="button" aria-label="Sélection" aria-pressed={!organizing && activeTool === "select"} disabled={disabled} onClick={() => { close(); onSelect("select"); }}>↖<span className="tool-rail__label">Sélection</span></button>
+    <button type="button" aria-label="Sélection" aria-pressed={!organizing && activeTool === "select"} disabled={disabled} onClick={() => { close(); onSelect("select"); }}><ToolbarIcon name="select" /><span className="tool-rail__label">Sélection</span></button>
     {NAVIGATION_GROUPS.map((item) => {
       const active = !organizing && item.tools.some((tool) => tool.id === activeTool);
       return <button key={item.id} type="button" aria-label={item.label} title={item.label} aria-expanded={openNavigationGroup === item.id} aria-controls={`navigation-${item.id}`} aria-pressed={active}
         onClick={(event) => { trigger.current = event.currentTarget; setOpenNavigationGroup((current) => current === item.id ? null : item.id); }}>
-        <span aria-hidden="true">{item.icon}</span><span className="tool-rail__label">{item.label}</span>{active ? <span className="tool-rail__active-marker" aria-hidden="true">✓</span> : null}
+        <ToolbarIcon name={item.icon} /><span className="tool-rail__label">{item.label}</span>{active ? <ToolbarIcon name="check" className="tool-rail__active-marker" /> : null}
       </button>;
     })}
-    <button type="button" aria-label={organizing ? "Revenir à la lecture" : "Organiser"} aria-pressed={organizing} onClick={() => { close(); onOrganize(); }}>▤<span className="tool-rail__label">{organizing ? "Lecture" : "Pages"}</span></button>
+    <button type="button" aria-label={organizing ? "Revenir à la lecture" : "Organiser"} aria-pressed={organizing} onClick={() => { close(); onOrganize(); }}><ToolbarIcon name={organizing ? "read" : "organize"} /><span className="tool-rail__label">{organizing ? "Lecture" : "Pages"}</span></button>
     {group ? createPortal(<div ref={panel} id={`navigation-${group.id}`} className="navigation-popover" role="region" aria-label={`Outils ${group.label}`} style={position}
       onBlur={(event) => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget) && !rail.current?.contains(event.relatedTarget)) close(); }}
       onKeyDown={(event) => {
@@ -74,7 +75,7 @@ export function SidebarNavigation({ activeTool, organizing, disabled, processing
         }
       }}><strong>{group.label}</strong>{group.tools.map((tool) => <button key={tool.id} type="button" aria-label={tool.label} title={tool.label} aria-pressed={activeTool === tool.id && !organizing}
         disabled={tool.id === "ocr" || tool.id === "convert" ? processingDisabled : tool.id === "image" ? imageDisabled : disabled}
-        onClick={() => { const changed = onSelect(tool.id); close(changed !== false); }}><span>{tool.label}{activeTool === tool.id && !organizing ? " ✓" : ""}</span>{"description" in tool ? <small>{tool.description}</small> : null}</button>)}
+        onClick={() => { const changed = onSelect(tool.id); close(changed !== false); }}><ToolbarIcon name={tool.icon} /><span>{tool.label}</span>{activeTool === tool.id && !organizing ? <ToolbarIcon name="check" className="navigation-popover__active-marker" /> : null}{"description" in tool ? <small>{tool.description}</small> : null}</button>)}
       {group.id === "annotations" ? <p>Sélectionnez du texte dans la page pour surligner, souligner ou barrer.</p> : null}
     </div>, document.body) : null}
   </nav>;

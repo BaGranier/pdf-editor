@@ -35,3 +35,52 @@ describe("compact navigation", () => {
     expect(screen.queryByRole("region")).not.toBeInTheDocument();
   });
 });
+
+  it("renders every category, sub-tool and active marker as a decorative monochrome SVG", () => {
+    const { container } = render(<SidebarNavigation {...props} />);
+    const checkIcons = () => {
+      const buttons = [...document.querySelectorAll<HTMLButtonElement>(".tool-rail button, .navigation-popover button")];
+      for (const button of buttons) {
+        expect(button.querySelectorAll('svg:not([data-icon="check"])')).toHaveLength(1);
+        expect(button.textContent).not.toMatch(/[\u2196\u2197\u25a4\u25a7\u2713\u270e]|\p{Extended_Pictographic}/u);
+        for (const svg of button.querySelectorAll("svg")) {
+          expect(svg).toHaveAttribute("viewBox", "0 0 20 20");
+          expect(svg).toHaveAttribute("aria-hidden", "true");
+          expect(svg).toHaveAttribute("focusable", "false");
+          expect(svg).toHaveAttribute("stroke", "currentColor");
+          expect(svg).toHaveAttribute("fill", "none");
+          expect(svg).toHaveAttribute("stroke-width", "1.7");
+          expect(svg.children.length).toBeGreaterThan(0);
+          expect(svg.textContent).toBe("");
+          expect(svg.querySelector("image, use, text, foreignObject")).toBeNull();
+        }
+      }
+    };
+    for (const theme of ["light", "dark"]) {
+      document.documentElement.dataset.theme = theme;
+      checkIcons();
+      for (const group of NAVIGATION_GROUPS) {
+        fireEvent.click(screen.getByRole("button", { name: group.label }));
+        checkIcons();
+        for (const tool of group.tools) expect(screen.getByRole("button", { name: tool.label }).querySelector("svg")).toHaveAttribute("data-icon", tool.icon);
+        fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+      }
+    }
+    expect(container.querySelector(".tool-rail__active-marker")).toHaveAttribute("data-icon", "check");
+    delete document.documentElement.dataset.theme;
+  });
+
+  it("keeps disabled states and both Pages/Read icons vectorial", () => {
+    const onSelect = vi.fn();
+    const { rerender } = render(<SidebarNavigation {...props} disabled onSelect={onSelect} />);
+    expect(screen.getByRole("button", { name: "Sélection" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Marquage" }));
+    for (const label of ["Biffer", "Masquage visuel", "Filigrane", "Tampon"]) {
+      const button = screen.getByRole("button", { name: label });
+      expect(button).toBeDisabled(); fireEvent.click(button);
+    }
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Organiser" }).querySelector("svg")).toHaveAttribute("data-icon", "organize");
+    rerender(<SidebarNavigation {...props} organizing onSelect={onSelect} />);
+    expect(screen.getByRole("button", { name: "Revenir à la lecture" }).querySelector("svg")).toHaveAttribute("data-icon", "read");
+  });
