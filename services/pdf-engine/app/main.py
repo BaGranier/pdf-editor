@@ -31,7 +31,7 @@ from pypdf.errors import PdfReadError
 from pypdf.generic import NameObject, NumberObject
 
 from app.image_dimensions import raster_dimensions
-from app.image_documents import router as image_documents_router
+from app.image_documents import make_png_mask_portable, router as image_documents_router
 from app.stamp_layout import layout_stamp
 from app.watermark_tiling import layout_watermark_tiles
 from app.stamp_font_metrics import write_stamp_unicode_map
@@ -1699,12 +1699,14 @@ def apply_visual_edits(
                             )
                             cropped.copy(source_pixmap, clip)
                             stream = cropped.tobytes("png")
-                        page.insert_image(
+                        image_xref = page.insert_image(
                             page_rect,
                             stream=stream,
                             keep_proportion=not isinstance(edit, ImageEdit),
                             overlay=True,
                         )
+                        if isinstance(edit, ImageEdit) and stream.startswith(b"\x89PNG"):
+                            make_png_mask_portable(document, image_xref)
                     elif isinstance(edit, TextMarkupEdit):
                         # PDF annotations always paint above page content. Local
                         # markups are vectors in the same ordered stream as edits.

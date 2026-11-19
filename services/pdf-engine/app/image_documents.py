@@ -130,6 +130,24 @@ def validate_raster(data: bytes) -> tuple[int, int]:
     return width, height
 
 
+def make_png_mask_portable(document: fitz.Document, image_xref: int) -> None:
+    """Write binary alpha as a Flate stream the bundled PDF.js can decode."""
+    kind, reference = document.xref_get_key(image_xref, "SMask")
+    if kind != "xref":
+        return
+    mask_xref = int(reference.split()[0])
+    if document.xref_get_key(mask_xref, "BitsPerComponent") != ("int", "1"):
+        return
+    if document.xref_get_key(mask_xref, "Filter")[0] != "null":
+        return
+    # MuPDF's save-time deflate encodes raw 1-bit images as CCITT Fax.
+    # Precompress the packed bits so the writer preserves the Flate filter.
+    packed = document.xref_stream(mask_xref)
+    document.update_stream(mask_xref, zlib.compress(packed), compress=False)
+    document.xref_set_key(mask_xref, "Filter", "/FlateDecode")
+    document.xref_set_key(mask_xref, "DecodeParms", "null")
+
+
 def images_to_pdf(images: list[bytes], layout: ImageLayout) -> bytes:
     """Build a PDF with per-file and aggregate allocation guards."""
     if not 1 <= len(images) <= 250 or sum(map(len, images)) > MAX_TOTAL_BYTES:
@@ -188,7 +206,10 @@ def images_to_pdf(images: list[bytes], layout: ImageLayout) -> bytes:
             page = output.new_page(width=pw, height=ph)
             page.draw_rect(page.rect, color=None, fill=color)
             if is_png:
-                page.insert_image(target, stream=data, keep_proportion=True)
+                image_xref = page.insert_image(
+                    target, stream=data, keep_proportion=True
+                )
+                make_png_mask_portable(output, image_xref)
             else:
                 with fitz.open(stream=oriented_pdf, filetype="pdf") as oriented:
                     # The PDF's original box can reflect unequal X/Y DPI.

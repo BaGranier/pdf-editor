@@ -404,3 +404,38 @@ def test_compression_preserves_added_png_alpha(quality: str) -> None:
             (255, 127, 127), abs=5
         )
         assert doc[0].get_images()[0][1] > 0  # soft mask preserved
+
+
+def test_inserted_png_preserves_binary_alpha_in_browser_readable_export() -> None:
+    pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 320, 200), True)
+    pix.clear_with()
+    pix.set_rect(fitz.IRect(0, 0, 160, 200), (220, 28, 35, 255))
+    png = base64.b64encode(pix.tobytes("png")).decode()
+    output = export(
+        source_pdf(),
+        signatureImages=[
+            {
+                "id": "asset",
+                "mimeType": "image/png",
+                "width": 320,
+                "height": 200,
+                "dataUrl": f"data:image/png;base64,{png}",
+            }
+        ],
+        images=[
+            {
+                "id": "image",
+                "type": "image",
+                "page": 1,
+                "imageId": "asset",
+                "rect": {"x0": 50, "y0": 100, "x1": 250, "y1": 200},
+            }
+        ],
+    )
+    with fitz.open(stream=output) as doc:
+        page = doc[0]
+        _, mask, *_ = page.get_images()[0]
+        assert doc.xref_get_key(mask, "Filter")[1] == "/FlateDecode"
+        rendered = page.get_pixmap()
+        assert rendered.pixel(100, 250) == (220, 28, 35)
+        assert rendered.pixel(200, 250) == (255, 255, 255)

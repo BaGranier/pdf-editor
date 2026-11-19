@@ -269,3 +269,27 @@ def test_jpeg_unequal_density_does_not_change_pixel_aspect_ratio():
         assert tuple(pdf[0].get_image_info()[0]["bbox"]) == pytest.approx(
             (0, 0, 120, 60)
         )
+
+
+@pytest.mark.parametrize("right_alpha", [0, 255])
+def test_png_binary_alpha_uses_portable_mask_and_keeps_pixels(right_alpha):
+    # The locked MuPDF encoder uses CCITT Fax for this binary alpha mask.
+    width, height = 640, 400
+    pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, width, height), True)
+    pixmap.clear_with()
+    pixmap.set_rect(fitz.IRect(0, 0, width // 2, height), (220, 28, 35, 255))
+    if right_alpha:
+        pixmap.set_rect(fitz.IRect(width // 2, 0, width, height), (38, 83, 220, 255))
+    source = pixmap.tobytes("png")
+
+    with fitz.open(stream=images_to_pdf([source], ImageLayout())) as pdf:
+        page = pdf[0]
+        assert page.rect == fitz.Rect(0, 0, 480, 300)
+        _, mask, *_ = page.get_images()[0]
+        assert pdf.xref_get_key(mask, "Filter")[1] == "/FlateDecode"
+        assert pdf.xref_get_key(mask, "BitsPerComponent")[1] == "1"
+        rendered = page.get_pixmap()
+        assert rendered.pixel(120, 150) == (220, 28, 35)
+        assert rendered.pixel(360, 150) == (
+            (38, 83, 220) if right_alpha else (255, 255, 255)
+        )

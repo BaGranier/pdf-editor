@@ -59,6 +59,12 @@ effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 
 ## Journal MVP
 
+### 2026-11-19 — FIX-IMAGE-OPEN-BLANK
+- Rectangle blanc reproduit sur un PNG couleur de 640 × 400 dans Chromium et Firefox.
+- Masques alpha binaires des PNG convertis encodés en Flate pour PDF.js.
+- Taille physique des canvas plafonnée pour préserver le rendu à forte densité ou au zoom.
+- Tests de pixels sur le viewer, les miniatures, la restauration, l’export et l’insertion PDF.
+
 ### 2026-11-19 — FEAT-PDF-IMAGE-DOCUMENTS
 - Ouverture de PNG, JPEG et WebP statiques avec conservation locale des originaux.
 - Rotation, miroirs et recadrage visuel du fond avec historique et annotations.

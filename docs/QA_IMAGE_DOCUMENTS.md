@@ -80,3 +80,50 @@ trois tests du serveur local. Cargo est absent du conteneur. Le dialogue natif,
 le glisser-déposer Windows et la WebView distribuée restent à qualifier sur
 Desktop. La QA manuelle sur des photos réelles et l’impression n’ont pas été
 rejouées.
+
+
+## Correction du rectangle blanc
+
+Sur PDF.js 6.2.108, un PNG synthétique RGBA de 640 × 400 à quatre aplats
+ouvrait un document et une miniature entièrement blancs. Le PNG décodé avait
+les bonnes dimensions et PyMuPDF rendait les quatre couleurs dans le PDF
+temporaire de 480 × 300 pt. Le flux du masque alpha binaire était compressé
+en `CCITTFaxDecode` à la sauvegarde par MuPDF. PDF.js signalait
+`JBig2 failed to initialize` dans le build sans les fichiers du décodeur.
+L’export de la source image encode désormais les bits du masque en Flate.
+Les PNG partiellement transparents gardent le même rendu sur le fond prévu.
+
+Un panorama synthétique de 20 000 × 120 à DPR 5 révélait aussi un canvas à
+75 000 × 450 marqué prêt, dont les pixels restaient transparents. Le viewer
+plafonne chaque tampon à 8 192 pixels par axe et 16 777 216 pixels au total. Le
+zoom, les dimensions CSS et les coordonnées des annotations gardent leur
+géométrie. Une erreur de rendu image affiche le nom du fichier.
+
+L’insertion d’une image sur une page PDF garde sa couche HTML, sa géométrie
+et son modèle d’édition. Son export produisait le même masque illisible
+pour le PNG de contrôle malgré un aperçu HTML correct. L’export réutilise
+donc le même encodage Flate pour ces masques. Le nouveau scénario
+Playwright vérifie les couleurs de l’aperçu et du PDF rouvert. Les fixtures couleur sont générées dans le
+test et ne proviennent d’aucun document personnel.
+
+La campagne après la dernière modification compte 20 scénarios réussis sur
+Chromium et Firefox. Elle mesure les pixels des PNG, JPEG et WebP, y compris
+après zoom, ajustement, redimensionnement, changement d’onglet et restauration.
+Elle vérifie aussi les deux parcours d’export et le rejet des fichiers
+corrompus. Les 398 tests Vitest, le lint TypeScript, le typage E2E et le build
+passent. La sélection pytest ci-dessous donne 95 succès et 2 tests ignorés.
+Ruff passe. Les parcours sont qualifiés dans les navigateurs headless. Tauri
+et la QA manuelle interactive restent non exécutés.
+
+```bash
+# apps/web
+npm run lint
+npm run typecheck:e2e
+npm run build
+npm run test:run -- --maxWorkers=1 --testTimeout=20000
+npm exec -- playwright test image-open-render.spec.ts image-documents.spec.ts pdf-opening.spec.ts --grep-invert @slow --timeout 120000
+
+# services/pdf-engine
+uv run ruff check .
+uv run pytest tests/test_image_documents.py tests/test_clean_integration.py tests/test_editor_export_profiles.py -q
+```

@@ -20,3 +20,25 @@ describe("getCanvasRenderDimensions", () => {
     });
   });
 });
+
+describe("canvas backing store limits", () => {
+  it("keeps the page geometry when a panorama exceeds the browser canvas axis", () => {
+    expect(getCanvasRenderDimensions(15_000, 90, 5)).toEqual({
+      cssWidth: 15_000,
+      cssHeight: 90,
+      canvasWidth: 8192,
+      canvasHeight: 49,
+      outputScale: 8192 / 15_000,
+    });
+  });
+
+  it("caps canvas area independently of its longest axis", () => {
+    expect(getCanvasRenderDimensions(3000, 3000, 2)).toEqual({
+      cssWidth: 3000,
+      cssHeight: 3000,
+      canvasWidth: 4096,
+      canvasHeight: 4096,
+      outputScale: 4096 / 3000,
+    });
+  });
+});

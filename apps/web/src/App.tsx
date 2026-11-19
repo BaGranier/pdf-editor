@@ -346,6 +346,7 @@ function scrollViewerByDelta(viewer: HTMLElement, left: number, top: number) {
 type PdfPageCanvasProps = {
   backendUrl: string;
   sourceFile: File;
+  sourceImageName?: string;
   pdfDocument: PDFDocumentProxy;
   sourcePageNumber: number;
   displayPageNumber: number;
@@ -394,6 +395,7 @@ type PdfPageCanvasProps = {
 function PdfPageCanvas({
   backendUrl,
   sourceFile,
+  sourceImageName,
   pdfDocument,
   sourcePageNumber,
   displayPageNumber,
@@ -711,12 +713,6 @@ function PdfPageCanvas({
           scale: zoom,
           rotation: ((page.rotate ?? 0) + rotation) % 360,
         });
-        const context = staging.getContext("2d");
-
-        if (!context) {
-          throw new Error("Le canvas n'est pas disponible.");
-        }
-
         const renderDimensions = getCanvasRenderDimensions(
           viewport.width,
           viewport.height,
@@ -724,6 +720,8 @@ function PdfPageCanvas({
         );
         staging.width = renderDimensions.canvasWidth;
         staging.height = renderDimensions.canvasHeight;
+        const context = staging.getContext("2d");
+        if (!context) throw new Error("Le canvas n'est pas disponible.");
 
         try {
           if (!presentation) textLayerTask = renderPdfTextLayer({
@@ -761,6 +759,9 @@ function PdfPageCanvas({
           canvas.width = staging.width;
           canvas.height = staging.height;
           visibleContext.drawImage(staging, 0, 0);
+          if (context.isContextLost?.() || visibleContext.isContextLost?.()) {
+            throw new Error("Le contexte du canvas a été perdu.");
+          }
           canvas.style.width = `${renderDimensions.cssWidth}px`;
           canvas.style.height = `${renderDimensions.cssHeight}px`;
           surface.style.width = `${renderDimensions.cssWidth}px`;
@@ -774,6 +775,10 @@ function PdfPageCanvas({
         }
       } catch (error) {
         if (!isCancelled && (error as Error).name !== "RenderingCancelledException") {
+          if (sourceImageName) console.warn("IMAGE_DOCUMENT_RENDER_FAILED", {
+            cause: error instanceof Error ? error.name : "UnknownError",
+            page: sourcePageNumber,
+          });
           setRenderState("error");
           onRenderError?.(displayPageNumber);
         }
@@ -792,7 +797,7 @@ function PdfPageCanvas({
       textLayerContainer.hidden = true;
       // Preserve the visible frame until its replacement has fully rendered.
     };
-  }, [displayPageNumber, onRenderReady, onRenderError, presentation, pdfDocument, requestedAnnotationMode, rotation, shouldRender, sourcePageNumber, zoom]);
+  }, [displayPageNumber, onRenderReady, onRenderError, presentation, pdfDocument, requestedAnnotationMode, rotation, shouldRender, sourceImageName, sourcePageNumber, zoom]);
 
   useEffect(() => {
     return () => {
@@ -854,7 +859,9 @@ function PdfPageCanvas({
       >
         {!shouldRender ? <div className="page-placeholder" aria-hidden="true" /> : null}
         {shouldRender && renderState === "error" ? (
-          <p className="page-error">Impossible d'afficher cette page.</p>
+          <p className="page-error" role="alert">{sourceImageName
+            ? `Impossible d’afficher l’image « ${sourceImageName} ».`
+            : "Impossible d'afficher cette page."}</p>
         ) : null}
         {shouldRender && renderState !== "ready" && renderState !== "error" ? (
           <div className="page-placeholder" aria-hidden="true">
@@ -1614,6 +1621,7 @@ function PdfViewer({
               key={page.id}
               backendUrl={backendUrl}
               sourceFile={page.sourceDocument.file}
+              sourceImageName={page.sourceDocument.media?.kind === "image" ? page.sourceDocument.fileName : undefined}
               pdfDocument={page.sourceDocument.pdfDocument}
               sourcePageNumber={page.sourcePageIndex + 1}
               displayPageNumber={page.displayPageNumber}
@@ -1736,9 +1744,11 @@ function OrganizePageThumbnail({ pdfDocument, page }: OrganizePageThumbnailProps
           throw new Error("Le canvas n'est pas disponible.");
         }
 
-        const outputScale = window.devicePixelRatio || 1;
-        renderCanvas.width = Math.floor(viewport.width * outputScale);
-        renderCanvas.height = Math.floor(viewport.height * outputScale);
+        const { canvasWidth, canvasHeight, outputScale } = getCanvasRenderDimensions(
+          viewport.width, viewport.height, window.devicePixelRatio,
+        );
+        renderCanvas.width = canvasWidth;
+        renderCanvas.height = canvasHeight;
         renderCanvas.style.width = `${Math.floor(viewport.width)}px`;
         renderCanvas.style.height = `${Math.floor(viewport.height)}px`;
         context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
@@ -1839,9 +1849,11 @@ function ExternalPageThumbnail({ pdfDocument, pageNumber }: ExternalPageThumbnai
           throw new Error("Le canvas n'est pas disponible.");
         }
 
-        const outputScale = window.devicePixelRatio || 1;
-        renderCanvas.width = Math.floor(viewport.width * outputScale);
-        renderCanvas.height = Math.floor(viewport.height * outputScale);
+        const { canvasWidth, canvasHeight, outputScale } = getCanvasRenderDimensions(
+          viewport.width, viewport.height, window.devicePixelRatio,
+        );
+        renderCanvas.width = canvasWidth;
+        renderCanvas.height = canvasHeight;
         renderCanvas.style.width = `${Math.floor(viewport.width)}px`;
         renderCanvas.style.height = `${Math.floor(viewport.height)}px`;
         context.setTransform(outputScale, 0, 0, outputScale, 0, 0);
@@ -4302,10 +4314,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     const originalName = file.name;
     const header = new Uint8Array(await file.slice(0, 5).arrayBuffer());
     if (String.fromCharCode(...header) !== "%PDF-" && (!/\.pdf$/i.test(file.name) || header[0] === 137 || header[0] === 255 || String.fromCharCode(...header.slice(0, 4)) === "RIFF")) {
-      media = await readImageSource(file);
-      validateImageDocumentSession([...documentsRef.current.flatMap((document) => document.media?.kind === "image" ? [document.media] : []), media]);
-      const pdf = await createImagePdf(backendUrl, [media]);
-      file = new File([pdf], `${originalName}.pdf`, { type: "application/pdf" });
+      try {
+        media = await readImageSource(file);
+        validateImageDocumentSession([...documentsRef.current.flatMap((document) => document.media?.kind === "image" ? [document.media] : []), media]);
+        const pdf = await createImagePdf(backendUrl, [media]);
+        file = new File([pdf], `${originalName}.pdf`, { type: "application/pdf" });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "Conversion impossible.";
+        throw new Error(`Impossible de charger l’image « ${originalName} ». ${reason}`);
+      }
       source = { type: "web" }; // An image original is never a PDF save destination.
     }
     let data = new Uint8Array(await file.arrayBuffer());
