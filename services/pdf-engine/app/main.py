@@ -31,6 +31,7 @@ from pypdf.errors import PdfReadError
 from pypdf.generic import NameObject, NumberObject
 
 from app.image_dimensions import raster_dimensions
+from app.image_documents import router as image_documents_router
 from app.stamp_layout import layout_stamp
 from app.watermark_tiling import layout_watermark_tiles
 from app.stamp_font_metrics import write_stamp_unicode_map
@@ -745,6 +746,7 @@ app.add_middleware(
         "X-Conversion-Stage",
     ],
 )
+app.include_router(image_documents_router)
 app.include_router(ocr_router)
 app.include_router(password_router)
 app.include_router(conversion_router)
