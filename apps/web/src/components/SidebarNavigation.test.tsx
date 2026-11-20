@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { NAVIGATION_GROUPS, SidebarNavigation } from "./SidebarNavigation";
+import { SidebarNavigation } from "./SidebarNavigation";
+import { NAVIGATION_GROUPS } from "../viewer/navigationGroups";
 
 const props = { activeTool: "watermark" as const, organizing: false, disabled: false, processingDisabled: false, imageDisabled: false, onSelect: vi.fn(), onOrganize: vi.fn() };
 describe("compact navigation", () => {

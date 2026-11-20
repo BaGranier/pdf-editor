@@ -1,5 +1,5 @@
 import { fireEvent, screen } from "@testing-library/react";
-import { NAVIGATION_GROUPS } from "../components/SidebarNavigation";
+import { NAVIGATION_GROUPS } from "../viewer/navigationGroups";
 
 /** Follow the same category disclosure as a user before accessing a sub-tool. */
 export function navigationTool(label: string): HTMLElement {

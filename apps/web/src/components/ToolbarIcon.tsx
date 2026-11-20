@@ -6,6 +6,7 @@ export type ToolbarIconName =
   | "signature"
   | "shape"
   | "freehand"
+  | "link"
   | "comment"
   | "organize"
   | "ocr"
@@ -31,6 +32,7 @@ export function ToolbarIcon({ name, className = "" }: { name: ToolbarIconName; c
       strokeLinecap="round"
       strokeLinejoin="round"
     >
+      {name === "link" ? <><path d="m8 12 4-4m-6 2-2 2a3 3 0 0 0 4 4l2-2m0-8 2-2a3 3 0 0 1 4 4l-2 2" /></> : null}
       {name === "pencil" ? <><path d="m4 13 9-9 3 3-9 9-4 1z" /><path d="m11 6 3 3" /></> : null}
       {name === "shield" ? <><path d="M10 2 17 5v5c0 4-4 6-7 8-3-2-7-4-7-8V5z" /><path d="m6.5 9.5 2.5 2.5 4.5-5" /></> : null}
       {name === "image" ? <><rect x="3" y="3" width="14" height="14" rx="1" /><circle cx="7" cy="7" r="1" /><path d="m3 14 4-4 3 3 3-5 4 6" /></> : null}

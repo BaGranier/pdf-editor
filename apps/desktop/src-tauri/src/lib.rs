@@ -25,7 +25,6 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager, State};
 #[cfg(not(debug_assertions))]
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
-#[cfg(not(debug_assertions))]
 use tauri_plugin_shell::ShellExt;
 
 const BACKEND_HOST: &str = "127.0.0.1";
@@ -771,6 +770,26 @@ async fn restart_backend(app: AppHandle) -> BackendStatus {
     })
 }
 
+#[tauri::command]
+#[allow(deprecated)]
+fn open_pdf_web_link(app: AppHandle, url: String) -> Result<(), String> {
+    let parsed = tauri::Url::parse(&url).map_err(|_| "URL web invalide.".to_string())?;
+    if url.len() > 4096
+        || !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.has_host()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || url
+            .chars()
+            .any(|character| character.is_ascii_control() || matches!(character, ' ' | '\\'))
+    {
+        return Err("Seules les URL HTTP et HTTPS sont autorisées.".into());
+    }
+    app.shell()
+        .open(parsed.to_string(), None)
+        .map_err(|error| error.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -781,7 +800,8 @@ pub fn run() {
             open_pdf,
             save_pdf,
             save_pdf_as,
-            get_startup_pdfs
+            get_startup_pdfs,
+            open_pdf_web_link
         ])
         .on_page_load(|webview, payload| {
             eprintln!(

@@ -1,9 +1,14 @@
+import { facingSpreadSize, isMultipageMode, isScrollingMode, PAGE_ROW_GAP } from "./viewer/pageLayout";
+import type { ReactNode } from "react";
+import { PdfLinks, PdfOutline, LinkInspector, followWebLink } from "./components/PdfLinks";
+import type { LinkDestination, PdfLinkEdit } from "./editing/types";
 import { ImageDocumentDialog } from "./components/ImageDocumentDialog";
 import { ToolbarIcon } from "./components/ToolbarIcon";
 import { DOCUMENT_ACCEPT, readImageSource, createImagePdf, type ImageSource, type ImageLayout, DEFAULT_IMAGE_LAYOUT, type ImageTransform, validateImageDocumentSession } from "./images/imageDocument";
 import { ImagesPdfDialog } from "./components/ImagesPdfDialog";
 import { requestToolChange } from "./editing/toolTransition";
-import { SidebarNavigation, type NavigationAction } from "./components/SidebarNavigation";
+import { SidebarNavigation } from "./components/SidebarNavigation";
+import type { NavigationAction } from "./viewer/navigationGroups";
 import { PdfPasswordDialog } from "./components/PdfPasswordDialog";
 import { unlockWorkingPdf, PdfOpenCancelled, PdfUnlockError } from "./pdf/passwords";
 import { LayerControls } from "./components/LayerControls";
@@ -16,6 +21,7 @@ import type { LineGeometry, ImageEdit } from "./editing/types";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -31,7 +37,7 @@ import { createPortal } from "react-dom";
 import * as pdfjsLib from "pdfjs-dist";
 import type {
   PDFDocumentProxy,
-  PageViewport,
+  PDFPageProxy,
   RenderTask,
 } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
@@ -155,6 +161,7 @@ import { getDisplayAnnotationMode } from "./pdf/formRenderMode";
 import {
   getDocumentEditingState,
   pdfEditsReducer,
+  type PdfEditsByDocument,
 } from "./editing/state";
 import { getSuggestedPdfSaveName } from "./saving/fileName";
 import { downloadPdfToBrowser } from "./saving/destination";
@@ -172,7 +179,7 @@ import "./App.css";
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const DOCUMENT_STORAGE_WARNING = "Les PDF ne peuvent pas être conservés durablement dans ce navigateur. Ils resteront ouverts jusqu'à la fermeture de l'onglet.";
-const MIN_ZOOM = 0.5;
+const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.1;
 const VIEWER_PAN_STEP = 56;
@@ -196,11 +203,20 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+type PageNavigationRequest = {
+  documentId: string;
+  pageNumber: number;
+  requestId: number;
+  commentId?: string;
+  position?: Extract<LinkDestination, { kind: "internal" }>;
+};
+
 type DocumentSidebarProps = {
   documents: OpenPdfDocument[];
   openFileInputRef: RefObject<HTMLInputElement | null>;
   activePageNumber: number;
   pagePlan: OrganizePagePlan | null;
+  outline?: ReactNode;
   onSelectPage: (pageNumber: number) => void;
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>;
   status: string;
@@ -365,6 +381,9 @@ type PdfPageCanvasProps = {
   pendingSignatureImage: SignatureImage | null;
   eyedropperTarget: "stroke" | "fill" | null;
   registerPageRef: (pageNumber: number, node: HTMLElement | null) => void;
+  allowTextMarkup: boolean;
+  onFollowLink: (destination: LinkDestination) => void;
+  onEditLink?: (edit: PdfLinkEdit) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddNativeText: (span: NativeTextSpan, text: string) => void;
   onAddStamp: (pageNumber: number, rect: PdfRect) => void;
@@ -414,6 +433,9 @@ function PdfPageCanvas({
   pendingSignatureImage,
   eyedropperTarget,
   registerPageRef,
+  allowTextMarkup,
+  onFollowLink,
+  onEditLink,
   onAddText,
   onAddNativeText,
   onAddShape,
@@ -447,7 +469,11 @@ function PdfPageCanvas({
   const [textLayerRevision, setTextLayerRevision] = useState(0);
   const shouldRender = renderEnabled;
   const [renderState, setRenderState] = useState<RenderState>("idle");
-  const [viewport, setViewport] = useState<PageViewport | null>(null);
+  const [geometryPage, setGeometryPage] = useState<PDFPageProxy | null>(null);
+  const viewport = useMemo(() => geometryPage?.getViewport({
+    scale: zoom,
+    rotation: ((geometryPage.rotate ?? 0) + rotation) % 360,
+  }), [geometryPage, rotation, zoom]);
   const [nativeTextSpans, setNativeTextSpans] = useState<NativeTextSpan[]>([]);
   const [formFields, setFormFields] = useState<PdfFormField[]>([]);
   const [canvasAnnotationMode, setCanvasAnnotationMode] = useState<number | null>(null);
@@ -481,15 +507,12 @@ function PdfPageCanvas({
     let cancelled = false;
     void pdfDocument.getPage(sourcePageNumber).then((page) => {
       if (cancelled) return;
-      setViewport(page.getViewport({
-        scale: zoom,
-        rotation: ((page.rotate ?? 0) + rotation) % 360,
-      }));
+      setGeometryPage(page);
     }).catch(() => {
       if (!cancelled) setRenderState("error");
     });
     return () => { cancelled = true; };
-  }, [pdfDocument, rotation, sourcePageNumber, zoom]);
+  }, [pdfDocument, sourcePageNumber]);
 
   useEffect(() => {
     if (shouldRender) return;
@@ -764,11 +787,6 @@ function PdfPageCanvas({
           }
           canvas.style.width = `${renderDimensions.cssWidth}px`;
           canvas.style.height = `${renderDimensions.cssHeight}px`;
-          surface.style.width = `${renderDimensions.cssWidth}px`;
-          surface.style.height = `${renderDimensions.cssHeight}px`;
-          surface.style.minWidth = "0";
-          surface.style.minHeight = "0";
-          setViewport(viewport);
           setCanvasAnnotationMode(requestedAnnotationMode);
           setRenderState("ready");
           onRenderReady?.(displayPageNumber);
@@ -821,13 +839,13 @@ function PdfPageCanvas({
       data-annotation-mode={canvasAnnotationMode === PDFJS_DISPLAY_ANNOTATION_MODES.ENABLE_FORMS ? "enable_forms" : "enable"}
       aria-label={`Page ${displayPageNumber}`}
       aria-hidden={isIncomingPage || undefined}
-      inert={presentation || isIncomingPage}
+      inert={isIncomingPage}
     >
       <div className="page-number">Page {displayPageNumber}</div>
       <div
         ref={surfaceRef}
         className="page-surface"
-        style={viewport ? { width: `${viewport.width}px`, height: `${viewport.height}px` } : undefined}
+        style={viewport ? { width: viewport.width, height: viewport.height, minWidth: 0, minHeight: 0 } : undefined}
         onClick={(event) => {
           if (sampleRenderedColor(event)) {
             return;
@@ -884,7 +902,7 @@ function PdfPageCanvas({
           className="textLayer pdf-text-layer"
           hidden
           onMouseUp={() => {
-            if (activeTool !== "select" || !viewport || !surfaceRef.current || !textLayerRef.current) return;
+            if (!allowTextMarkup || activeTool !== "select" || !viewport || !surfaceRef.current || !textLayerRef.current) return;
             window.setTimeout(() => {
               const selection = window.getSelection();
               if (!selection || selection.isCollapsed || selection.rangeCount !== 1) return;
@@ -958,8 +976,16 @@ function PdfPageCanvas({
             Aucun texte PDF natif modifiable sur cette page. Le texte présent uniquement dans une image ou converti en courbes ne peut pas être édité directement.
           </p>
         ) : null}
+        {shouldRender && viewport ? <PdfLinks
+          key={sourcePageNumber}
+          pdf={pdfDocument} pageNumber={sourcePageNumber} viewport={viewport}
+          edits={edits.filter((edit): edit is PdfLinkEdit => edit.type === "link")}
+          tool={activeTool} disabled={Boolean(eyedropperTarget)}
+          onFollow={onFollowLink} onEdit={onEditLink}
+        /> : null}
         {shouldRender && viewport ? (
           <PdfEditLayer
+            inert={presentation}
             pageNumber={sourcePageNumber}
             viewport={viewport}
             edits={edits}
@@ -968,6 +994,7 @@ function PdfPageCanvas({
             activeTool={activeTool}
             freehandStyle={freehandStyle}
             pendingSignatureImage={pendingSignatureImage}
+            onAddLink={(rect) => onEditLink?.({ type: "link", id: crypto.randomUUID(), page: sourcePageNumber, rect, destination: null })}
             onAddText={(rect) => onAddText(sourcePageNumber, rect)}
             onAddStamp={(rect) => onAddStamp(sourcePageNumber, rect)}
             onAddRedaction={(rect) => onAddRedaction(sourcePageNumber, rect)}
@@ -993,6 +1020,7 @@ type PdfViewerProps = {
   documents: OpenPdfDocument[];
   pagePlan: OrganizePagePlan;
   edits: PdfEdit[];
+  editsByDocument: PdfEditsByDocument;
   signatureImages: Record<string, SignatureImage>;
   selectedEditId: string | null;
   activeTool: EditingTool;
@@ -1004,6 +1032,8 @@ type PdfViewerProps = {
   onZoomChange: (documentId: string, delta: number) => void;
   onZoomSet: (documentId: string, zoom: number) => void;
   onScrollPositionChange: (documentId: string, scrollLeft: number, scrollTop: number) => void;
+  onFollowLink: (sourceDocumentId: string, destination: LinkDestination, fromPage?: number) => void;
+  onEditLink: (edit: PdfLinkEdit) => void;
   onAddText: (pageNumber: number, rect: PdfRect) => void;
   onAddNativeText: (span: NativeTextSpan, text: string) => void;
   onAddStamp: (pageNumber: number, rect: PdfRect) => void;
@@ -1026,7 +1056,7 @@ type PdfViewerProps = {
   searchHits: PdfSearchHit[];
   activeSearchHitId: string | null;
   focusRequest: number;
-  pageNavigationRequest: { pageNumber: number; requestId: number; commentId?: string } | null;
+  pageNavigationRequest: PageNavigationRequest | null;
   viewerMode: ViewerMode;
   activePageNumber: number;
   shouldFitToPage: boolean;
@@ -1039,6 +1069,7 @@ function PdfViewer({
   documents,
   pagePlan,
   edits,
+  editsByDocument,
   signatureImages,
   selectedEditId,
   activeTool,
@@ -1050,6 +1081,8 @@ function PdfViewer({
   onZoomChange,
   onZoomSet,
   onScrollPositionChange,
+  onFollowLink,
+  onEditLink,
   onAddText,
   onAddNativeText,
   onAddShape,
@@ -1081,6 +1114,8 @@ function PdfViewer({
   const viewerRef = useRef<HTMLElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
   const lastFocusRequestRef = useRef<number | null>(null);
+  const consumedNavigation = useRef<number | null>(null);
+  const navigationAnchor = useRef<number | null>(null);
   const pageRefs = useRef(new Map<number, HTMLElement | null>());
   const observedPageNumbersRef = useRef(new Set<number>());
   const dragStateRef = useRef<{
@@ -1092,7 +1127,12 @@ function PdfViewer({
   const [isDragging, setIsDragging] = useState(false);
   const [fitLayoutVersion, setFitLayoutVersion] = useState(0);
   const [observedPageNumbers, setObservedPageNumbers] = useState<number[]>([]);
-  const previousViewerModeRef = useRef<ViewerMode>(viewerMode);
+  const scrolling = isScrollingMode(viewerMode);
+  const multipage = isMultipageMode(viewerMode);
+  const currentLayout = useRef({ mode: viewerMode, zoom: document.zoom });
+  currentLayout.current = { mode: viewerMode, zoom: document.zoom };
+  const previousLayout = useRef({ mode: viewerMode, zoom: document.zoom, documentId: document.id });
+  const readingOffset = useRef({ page: activePageNumber, fraction: 0 });
   const pages = useMemo(
     () =>
       pagePlan.pages.flatMap((plannedPage) => {
@@ -1103,6 +1143,8 @@ function PdfViewer({
       }),
     [documents, pagePlan.pages],
   );
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
   const [visiblePage, setVisiblePage] = useState<{ documentId: string; pageNumber: number } | null>(null);
   const visiblePageNumber = visiblePage?.documentId === document.id ? visiblePage.pageNumber : null;
 
@@ -1115,17 +1157,17 @@ function PdfViewer({
   const requestedPageRef = useRef(activePageNumber);
   requestedPageRef.current = activePageNumber;
   const commitVisiblePage = useCallback((pageNumber: number) => {
-    if (viewerMode === "continuous" || pageNumber !== requestedPageRef.current) return;
+    if (scrolling || pageNumber !== requestedPageRef.current) return;
     setPageTransitionError(null);
     setVisiblePage((current) =>
       current?.documentId === document.id && current.pageNumber === pageNumber
         ? current
         : { documentId: document.id, pageNumber },
     );
-  }, [document.id, viewerMode]);
+  }, [document.id, scrolling]);
 
   const pagesToRender = useMemo(() => {
-    if (viewerMode === "continuous") return pages.map((page) => ({ page, isIncoming: false }));
+    if (scrolling) return pages.map((page) => ({ page, isIncoming: false }));
     const requested = pages.find((page) => page.displayPageNumber === activePageNumber);
     if (!requested) return [];
     const visible = visiblePageNumber === null
@@ -1133,7 +1175,7 @@ function PdfViewer({
       : pages.find((page) => page.displayPageNumber === visiblePageNumber) ?? null;
     if (!visible || visible.id === requested.id) return [{ page: requested, isIncoming: false }];
     return [{ page: visible, isIncoming: false }, { page: requested, isIncoming: true }];
-  }, [activePageNumber, pages, viewerMode, visiblePageNumber]);
+  }, [activePageNumber, pages, scrolling, visiblePageNumber]);
 
   const registerPageRef = useCallback((pageNumber: number, node: HTMLElement | null) => {
     const previous = pageRefs.current.get(pageNumber) ?? null;
@@ -1154,7 +1196,7 @@ function PdfViewer({
   // window. Page components no longer keep one sticky observer/canvas each.
   useEffect(() => {
     const viewer = viewerRef.current;
-    if (viewerMode !== "continuous" || !viewer || !("IntersectionObserver" in window)) return;
+    if (!scrolling || !viewer || !("IntersectionObserver" in window)) return;
 
     const observer = new IntersectionObserver((entries) => {
       const next = new Set(observedPageNumbersRef.current);
@@ -1177,13 +1219,13 @@ function PdfViewer({
       if (pageElement) observer.observe(pageElement);
     }
     return () => observer.disconnect();
-  }, [document.id, pages, viewerMode]);
+  }, [document.id, pagePlan.pages, scrolling, viewerMode]);
 
   const continuousRenderPageNumbers = useMemo(
-    () => viewerMode === "continuous"
+    () => scrolling
       ? getContinuousRenderWindow(pages.length, [activePageNumber, ...observedPageNumbers])
       : null,
-    [activePageNumber, observedPageNumbers, pages.length, viewerMode],
+    [activePageNumber, observedPageNumbers, pages.length, scrolling],
   );
 
   const goToPage = useCallback((pageNumber: number) => {
@@ -1197,10 +1239,41 @@ function PdfViewer({
       return 1;
     }
 
+    const preferred = navigationAnchor.current === null ? null : pageRefs.current.get(navigationAnchor.current);
+    if (preferred) {
+      const pageBounds = preferred.getBoundingClientRect();
+      const bounds = viewer.getBoundingClientRect();
+      const visibleHeight = Math.min(pageBounds.bottom, bounds.bottom) - Math.max(pageBounds.top, bounds.top);
+      const visibleWidth = Math.min(pageBounds.right, bounds.right) - Math.max(pageBounds.left, bounds.left);
+      if (pageBounds.height > 0 && visibleHeight >= Math.min(pageBounds.height, bounds.height) * 0.12
+        && (!multipage || visibleWidth >= Math.min(pageBounds.width, bounds.width) * 0.12)) {
+        return navigationAnchor.current!;
+      }
+      navigationAnchor.current = null;
+    }
     const targetScrollTop = viewer.scrollTop + viewer.clientHeight / 2;
+    if (multipage) {
+      const bounds = viewer.getBoundingClientRect();
+      const middleY = bounds.top + viewer.clientHeight / 2;
+      const middleX = bounds.left + viewer.clientWidth / 2;
+      let nearest = 1;
+      let bestDistance = Infinity;
+      for (const [pageNumber, element] of pageRefs.current) {
+        if (!element) continue;
+        const page = element.getBoundingClientRect();
+        const y = Math.max(0, page.top - middleY, middleY - page.bottom);
+        const x = Math.max(0, page.left - middleX, middleX - page.right);
+        const distance = y * (viewer.clientWidth + 1) + x;
+        if (distance < bestDistance || (distance === bestDistance && pageNumber < nearest)) {
+          bestDistance = distance;
+          nearest = pageNumber;
+        }
+      }
+      return nearest;
+    }
     let currentPageNumber = 1;
 
-    for (const page of pages) {
+    for (const page of pagesRef.current) {
       const pageElement = pageRefs.current.get(page.displayPageNumber);
 
       if (!pageElement) {
@@ -1220,15 +1293,14 @@ function PdfViewer({
     }
 
     return currentPageNumber;
-  }, [pages]);
+  }, [multipage, pagePlan.pages]);
 
   useEffect(() => {
-    if (viewerMode === "continuous") {
-      onActivePageChange(document.id, getCurrentPageNumber());
-    }
-  }, [document.id, getCurrentPageNumber, onActivePageChange, viewerMode]);
+    if (viewerMode === "continuous") onActivePageChange(document.id, getCurrentPageNumber());
+  // Initial document restoration already sets the viewport scroll offsets.
+  }, [document.id]);
 
-  const scrollPageIntoView = useCallback((pageNumber: number, direct = false) => {
+  const scrollPageIntoView = useCallback((pageNumber: number, direct = false, fraction = 0) => {
     const viewer = viewerRef.current;
     const pageElement = pageRefs.current.get(pageNumber)
       ?? viewer?.querySelector<HTMLElement>(`.pdf-page[data-page-number="${pageNumber}"]`);
@@ -1241,7 +1313,10 @@ function PdfViewer({
       const viewerBounds = viewer.getBoundingClientRect();
       const pageBounds = pageElement.getBoundingClientRect();
       if (pageBounds.height > 0 && viewerBounds.height > 0) {
-        viewer.scrollTop = Math.max(0, viewer.scrollTop + pageBounds.top - viewerBounds.top - 8);
+        viewer.scrollTop = Math.max(0, viewer.scrollTop + pageBounds.top - viewerBounds.top - 8 + pageBounds.height * fraction);
+        if (pageBounds.left < viewerBounds.left || pageBounds.right > viewerBounds.right) {
+          viewer.scrollLeft += pageBounds.left - viewerBounds.left - 8;
+        }
       } else {
         viewer.scrollTo({ top: pageElement.offsetTop, behavior: "smooth" });
       }
@@ -1292,7 +1367,7 @@ function PdfViewer({
 
   useEffect(() => {
     const viewer = viewerRef.current;
-    if (!viewer || viewerMode === "continuous" || !shouldFitToPage) {
+    if (!viewer || (scrolling && viewerMode !== "facing") || !shouldFitToPage) {
       return;
     }
 
@@ -1311,31 +1386,36 @@ function PdfViewer({
       observer?.disconnect();
       window.removeEventListener("resize", updateLayout);
     };
-  }, [shouldFitToPage, viewerMode]);
+  }, [scrolling, shouldFitToPage, viewerMode]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
-    const page = pages.find((candidate) => candidate.displayPageNumber === activePageNumber);
+    const page = pagesRef.current.find((candidate) => candidate.displayPageNumber === activePageNumber);
 
-    if (!viewer || !page || viewerMode === "continuous" || !shouldFitToPage) {
+    if (!viewer || !page || (scrolling && viewerMode !== "facing") || !shouldFitToPage) {
       return;
     }
 
     let cancelled = false;
-    void page.sourceDocument.pdfDocument.getPage(page.sourcePageIndex + 1).then((sourcePage) => {
+    const measure = async (entry: typeof page) => {
+      const source = await entry.sourceDocument.pdfDocument.getPage(entry.sourcePageIndex + 1);
+      return source.getViewport({ scale: 1, rotation: ((source.rotate ?? 0) + entry.rotation) % 360 });
+    };
+    const facing = viewerMode === "facing";
+    const size = facing ? Promise.all(pagesRef.current.map(measure)).then(facingSpreadSize) : measure(page);
+    void size.then((viewport) => {
       if (cancelled) return;
-      const viewport = sourcePage.getViewport({
-        scale: 1,
-        rotation: ((sourcePage.rotate ?? 0) + page.rotation) % 360,
-      });
+      const styles = facing ? window.getComputedStyle(viewer) : null;
+      const horizontalPadding = styles ? parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight) : 0;
+      const verticalPadding = styles ? parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom) : 0;
       const navigationHeight = viewerMode === "presentation"
         ? 0
         : viewer.querySelector<HTMLElement>(".viewer-page-navigation")?.offsetHeight ?? 0;
       const scale = computeFitScale({
         pageWidth: viewport.width,
         pageHeight: viewport.height,
-        containerWidth: viewer.clientWidth,
-        containerHeight: Math.max(1, viewer.clientHeight - navigationHeight),
+        containerWidth: viewer.clientWidth - horizontalPadding - (facing && pagesRef.current.length > 1 ? PAGE_ROW_GAP : 0),
+        containerHeight: Math.max(1, viewer.clientHeight - navigationHeight - verticalPadding - (facing ? 28 : 0)),
         padding: viewerMode === "presentation" ? 0 : 20,
         minScale: MIN_ZOOM,
         maxScale: MAX_ZOOM,
@@ -1346,18 +1426,39 @@ function PdfViewer({
     return () => {
       cancelled = true;
     };
-  }, [activePageNumber, document.id, fitLayoutVersion, fitRefreshToken, onZoomSet, pages, shouldFitToPage, viewerMode]);
+  }, [activePageNumber, document.id, fitLayoutVersion, fitRefreshToken, onZoomSet, pagePlan.pages, scrolling, shouldFitToPage, viewerMode]);
 
-  useEffect(() => {
-    const previousViewerMode = previousViewerModeRef.current;
-    previousViewerModeRef.current = viewerMode;
-
-    if (viewerMode === "continuous" && previousViewerMode !== "continuous") {
-      window.requestAnimationFrame(() => {
-        scrollPageIntoView(activePageNumber, true);
-      });
+  useLayoutEffect(() => {
+    const previous = previousLayout.current;
+    previousLayout.current = { mode: viewerMode, zoom: document.zoom, documentId: document.id };
+    if (previous.documentId !== document.id) {
+      navigationAnchor.current = null;
+      readingOffset.current = { page: activePageNumber, fraction: 0 };
+      return;
     }
-  }, [activePageNumber, scrollPageIntoView, viewerMode]);
+    const modeChanged = previous.mode !== viewerMode;
+    if (!scrolling || (!modeChanged && (!multipage || previous.zoom === document.zoom))) return;
+    const fraction = readingOffset.current.page === activePageNumber ? readingOffset.current.fraction : 0;
+    const restore = () => {
+      navigationAnchor.current = activePageNumber;
+      scrollPageIntoView(activePageNumber, true, fraction);
+    };
+    restore();
+    // Coming from a single-page layout mounts the missing shells. Reapply the
+    // anchor as soon as their PDF.js sizing promises have resolved.
+    if (!modeChanged || isScrollingMode(previous.mode)) return;
+    let cancelled = false;
+    let frame = 0;
+    void Promise.allSettled(pagesRef.current.map((page) =>
+      page.sourceDocument.pdfDocument.getPage(page.sourcePageIndex + 1),
+    )).then(() => {
+      if (cancelled || requestedPageRef.current !== activePageNumber) return;
+      frame = window.requestAnimationFrame(() => {
+        if (!cancelled && requestedPageRef.current === activePageNumber) restore();
+      });
+    });
+    return () => { cancelled = true; window.cancelAnimationFrame(frame); };
+  }, [activePageNumber, document.id, document.zoom, multipage, pageNavigationRequest?.requestId, scrollPageIntoView, scrolling, viewerMode]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -1372,9 +1473,9 @@ function PdfViewer({
   }, [document.id, focusRequest]);
 
   useEffect(() => {
-    if (!pageNavigationRequest) {
-      return;
-    }
+    if (!pageNavigationRequest || consumedNavigation.current === pageNavigationRequest.requestId) return;
+    consumedNavigation.current = pageNavigationRequest.requestId;
+    navigationAnchor.current = pageNavigationRequest.pageNumber;
     goToPage(pageNavigationRequest.pageNumber);
     if (!pageNavigationRequest.commentId) {
       scrollPageIntoView(pageNavigationRequest.pageNumber, true);
@@ -1400,6 +1501,43 @@ function PdfViewer({
       if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
   }, [goToPage, pageNavigationRequest, scrollCommentIntoView, scrollPageIntoView]);
+
+  useEffect(() => {
+    const request = pageNavigationRequest;
+    if (!request?.position || (request.position.x === undefined && request.position.y === undefined)) return;
+    const target = pagesRef.current.find((page) => page.displayPageNumber === request.pageNumber);
+    if (!target) return;
+    const { x, y, pageIndex } = request.position;
+    let cancelled = false;
+    let timer: number | undefined;
+    void target.sourceDocument.pdfDocument.getPage(pageIndex + 1).then((page) => {
+      if (cancelled) return;
+      let retries = 40;
+      const align = () => {
+        const viewer = viewerRef.current;
+        const article = pageRefs.current.get(request.pageNumber);
+        const surface = article?.querySelector(".page-surface");
+        const { mode, zoom } = currentLayout.current;
+        const scroll = mode === "presentation" ? viewer?.querySelector<HTMLElement>(".pdf-document") : viewer;
+        if (!surface || !scroll || article?.dataset.pageBuffer === "back" || article?.dataset.renderState !== "ready") {
+          if (retries-- > 0) timer = window.setTimeout(align, 50);
+          return;
+        }
+        const viewport = page.getViewport({ scale: zoom, rotation: ((page.rotate ?? 0) + target.rotation) % 360 });
+        const [x0, , , y1] = viewport.viewBox;
+        const [left, top] = viewport.convertToViewportPoint(x ?? x0, y ?? y1);
+        const origin = surface.getBoundingClientRect();
+        const bounds = scroll.getBoundingClientRect();
+        navigationAnchor.current = request.pageNumber;
+        scroll.scrollTop += origin.top - bounds.top + Math.max(0, Math.min(top, viewport.height)) - 8;
+        if (x !== undefined || viewport.rotation % 180 !== 0) {
+          scroll.scrollLeft += origin.left - bounds.left + Math.max(0, Math.min(left, viewport.width)) - 8;
+        }
+      };
+      timer = window.setTimeout(align, 50);
+    }).catch(() => undefined);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [document.id, pageNavigationRequest]);
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -1490,9 +1628,14 @@ function PdfViewer({
     scrollFrameRef.current = window.requestAnimationFrame(() => {
       scrollFrameRef.current = null;
       onScrollPositionChange(document.id, viewer.scrollLeft, viewer.scrollTop);
-      onActivePageChange(document.id, getCurrentPageNumber());
+      if (scrolling) {
+        const page = getCurrentPageNumber();
+        const rect = pageRefs.current.get(page)?.getBoundingClientRect();
+        if (rect?.height) readingOffset.current = { page, fraction: Math.max(0, (viewer.getBoundingClientRect().top - rect.top) / rect.height) };
+        onActivePageChange(document.id, page);
+      }
     });
-  }, [document.id, getCurrentPageNumber, onActivePageChange, onScrollPositionChange]);
+  }, [document.id, getCurrentPageNumber, onActivePageChange, onScrollPositionChange, scrolling]);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
@@ -1508,7 +1651,7 @@ function PdfViewer({
 
       // Page unique and présentation are owned by the window-level navigation
       // listener so they never depend on focus remaining on this scroll area.
-      if (viewerMode !== "continuous") {
+      if (!scrolling) {
         return;
       }
 
@@ -1536,13 +1679,17 @@ function PdfViewer({
         case "PageUp":
           event.preventDefault();
           if (currentPageNumber > 1) {
-            scrollPageIntoView(currentPageNumber - 1);
+            navigationAnchor.current = currentPageNumber - 1;
+            goToPage(currentPageNumber - 1);
+            scrollPageIntoView(currentPageNumber - 1, multipage);
           }
           break;
         case "PageDown":
           event.preventDefault();
           if (currentPageNumber < pages.length) {
-            scrollPageIntoView(currentPageNumber + 1);
+            navigationAnchor.current = currentPageNumber + 1;
+            goToPage(currentPageNumber + 1);
+            scrollPageIntoView(currentPageNumber + 1, multipage);
           }
           break;
         case "Home":
@@ -1557,7 +1704,7 @@ function PdfViewer({
           return;
       }
     },
-    [document.id, getCurrentPageNumber, pages.length, scrollPageIntoView, viewerMode],
+    [document.id, getCurrentPageNumber, goToPage, multipage, pages.length, scrollPageIntoView, scrolling],
   );
 
   const handleMouseDown = useCallback((event: MouseEvent<HTMLElement>) => {
@@ -1587,7 +1734,7 @@ function PdfViewer({
       data-testid="pdf-viewer"
       tabIndex={0}
       className={
-        isDragging
+        (multipage ? "viewer--multipage " : "") + (isDragging
           ? "viewer viewer--pan-enabled is-panning"
           : viewerMode === "presentation"
             ? "viewer viewer--presentation"
@@ -1597,25 +1744,35 @@ function PdfViewer({
             ? "viewer viewer--text-tool"
             : eyedropperTarget
               ? "viewer viewer--eyedropper"
-              : "viewer viewer--pan-enabled"
+              : "viewer viewer--pan-enabled")
       }
       aria-label={`Aperçu PDF ${document.fileName}`}
       onScroll={handleScroll}
       onKeyDown={handleKeyDown}
       onMouseDown={handleMouseDown}
+      onPointerDownCapture={(event) => {
+        if (!multipage || !(event.target instanceof Element)) return;
+        const article = event.target.closest<HTMLElement>(".pdf-page");
+        const pageNumber = Number(article?.dataset.pageNumber);
+        if (pageNumber > 0) {
+          navigationAnchor.current = pageNumber;
+          goToPage(pageNumber);
+        }
+      }}
     >
       {pageTransitionError ? <p className="presentation-render-error" role="status">{pageTransitionError}</p> : null}
       {document.error ? <p className="status">{document.error}</p> : null}
-      <div className={viewerMode === "continuous" ? "pdf-document" : "pdf-document pdf-document--page-transition"} aria-label={`Document PDF ${document.fileName}`}>
+      <div className={multipage ? `pdf-document pdf-document--${viewerMode}` : scrolling ? "pdf-document" : "pdf-document pdf-document--page-transition"}
+        style={multipage ? { gap: PAGE_ROW_GAP } : undefined} aria-label={`Document PDF ${document.fileName}`}>
         {pagesToRender.map(({ page, isIncoming }) => {
           const isActiveDocumentSource = page.sourceDocumentId === document.id;
           const nativeTextRuntimeActive =
             isActiveDocumentSource &&
             activeTool === "edit_text" &&
             viewerMode !== "presentation" &&
-            page.displayPageNumber === activePageNumber;
+            (multipage || page.displayPageNumber === activePageNumber);
           const formRuntimeActive =
-            viewerMode !== "presentation" && page.displayPageNumber === activePageNumber;
+            viewerMode !== "presentation" && isActiveDocumentSource && (multipage || page.displayPageNumber === activePageNumber);
           return (
             <PdfPageCanvas
               key={page.id}
@@ -1632,7 +1789,9 @@ function PdfViewer({
                   ? edits.filter(
                       (edit) => edit.page === page.sourcePageIndex + 1,
                     )
-                  : []
+                  : getDocumentEditingState(editsByDocument, page.sourceDocumentId).edits.filter(
+                      (edit) => edit.type === "link" && edit.page === page.sourcePageIndex + 1,
+                    )
               }
               signatureImages={signatureImages}
               selectedEditId={viewerMode === "presentation" ? null : selectedEditId}
@@ -1648,6 +1807,9 @@ function PdfViewer({
               }
               eyedropperTarget={isActiveDocumentSource ? eyedropperTarget : null}
               registerPageRef={registerPageRef}
+              allowTextMarkup={isActiveDocumentSource}
+              onFollowLink={(destination) => onFollowLink(page.sourceDocumentId, destination, page.displayPageNumber)}
+              onEditLink={isActiveDocumentSource && viewerMode !== "presentation" ? onEditLink : undefined}
               onAddText={onAddText}
               onAddNativeText={onAddNativeText}
                 onAddStamp={onAddStamp}
@@ -1674,9 +1836,9 @@ function PdfViewer({
               activeSearchHitId={activeSearchHitId}
               isIncomingPage={isIncoming}
               presentation={viewerMode === "presentation"}
-              renderEnabled={viewerMode !== "continuous" || continuousRenderPageNumbers?.has(page.displayPageNumber) === true}
-              onRenderReady={viewerMode === "continuous" ? undefined : commitVisiblePage}
-              onRenderError={viewerMode === "continuous" ? undefined : reportRenderError}
+              renderEnabled={!scrolling || continuousRenderPageNumbers?.has(page.displayPageNumber) === true}
+              onRenderReady={scrolling ? undefined : commitVisiblePage}
+              onRenderError={scrolling ? undefined : reportRenderError}
             />
           );
         })}
@@ -2488,6 +2650,7 @@ function DocumentSidebar({
   openFileInputRef,
   activePageNumber,
   pagePlan,
+  outline,
   onSelectPage,
   onFileChange,
   status,
@@ -2524,6 +2687,7 @@ function DocumentSidebar({
 
       <div className="document-sidebar__content">
         <div className="document-sidebar__scroll-area">
+          {!commentsView ? outline : null}
           {commentsView ? (
             comments.length ? <ol className="comment-list" aria-label="Commentaires">{[...comments].sort((left, right) => left.page - right.page || left.rect.y0 - right.rect.y0).map((comment) => <li key={comment.id}><button type="button" className={comment.id === selectedCommentId ? "is-selected" : ""} onClick={() => onSelectComment(comment)}><strong>Page {comment.page}</strong><span>{comment.content}</span></button></li>)}</ol> : <p className="sidebar-hint">Aucun commentaire dans ce document.</p>
           ) : pagePlan && pagePlan.pages.length > 0 ? (
@@ -2654,6 +2818,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     () => storedPreferences?.viewerMode ?? "continuous",
   );
   const [fitToPageByDocument, setFitToPageByDocument] = useState<Record<string, boolean>>({});
+  const presentationReturn = useRef<{ mode: PersistedViewerMode; documentId?: string; zoom?: number; fit?: boolean }>({ mode: "single-page" });
   const [presentationFitRefreshToken, setPresentationFitRefreshToken] = useState(0);
   const [activeEditingTool, setActiveEditingTool] =
     useState<EditingTool>("select");
@@ -2674,6 +2839,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   useEffect(() => { watermarkGeneration.current++; setWatermarkPreview(null); }, [activeDocumentId, activeEditingTool]);
   const [stampLabel, setStampLabel] = useState("APPROUVÉ");
   const [stampWithDate, setStampWithDate] = useState(false);
+  const [linkDraft, setLinkDraft] = useState<PdfLinkEdit | null>(null);
+  useEffect(() => { setLinkDraft(null); }, [activeDocumentId, workspaceMode, viewerMode]);
+  useEffect(() => { if (activeEditingTool !== "link") setLinkDraft(null); }, [activeEditingTool]);
   const [selectedEditId, setSelectedEditId] = useState<string | null>(null);
   const [fontLibraryRevision, setFontLibraryRevision] = useState(0);
   const [eyedropperTarget, setEyedropperTarget] = useState<
@@ -2686,11 +2854,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [activePageByDocument, setActivePageByDocument] = useState<
     Record<string, number>
   >({});
-  const [pageNavigationRequest, setPageNavigationRequest] = useState<{
-    pageNumber: number;
-    requestId: number;
-    commentId?: string;
-  } | null>(null);
+  const [pageNavigationRequest, setPageNavigationRequest] = useState<PageNavigationRequest | null>(null);
   const [signatureImages, setSignatureImages] = useState<
     Record<string, SignatureImage>
   >({});
@@ -2917,6 +3081,16 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     }
   }, [workspaceMode]);
 
+  const exitPresentation = useCallback(() => {
+    if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined);
+    const { mode, documentId, zoom, fit } = presentationReturn.current;
+    if (documentId && zoom !== undefined) {
+      setDocuments((current) => current.map((item) => item.id === documentId ? { ...item, zoom } : item));
+      setFitToPageByDocument((current) => ({ ...current, [documentId]: fit ?? false }));
+    }
+    setViewerMode(mode);
+  }, []);
+
   useEffect(() => {
     if (viewerMode !== "presentation") {
       return;
@@ -2953,9 +3127,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         return;
       }
 
-      if (!document.fullscreenElement) {
-        setViewerMode("single-page");
-      }
+      if (!document.fullscreenElement) exitPresentation();
     }
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -2964,7 +3136,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       if (firstFrame !== null) window.cancelAnimationFrame(firstFrame);
       if (secondFrame !== null) window.cancelAnimationFrame(secondFrame);
     };
-  }, [viewerMode]);
+  }, [exitPresentation, viewerMode]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -3283,10 +3455,27 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     recordActivePage(activeDocument.id, Math.min(pageCount, Math.max(1, pageNumber)));
   }, [activeDocument, activeOrganizationPlan, recordActivePage]);
 
+  const followPdfLink = useCallback((sourceDocumentId: string, destination: LinkDestination, fromPage?: number) => {
+    if (destination.kind === "uri") {
+      followWebLink(destination.url, () => setStatus("Impossible d’ouvrir le lien dans le navigateur."));
+      return;
+    }
+    if (!activeDocument || !activeOrganizationPlan) return;
+    const matches = activeOrganizationPlan.pages.filter((page) =>
+      page.sourceDocumentId === sourceDocumentId && page.sourcePageIndex === destination.pageIndex);
+    const target = matches.find((page) => page.displayPageNumber === fromPage) ?? matches[0];
+    if (!target) {
+      setStatus("La page cible du lien est absente de la disposition actuelle.");
+      return;
+    }
+    recordActivePage(activeDocument.id, target.displayPageNumber);
+    setPageNavigationRequest({ documentId: activeDocument.id, pageNumber: target.displayPageNumber, requestId: ++pageNavigationRequestId.current, position: destination });
+  }, [activeDocument, activeOrganizationPlan, recordActivePage]);
+
   const navigateToSearchResult = useCallback((pageNumber: number) => {
     if (!activeDocument) return;
     recordActivePage(activeDocument.id, pageNumber);
-    setPageNavigationRequest({ pageNumber, requestId: ++pageNavigationRequestId.current });
+    setPageNavigationRequest({ documentId: activeDocument.id, pageNumber, requestId: ++pageNavigationRequestId.current });
   }, [activeDocument, recordActivePage]);
 
   const {
@@ -3308,11 +3497,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const changeViewerMode = useCallback((nextMode: ViewerMode) => {
     if (!activeDocument || nextMode === viewerMode) return;
 
-    if (nextMode !== "continuous") {
+    if (nextMode === "single-page" || nextMode === "presentation" || nextMode === "facing") {
       setFitToPageByDocument((currentModes) => ({ ...currentModes, [activeDocument.id]: true }));
     }
 
     if (nextMode === "presentation") {
+      presentationReturn.current = viewerMode === "facing" || viewerMode === "adaptive"
+        ? { mode: viewerMode, documentId: activeDocument.id, zoom: activeDocument.zoom, fit: fitToPageByDocument[activeDocument.id] ?? true }
+        : { mode: "single-page" };
       const container = presentationContainerRef.current;
       if (container && document.fullscreenEnabled && container.requestFullscreen) {
         void container.requestFullscreen().catch((error: unknown) => {
@@ -3323,14 +3515,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
     setViewerMode(nextMode);
     if (nextMode === "presentation") setViewerFocusRequest((request) => request + 1);
-  }, [activeDocument, viewerMode]);
+  }, [activeDocument, fitToPageByDocument, viewerMode]);
 
-  const exitPresentation = useCallback(() => {
-    if (document.fullscreenElement) {
-      void document.exitFullscreen?.().catch(() => undefined);
-    }
-    setViewerMode("single-page");
-  }, []);
+
 
   useEffect(() => {
     function handleViewerNavigation(event: globalThis.KeyboardEvent) {
@@ -3341,7 +3528,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         return;
       }
       if (
-        viewerMode === "continuous" ||
+        isScrollingMode(viewerMode) ||
+        (event.key === " " && event.target instanceof Element && event.target.closest(".pdf-link")) ||
         !activeDocument ||
         isEditableKeyboardTarget(event.target)
       ) {
@@ -5492,9 +5680,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             openFileInputRef={openFileInputRef}
             activePageNumber={activePageNumber}
             pagePlan={activeOrganizationPlan}
+            outline={activeDocument && activeDocument.media?.kind !== "image" && workspaceMode === "read" ? <PdfOutline
+              key={activeDocument.id} pdf={activeDocument.pdfDocument}
+              onFollow={(destination) => followPdfLink(activeDocument.id, destination)}
+            /> : null}
             onSelectPage={(pageNumber) => {
               recordActivePage(activeDocument?.id ?? "", pageNumber);
+              if (!activeDocument) return;
               setPageNavigationRequest({
+                documentId: activeDocument.id,
                 pageNumber,
                 requestId: ++pageNavigationRequestId.current,
               });
@@ -5514,7 +5708,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               setSelectedEditId(comment.id);
               setIsCommentsView(true);
               recordActivePage(activeDocument?.id ?? "", comment.page);
-              setPageNavigationRequest({ pageNumber: comment.page, commentId: comment.id, requestId: ++pageNavigationRequestId.current });
+              if (!activeDocument) return;
+              setPageNavigationRequest({ documentId: activeDocument.id, pageNumber: comment.page, commentId: comment.id, requestId: ++pageNavigationRequestId.current });
             }}
           />
         ) : null}
@@ -5571,6 +5766,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             documents={documents}
             pagePlan={activeOrganizationPlan}
             edits={watermarkPreview?.documentId === activeDocument.id ? [...activePdfEdits, ...watermarkPreview.edits] : activePdfEdits}
+            editsByDocument={pdfEditsByDocument}
             signatureImages={signatureImages}
             selectedEditId={selectedEditId}
             activeTool={activeEditingTool}
@@ -5581,6 +5777,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             eyedropperTarget={eyedropperTarget}
             onZoomChange={updateDocumentZoom}
             onScrollPositionChange={updateDocumentScrollPosition}
+            onFollowLink={followPdfLink}
+            onEditLink={(edit) => { setLinkDraft(edit); setIsPropertiesPanelVisible(true); }}
             onAddText={addTextEdit}
             onAddNativeText={addNativeTextEdit}
             onAddStamp={addStampEdit}
@@ -5603,7 +5801,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             searchHits={activeSearch.hits}
             activeSearchHitId={activeSearch.hits[activeSearch.activeHitIndex]?.id ?? null}
             focusRequest={viewerFocusRequest}
-            pageNavigationRequest={pageNavigationRequest}
+            pageNavigationRequest={pageNavigationRequest?.documentId === activeDocument.id ? pageNavigationRequest : null}
             viewerMode={viewerMode}
             activePageNumber={activePageNumber}
             onZoomSet={setDocumentZoom}
@@ -5650,6 +5848,26 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <div><span>Inspecteur</span><h2>Propriétés</h2></div>
             <button type="button" aria-label="Masquer les propriétés" title="Masquer les propriétés" onClick={() => setIsPropertiesPanelVisible(false)}>❯</button>
           </header>
+          {workspaceMode === "read" && activeEditingTool === "link" && activeDocument ? <section aria-label="Lien">
+            {linkDraft ? <LinkInspector key={linkDraft.id} edit={linkDraft} pageCount={activeDocument.pageCount}
+              onSave={(edit) => {
+                setLinkDraft(null);
+                if (JSON.stringify(edit) === JSON.stringify(linkDraft)) return;
+                const exists = activePdfEdits.some((item) => item.id === edit.id);
+                dispatchPdfEdits({ type: exists ? "replace" : "add", documentId: activeDocument.id, edit });
+                setExportFeedback(null);
+              }}
+              onDelete={linkDraft.destination ? () => {
+                if (linkDraft.sourceXref !== undefined) {
+                  const exists = activePdfEdits.some((item) => item.id === linkDraft.id);
+                  dispatchPdfEdits({ type: exists ? "replace" : "add", documentId: activeDocument.id, edit: { ...linkDraft, destination: null } });
+                } else deletePdfEdit(linkDraft.id);
+                setLinkDraft(null);
+                setExportFeedback(null);
+              } : undefined}
+              onCancel={() => setLinkDraft(null)}
+            /> : <p>Tracez un rectangle pour ajouter un lien, ou cliquez sur un lien pour le modifier. Les destinations nommées et certaines actions PDF sont en lecture seule.</p>}
+          </section> : null}
           {workspaceMode === "read" && activeEditingTool === "watermark" ? (
             <WatermarkComposer key={activeDocument?.id} previewReady={watermarkPreview?.documentId === activeDocument?.id && Boolean(watermarkPreview?.edits.length)}
               onPreview={previewWatermark} onClear={clearWatermarkPreview}
@@ -5795,6 +6013,22 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           <button type="button" title="Surligner" aria-label="Surligner" onClick={() => addTextMarkupEdit("highlight", textMarkupColor)}>🖍</button>
           <button type="button" title="Souligner" aria-label="Souligner" onClick={() => addTextMarkupEdit("underline", textMarkupColor)}>U̲</button>
           <button type="button" title="Barrer" aria-label="Barrer" onClick={() => addTextMarkupEdit("strikeout", textMarkupColor)}>S̶</button>
+          <button type="button" title="Ajouter un lien à la sélection" aria-label="Ajouter un lien à la sélection"
+            disabled={textMarkupSelection.rects.length > 256}
+            onClick={() => {
+              const { page, rects: areas } = textMarkupSelection;
+              const rect = {
+                x0: Math.min(...areas.map((area) => area.x0)),
+                y0: Math.min(...areas.map((area) => area.y0)),
+                x1: Math.max(...areas.map((area) => area.x1)),
+                y1: Math.max(...areas.map((area) => area.y1)),
+              };
+              setActiveEditingTool("link");
+              setLinkDraft({ type: "link", id: crypto.randomUUID(), page, rect, areas, destination: null });
+              setIsPropertiesPanelVisible(true);
+              setTextMarkupSelection(null);
+              window.getSelection()?.removeAllRanges();
+            }}><ToolbarIcon name="link" /></button>
           <ColorPicker compact label="Couleur de l'annotation" value={textMarkupColor} onChange={setTextMarkupColor} />
         </div>, document.body) : null}
 
@@ -5827,6 +6061,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             >
               <option value="continuous">Continu</option>
               <option value="single-page">Page unique</option>
+              <option value="facing">Double page</option>
+              <option value="adaptive">Multipage automatique</option>
               <option value="presentation">Présentation</option>
             </select>
           </label>
@@ -5839,7 +6075,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                   setFitToPageByDocument((currentModes) => ({ ...currentModes, [activeDocument.id]: true }));
                 }
               }}
-              disabled={!activeDocument || workspaceMode === "organize" || viewerMode === "continuous"}
+              disabled={!activeDocument || workspaceMode === "organize" || viewerMode === "continuous" || viewerMode === "adaptive"}
               aria-label="Ajuster à la page"
               title="Ajuster la page à l'espace disponible"
             >

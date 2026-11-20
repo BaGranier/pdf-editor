@@ -86,16 +86,20 @@ def prepare(*, final: bool = False) -> dict:
         if "/node_modules/" in module.replace("\\", "/"):
             tail = module.replace("\\", "/").rsplit("/node_modules/", 1)[1]
             names.add("/".join(tail.split("/")[:2]) if tail.startswith("@") else tail.split("/")[0])
-    # Vite emits this prebuilt worker as an asset, not a rendered Rollup module.
+    # Verify the shipped worker against the locked upstream file and the same
+    # deterministic provenance patch that Vite uses.
     worker = ROOT / "apps/web/node_modules/pdfjs-dist/build/pdf.worker.mjs"
-    if not any(sha(path) == sha(worker) for path in (ROOT / "apps/web/dist/assets").glob("pdf.worker-*.mjs")):
-        raise ValueError("Emitted PDF worker does not match pdfjs-dist")
+    patch = ROOT / "apps/web/scripts/pdfLinkWorker.mjs"
+    expected_worker = subprocess.check_output(["node", str(patch), str(worker)], cwd=ROOT)
+    worker_sha = hashlib.sha256(expected_worker).hexdigest()
+    if not any(sha(path) == worker_sha for path in (ROOT / "apps/web/dist/assets").glob("pdf.worker-*.mjs")):
+        raise ValueError("Emitted PDF worker does not match the patched pdfjs-dist worker")
     names.add("pdfjs-dist")
     for name in sorted(names):
         directory = ROOT / "apps/web/node_modules" / name
         package = json.loads((directory / "package.json").read_text("utf-8"))
         notices = licenses(directory, NOTICES / "npm" / name)
-        add(name, package["version"], "frontend", package.get("license", "UNKNOWN"), package.get("homepage", package.get("repository", "npm")), "rendered chunk module or byte-matched worker", notices, "no", "OK" if notices else "NEEDS_REVIEW")
+        add(name, package["version"], "frontend", package.get("license", "UNKNOWN"), package.get("homepage", package.get("repository", "npm")), "rendered chunk module or verified patched worker", notices, "no", "OK" if notices else "NEEDS_REVIEW")
 
     metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--locked", "--format-version=1", "--filter-platform=x86_64-pc-windows-msvc", "--manifest-path", str(ROOT / "apps/desktop/src-tauri/Cargo.toml")], cwd=ROOT))
     packages = {package["id"]: package for package in metadata["packages"]}

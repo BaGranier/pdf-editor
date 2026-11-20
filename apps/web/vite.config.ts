@@ -2,8 +2,10 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { mkdirSync, writeFileSync } from "node:fs";
 
+import { pdfLinkWorker } from "./pdfLinkWorker";
+
 export default defineConfig({
-  plugins: [react(), {
+  plugins: [react(), pdfLinkWorker(), {
     name: "redistributed-module-evidence",
     generateBundle(_options, bundle) {
       const modules = Object.values(bundle).flatMap(output => output.type === "chunk"

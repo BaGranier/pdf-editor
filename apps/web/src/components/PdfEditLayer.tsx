@@ -29,6 +29,7 @@ import { ShapeEditBlock } from "./ShapeEditLayer";
 import { TextEditBlock } from "./TextEditLayer";
 
 type PdfEditLayerProps = {
+  inert?: boolean;
   pageNumber: number;
   viewport: PageViewport;
   edits: PdfEdit[];
@@ -37,6 +38,7 @@ type PdfEditLayerProps = {
   activeTool: EditingTool;
   freehandStyle: FreehandStyle;
   pendingSignatureImage: SignatureImage | null;
+  onAddLink?: (rect: PdfRect) => void;
   onAddText: (rect: PdfRect) => void;
   onAddStamp?: (rect: PdfRect) => void;
   onAddRedaction: (rect: PdfRect) => void;
@@ -50,6 +52,7 @@ type PdfEditLayerProps = {
 };
 
 export function PdfEditLayer({
+  inert,
   pageNumber,
   viewport,
   edits,
@@ -58,6 +61,7 @@ export function PdfEditLayer({
   activeTool,
   freehandStyle,
   pendingSignatureImage,
+  onAddLink,
   onAddText,
   onAddShape,
   onAddRedaction,
@@ -80,6 +84,7 @@ export function PdfEditLayer({
     setCreation(next);
   };
   const creationActive =
+    activeTool === "link" ||
     activeTool === "visual_mask" ||
     activeTool === "stamp" ||
     activeTool === "redaction" ||
@@ -154,6 +159,9 @@ export function PdfEditLayer({
     if (activeTool === "redaction") {
       ignoreCompletionClickRef.current = true;
       if (rect.x1 > rect.x0 && rect.y1 > rect.y0) onAddRedaction(rect);
+    } else if (activeTool === "link") {
+      ignoreCompletionClickRef.current = true;
+      if (rect.x1 > rect.x0 && rect.y1 > rect.y0) onAddLink?.(rect);
     } else if (activeTool === "add_text") {
       ignoreCompletionClickRef.current = true;
       onAddText(rect);
@@ -183,6 +191,7 @@ export function PdfEditLayer({
           ? "pdf-edit-layer pdf-edit-layer--creation-active"
           : "pdf-edit-layer"
       }
+      inert={inert}
       aria-label={`Couche d'édition de la page ${pageNumber}`}
       data-active-editing-tool={activeTool}
       onPointerDown={(event) => {
@@ -351,7 +360,7 @@ export function PdfEditLayer({
 
         if (edit.type === "native_text" || edit.type === "image_background") return null;
 
-        if (edit.type === "form_field" || edit.type === "form_lock") return null;
+        if (edit.type === "form_field" || edit.type === "form_lock" || edit.type === "link") return null;
 
         const image = images[edit.imageId];
         return image ? (

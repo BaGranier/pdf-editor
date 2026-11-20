@@ -1,4 +1,4 @@
-import { NAVIGATION_GROUPS } from "../../src/components/SidebarNavigation";
+import { NAVIGATION_GROUPS } from "../../src/viewer/navigationGroups";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page } from "@playwright/test";

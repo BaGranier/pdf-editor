@@ -66,7 +66,8 @@ export type EditingTool =
   | "shape_ellipse"
   | "shape_line"
   | "freehand"
-  | "comment";
+  | "comment"
+  | "link";
 
 export type BasePdfEdit = {
   id: string;
@@ -217,7 +218,20 @@ export type RedactionEdit = BasePdfEdit & { type: "redaction" };
 
 export type ImageBackgroundEdit = BasePdfEdit & { type: "image_background"; transforms: ImageTransform[] };
 
-export type PdfEdit = ImageBackgroundEdit | StampEdit | RedactionEdit | AddTextEdit | NativeTextEdit | SignatureEdit | ImageEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit | PdfFormStateEdit;
+export type LinkDestination =
+  | { kind: "uri"; url: string }
+  | { kind: "internal"; pageIndex: number; x?: number; y?: number };
+
+/** A null destination removes the identified source annotation. */
+export type PdfLinkEdit = BasePdfEdit & {
+  type: "link";
+  areas?: PdfRect[];
+  destination: LinkDestination | null;
+  sourceXref?: number;
+  label?: string;
+};
+
+export type PdfEdit = PdfLinkEdit | ImageBackgroundEdit | StampEdit | RedactionEdit | AddTextEdit | NativeTextEdit | SignatureEdit | ImageEdit | ShapeEdit | FreehandEdit | TextMarkupEdit | PdfCommentEdit | PdfFormStateEdit;
 
 export type SignatureImage = {
   id: string;

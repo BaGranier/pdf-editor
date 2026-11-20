@@ -3,7 +3,7 @@ import type { OrganizePagePlan, OrganizedPage, PageRotation } from "../organize/
 import type { NativeTextEdit, PdfFormStateEdit, PdfEdit, SignatureImage } from "../editing/types";
 
 export type ThemeMode = "light" | "dark";
-export type ViewerMode = "continuous" | "single-page";
+export type ViewerMode = "continuous" | "single-page" | "facing" | "adaptive";
 
 export type ViewerPreferences = {
   theme: ThemeMode;
@@ -96,7 +96,7 @@ function isThemeMode(value: unknown): value is ThemeMode {
 }
 
 function isViewerMode(value: unknown): value is ViewerMode {
-  return value === "continuous" || value === "single-page";
+  return value === "continuous" || value === "single-page" || value === "facing" || value === "adaptive";
 }
 
 function isStringArray(value: unknown): value is string[] {

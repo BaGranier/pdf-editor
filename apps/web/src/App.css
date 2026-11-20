@@ -3700,3 +3700,62 @@ button:disabled {
 .image-document-preview canvas, .image-document-preview .image-crop-surface { grid-area: 1 / 1; }
 .image-document-preview .image-crop-surface { position: relative; }
 .image-crop-actions-inline { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.pdf-links {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  overflow: clip;
+  pointer-events: none;
+}
+.pdf-links--editing { z-index: 6; }
+.page-surface .pdf-link {
+  position: absolute;
+  transform-origin: 0 0;
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.page-surface .pdf-link:hover,
+.page-surface .pdf-link:focus-visible,
+.pdf-links--editing .pdf-link {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.page-surface .pdf-link:focus-visible { outline-width: 2px; outline-offset: -2px; }
+.pdf-links--editing .pdf-link[aria-disabled="true"] { cursor: not-allowed; outline-style: dashed; }
+.pdf-outline { padding: .5rem; }
+.pdf-outline summary { cursor: pointer; }
+.pdf-outline ul { list-style: none; margin: .25rem 0; padding-inline-start: .75rem; }
+.pdf-outline__entry { display: flex; gap: .2rem; align-items: center; }
+.pdf-outline .pdf-outline__expand { flex: none; }
+.text-markup-toolbar .toolbar-icon { width: 1em; height: 1em; }
+.pdf-outline button { max-width: 100%; text-align: start; overflow-wrap: anywhere; }
+.link-inspector, .link-inspector label { display: grid; gap: .5rem; }
+.link-inspector input, .link-inspector select { width: 100%; min-width: 0; }
+
+.viewer--multipage { scrollbar-gutter: stable; overflow-anchor: none; }
+.pdf-document--facing {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: safe center;
+  align-items: start;
+}
+.pdf-document--facing > .pdf-page:nth-child(odd):last-child {
+  grid-column: 1 / -1;
+  justify-self: center;
+}
+.pdf-document--adaptive {
+  flex-flow: row wrap;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: safe center;
+}
+.pdf-document--adaptive > .pdf-page { flex: 0 0 auto; }

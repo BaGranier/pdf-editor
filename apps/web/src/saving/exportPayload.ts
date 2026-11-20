@@ -137,6 +137,9 @@ export function buildPdfExportPayload(
   const nativeTextEdits = exportedEdits.filter((edit): edit is NativeTextEdit & ExportedEdit => edit.type === "native_text");
   const signatureEdits = exportedEdits.filter((edit): edit is SignatureEdit & ExportedEdit => edit.type === "signature");
   const imageEdits = exportedEdits.filter((edit): edit is ImageEdit & ExportedEdit => edit.type === "image");
+  const links = exportedEdits.flatMap((edit) => edit.type === "link"
+    ? [{ sourceDocumentId: edit.sourceDocumentId, page: edit.page, rect: edit.rect, areas: edit.areas, destination: edit.destination, sourceXref: edit.sourceXref, label: edit.label }]
+    : []);
   const shapeEdits = exportedEdits.filter((edit): edit is ShapeEdit & ExportedEdit => edit.type === "shape");
   const freehandEdits = exportedEdits.filter((edit): edit is FreehandEdit & ExportedEdit => edit.type === "freehand");
   const textMarkupEdits = exportedEdits.filter((edit): edit is TextMarkupEdit & ExportedEdit => edit.type === "text_markup");
@@ -197,6 +200,7 @@ export function buildPdfExportPayload(
       ...(shapeEdits.length > 0 ? { shapes: shapeEdits } : {}),
       ...(freehandEdits.length > 0 ? { freehands: freehandEdits } : {}),
       ...(textMarkupEdits.length > 0 ? { textMarkups: textMarkupEdits } : {}),
+      ...(links.length ? { links } : {}),
       ...(comments.length > 0 ? { comments } : {}),
       ...(formValues.length > 0 ? {
         formValues: formValues.map((edit) => ({ sourceDocumentId: edit.sourceDocumentId, page: edit.page, fieldName: edit.fieldName, value: edit.value })),

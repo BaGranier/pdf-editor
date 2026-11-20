@@ -6,7 +6,8 @@ Son `inventory.json` contient versions, rôles, licences, URLs upstream, formes
 redistribuées, chemins des notices, sources requises et statuts.
 
 Les paquets npm sont sélectionnés depuis les modules réellement rendus par
-Rollup et le worker PDF.js comparé octet pour octet. Le graphe Rust Windows est
+Rollup. Le worker PDF.js est vérifié octet pour octet après application du
+correctif local qui expose le type d’action PDF à la visionneuse. Le graphe Rust Windows est
 croisé avec les fichiers `.d` de compilation release : c'est une couverture
 conservatrice du code lié/généré, pas une affirmation que chaque fonction survit
 au linker. Les sources de ces crates sont jointes, notamment pour le MPL-2.0.
