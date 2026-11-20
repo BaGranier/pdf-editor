@@ -85,3 +85,17 @@ describe("compact navigation", () => {
     rerender(<SidebarNavigation {...props} organizing onSelect={onSelect} />);
     expect(screen.getByRole("button", { name: "Revenir à la lecture" }).querySelector("svg")).toHaveAttribute("data-icon", "read");
   });
+
+it("shows and dismisses a portaled tooltip without selecting a tool", () => {
+  const onSelect = vi.fn();
+  render(<SidebarNavigation {...props} onSelect={onSelect} />);
+  const button = screen.getByRole("button", { name: "Marquage" });
+  fireEvent.mouseEnter(button);
+  const tooltip = screen.getByRole("tooltip");
+  expect(tooltip).toHaveTextContent("Marquage");
+  expect(tooltip.parentElement).toBe(document.body);
+  fireEvent.keyDown(button, { key: "Escape" });
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  expect(button).toHaveAttribute("aria-expanded", "false");
+  expect(onSelect).not.toHaveBeenCalled();
+});

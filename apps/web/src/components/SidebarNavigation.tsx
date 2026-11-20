@@ -1,63 +1,164 @@
 import { ToolbarIcon } from "./ToolbarIcon";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { EditingTool } from "../editing/types";
-
+import { sidePanelPosition } from "../viewer/floatingPosition";
 import { NAVIGATION_GROUPS, type NavigationAction } from "../viewer/navigationGroups";
+
+function useFloatingPosition(
+  enabled: boolean,
+  anchor: RefObject<HTMLElement | null>,
+  panel: RefObject<HTMLElement | null>,
+  centered = false,
+) {
+  const [position, setPosition] = useState({ top: 8, left: 8 });
+  const trigger = anchor.current;
+  useLayoutEffect(() => {
+    const content = panel.current;
+    if (!enabled || !trigger || !content) return;
+    const place = () => {
+      const next = sidePanelPosition(trigger.getBoundingClientRect(), content.getBoundingClientRect(), {
+        width: document.documentElement.clientWidth || window.innerWidth,
+        height: document.documentElement.clientHeight || window.innerHeight,
+      }, centered);
+      setPosition((previous) => previous.top === next.top && previous.left === next.left ? previous : next);
+    };
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(place) : null;
+    observer?.observe(content);
+    observer?.observe(trigger);
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [centered, enabled, panel, trigger]);
+  return position;
+}
 
 export function SidebarNavigation({ rasterSource = false, activeTool, organizing, disabled, processingDisabled, imageDisabled, onSelect, onOrganize }: {
   rasterSource?: boolean; activeTool: EditingTool; organizing: boolean; disabled: boolean; processingDisabled: boolean; imageDisabled: boolean;
   onSelect: (tool: NavigationAction) => boolean | void; onOrganize: () => void;
 }) {
   const [openNavigationGroup, setOpenNavigationGroup] = useState<string | null>(null);
-  const [position, setPosition] = useState({ top: 8, left: 8 });
-  const rail = useRef<HTMLElement>(null), panel = useRef<HTMLDivElement>(null);
+  const [hovered, setHovered] = useState<HTMLButtonElement | null>(null);
+  const [focused, setFocused] = useState<HTMLButtonElement | null>(null);
+  const [dismissedTooltip, setDismissedTooltip] = useState<HTMLButtonElement | null>(null);
+  const rail = useRef<HTMLElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const tooltip = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
+  const tooltipTrigger = useRef<HTMLButtonElement | null>(null);
   const group = NAVIGATION_GROUPS.find((item) => item.id === openNavigationGroup);
-  const close = (restore = false) => { setOpenNavigationGroup(null); if (restore) trigger.current?.focus(); };
+  const candidate = hovered ?? focused;
+  const label = candidate?.querySelector<HTMLElement>("span");
+  const tooltipVisible = Boolean(candidate?.isConnected && candidate !== dismissedTooltip &&
+    (group ? panel.current?.contains(candidate) && label && label.scrollWidth > label.clientWidth : rail.current?.contains(candidate)));
+  tooltipTrigger.current = tooltipVisible ? candidate : null;
+  const position = useFloatingPosition(Boolean(group), trigger, panel);
+  const tooltipPosition = useFloatingPosition(tooltipVisible, tooltipTrigger, tooltip, true);
+  const close = (restore = false) => {
+    setOpenNavigationGroup(null);
+    setHovered(null);
+    if (restore) {
+      setDismissedTooltip(trigger.current);
+      trigger.current?.focus();
+    }
+  };
+  const tooltipEvents = {
+    onMouseEnter: (event: React.MouseEvent<HTMLButtonElement>) => {
+      setDismissedTooltip(null);
+      setHovered(event.currentTarget);
+    },
+    onMouseLeave: (event: React.MouseEvent<HTMLButtonElement>) => {
+      const button = event.currentTarget;
+      setHovered((current) => current === button ? null : current);
+    },
+    onFocus: (event: React.FocusEvent<HTMLButtonElement>) => {
+      if (event.currentTarget.matches(":focus-visible")) setFocused(event.currentTarget);
+    },
+    onBlur: () => { setFocused(null); setDismissedTooltip(null); },
+  };
   useLayoutEffect(() => {
-    if (!group) return;
-    const place = () => {
-      const anchor = trigger.current?.getBoundingClientRect();
-      if (!anchor) return;
-      const width = Math.min(300, window.innerWidth - 16);
-      setPosition({ left: Math.max(8, Math.min(anchor.right + 8, window.innerWidth - width - 8)), top: Math.max(8, Math.min(anchor.top, window.innerHeight - (panel.current?.offsetHeight ?? 300) - 8)) });
-    };
-    place(); panel.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
-    window.addEventListener("resize", place); window.addEventListener("scroll", place, true);
-    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+    if (group) panel.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
   }, [group]);
   useEffect(() => {
-    if (!group) return;
-    const outside = (event: PointerEvent) => { if (event.target instanceof Node && !rail.current?.contains(event.target) && !panel.current?.contains(event.target)) setOpenNavigationGroup(null); };
+    if (!group && !tooltipVisible) return;
+    const outside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !rail.current?.contains(event.target) && !panel.current?.contains(event.target)) {
+        setOpenNavigationGroup(null);
+        setHovered(null);
+        setFocused(null);
+      }
+    };
     window.addEventListener("pointerdown", outside);
     return () => window.removeEventListener("pointerdown", outside);
-  }, [group]);
+  }, [group, tooltipVisible]);
+  useEffect(() => {
+    if (!tooltipVisible || group) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setDismissedTooltip(tooltipTrigger.current);
+      }
+    };
+    window.addEventListener("keydown", escape, true);
+    return () => window.removeEventListener("keydown", escape, true);
+  }, [group, tooltipVisible]);
+
   return <nav ref={rail} className="tool-rail" aria-label="Outils d'édition"
-    onKeyDown={(event) => { if (event.key === "Escape" && group) { event.preventDefault(); event.stopPropagation(); close(true); } }}
-    onBlur={(event) => { const target = event.relatedTarget; if (!target || (target instanceof Node && !rail.current?.contains(target) && !panel.current?.contains(target))) close(); }}>
-    <button type="button" aria-label="Sélection" aria-pressed={!organizing && activeTool === "select"} disabled={disabled} onClick={() => { close(); onSelect("select"); }}><ToolbarIcon name="select" /><span className="tool-rail__label">Sélection</span></button>
+    onKeyDown={(event) => {
+      if (event.key === "Escape" && group) {
+        event.preventDefault(); event.stopPropagation(); close(true);
+      }
+    }}
+    onBlur={(event) => {
+      const target = event.relatedTarget;
+      if (!target || (target instanceof Node && !rail.current?.contains(target) && !panel.current?.contains(target))) close();
+    }}>
+    <button {...tooltipEvents} type="button" aria-label="Sélection" aria-pressed={!organizing && activeTool === "select"} disabled={disabled} onClick={() => { close(); onSelect("select"); }}>
+      <ToolbarIcon name="select" /><span className="tool-rail__label">Sélection</span>
+    </button>
     {NAVIGATION_GROUPS.map((item) => {
       const active = !organizing && item.tools.some((tool) => tool.id === activeTool);
-      return <button key={item.id} type="button" aria-label={item.label} title={item.label} aria-expanded={openNavigationGroup === item.id} aria-controls={`navigation-${item.id}`} aria-pressed={active}
-        onClick={(event) => { trigger.current = event.currentTarget; setOpenNavigationGroup((current) => current === item.id ? null : item.id); }}>
+      return <button {...tooltipEvents} key={item.id} type="button" aria-label={item.label} aria-expanded={openNavigationGroup === item.id} aria-controls={openNavigationGroup === item.id ? `navigation-${item.id}` : undefined} aria-pressed={active}
+        onClick={(event) => {
+          trigger.current = event.currentTarget;
+          setHovered(null);
+          setOpenNavigationGroup((current) => current === item.id ? null : item.id);
+          setDismissedTooltip(event.currentTarget);
+        }}>
         <ToolbarIcon name={item.icon} /><span className="tool-rail__label">{item.label}</span>{active ? <ToolbarIcon name="check" className="tool-rail__active-marker" /> : null}
       </button>;
     })}
-    <button type="button" aria-label={organizing ? "Revenir à la lecture" : "Organiser"} aria-pressed={organizing} onClick={() => { close(); onOrganize(); }}><ToolbarIcon name={organizing ? "read" : "organize"} /><span className="tool-rail__label">{organizing ? "Lecture" : "Pages"}</span></button>
+    <button {...tooltipEvents} type="button" aria-label={organizing ? "Revenir à la lecture" : "Organiser"} aria-pressed={organizing} onClick={() => { close(); onOrganize(); }}>
+      <ToolbarIcon name={organizing ? "read" : "organize"} /><span className="tool-rail__label">{organizing ? "Lecture" : "Pages"}</span>
+    </button>
     {group ? createPortal(<div ref={panel} id={`navigation-${group.id}`} className="navigation-popover" role="region" aria-label={`Outils ${group.label}`} style={position}
-      onBlur={(event) => { if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget) && !rail.current?.contains(event.relatedTarget)) close(); }}
       onKeyDown={(event) => {
         if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(true); }
         if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-          event.preventDefault(); const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+          event.preventDefault();
+          const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
           const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
           buttons[event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length]?.focus();
         }
-      }}><strong>{group.label}</strong>{group.tools.map((tool) => <button key={tool.id} type="button" aria-label={tool.label} title={tool.label} aria-pressed={activeTool === tool.id && !organizing}
+      }}>
+      <strong>{group.label}</strong>
+      {group.tools.map((tool) => <button {...tooltipEvents} key={tool.id} type="button" aria-label={tool.label} aria-pressed={activeTool === tool.id && !organizing}
+        aria-description={"description" in tool ? tool.description : undefined}
         disabled={rasterSource && (tool.id === "redaction" || tool.id === "edit_text") ? true : tool.id === "ocr" || tool.id === "convert" ? processingDisabled : tool.id === "image" ? imageDisabled : disabled}
-        onClick={() => { const changed = onSelect(tool.id); close(changed !== false); }}><ToolbarIcon name={tool.icon} /><span>{tool.label}</span>{activeTool === tool.id && !organizing ? <ToolbarIcon name="check" className="navigation-popover__active-marker" /> : null}{"description" in tool ? <small>{tool.description}</small> : null}</button>)}
+        onClick={() => { const changed = onSelect(tool.id); close(changed !== false); }}>
+        <ToolbarIcon name={tool.icon} /><span>{tool.label}</span>{activeTool === tool.id && !organizing ? <ToolbarIcon name="check" className="navigation-popover__active-marker" /> : null}
+        {"description" in tool ? <small>{tool.description}</small> : null}
+      </button>)}
       {group.id === "annotations" ? <p>Sélectionnez du texte dans la page pour surligner, souligner ou barrer.</p> : null}
+    </div>, document.body) : null}
+    {tooltipVisible ? createPortal(<div className="tool-rail-tooltip" ref={tooltip} role="tooltip" style={tooltipPosition}>
+      {candidate?.getAttribute("aria-label")}
     </div>, document.body) : null}
   </nav>;
 }

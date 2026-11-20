@@ -3664,10 +3664,12 @@ button:disabled {
   position: fixed;
   z-index: 80;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.4rem;
-  width: min(300px, calc(100vw - 16px));
+  width: max-content;
+  max-width: min(27rem, calc(100dvw - 16px));
   max-height: min(70dvh, calc(100dvh - 16px));
-  overflow: auto;
+  overflow: hidden auto;
   padding: 0.75rem;
   box-sizing: border-box;
   border: 1px solid var(--border);
@@ -3676,17 +3678,42 @@ button:disabled {
   color: var(--text-primary);
   box-shadow: 0 8px 28px #0003;
 }
-.navigation-popover button { display: grid; grid-template-columns: 18px minmax(0, 1fr) 14px; column-gap: 0.5rem; row-gap: 0.25rem; align-items: center; text-align: left; white-space: normal; }
+.navigation-popover button { display: grid; grid-template-columns: 18px minmax(0, 1fr) 14px; column-gap: 0.5rem; row-gap: 0.25rem; align-items: center; text-align: left; min-width: 0; }
 .navigation-popover .toolbar-icon { display: block; width: 18px; height: 18px; }
 .navigation-popover .navigation-popover__active-marker { width: 14px; height: 14px; }
-.navigation-popover button small { grid-column: 2 / -1; }
+.navigation-popover button small { grid-column: 2 / -1; white-space: normal; overflow-wrap: anywhere; }
 .navigation-popover small { font-weight: normal; }
 .navigation-popover button[aria-pressed="true"] { background: var(--selection); border-inline-start: 4px solid var(--accent); }
 .navigation-popover button:focus-visible, .tool-rail button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tool-rail > button[aria-pressed="true"] { box-shadow: inset 3px 0 var(--accent); }
 
 .tool-rail > button { position: relative; }
-.tool-rail .tool-rail__label { white-space: normal; overflow: visible; overflow-wrap: anywhere; font-size: 0.62rem; line-height: 1.15; }
+.tool-rail .tool-rail__label { font-size: 0.62rem; line-height: 1.15; }
+.navigation-popover button > span, .navigation-popover > strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.navigation-popover p { overflow-wrap: anywhere; }
+.tool-rail-tooltip {
+  position: fixed;
+  z-index: 81;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100dvw - 16px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: .35rem .55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: 0 4px 14px #0003;
+  font-size: .8rem;
+  pointer-events: none;
+}
 .tool-rail .tool-rail__active-marker { position: absolute; top: 0.15rem; right: 0.15rem; width: 12px; height: 12px; }
 
 .images-pdf-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow: auto; }
