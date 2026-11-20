@@ -4,12 +4,21 @@
 from __future__ import annotations
 
 import argparse
+import io
 import struct
 import zlib
 from pathlib import Path
 
 import fitz
-from pypdf import PdfWriter
+from pypdf import PdfReader, PdfWriter
+from pypdf.generic import (
+    ArrayObject,
+    DictionaryObject,
+    Fit,
+    NameObject,
+    NumberObject,
+    TextStringObject,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -419,6 +428,91 @@ def generate_editor_feature_fixtures(output_dir: Path = FIXTURE_DIR) -> list[Pat
     return generated
 
 
+def create_links_fixture(output_dir: Path = FIXTURE_DIR) -> Path:
+    """Eight pages with printed contents, direct/named links and nested bookmarks."""
+    with fitz.open() as document:
+        for index, (width, height) in enumerate(
+            [
+                (350, 540),
+                (340, 715),
+                (360, 510),
+                (400, 620),
+                (465, 340),
+                (330, 520),
+                (350, 570),
+                (380, 510),
+            ]
+        ):
+            page = document.new_page(width=width, height=height)
+            page.insert_text((40, 45), f"Section {index + 1}", fontsize=20)
+            if index == 1:
+                page.insert_text((40, 360), "Position cible du renvoi", fontsize=16)
+            if index == 0:
+                for row, title in enumerate(
+                    [
+                        "Site web",
+                        "Renvoi direct",
+                        "Renvoi nomme",
+                        "Action externe interdite",
+                        "Script interdit",
+                        "URI interdite",
+                    ]
+                ):
+                    page.insert_text((35, 75 + 25 * row), title, fontsize=14)
+        source = document.tobytes(no_new_id=True, deflate=True)
+    writer = PdfWriter(clone_from=PdfReader(io.BytesIO(source)))
+    writer.add_named_destination_array(
+        TextStringObject("section-quatre"),
+        ArrayObject([writer.pages[3].indirect_reference, NameObject("/Fit")]),
+    )
+    root = writer.add_outline_item(
+        "Chapitre synthétique", 1, fit=Fit.xyz(left=30, top=365)
+    )
+    writer.add_outline_item("Sous-section synthétique", 3, parent=root)
+    actions = [
+        ("/URI", "/URI", TextStringObject("https://example.invalid/pdf-test")),
+        (
+            "/GoTo",
+            "/D",
+            ArrayObject(
+                [
+                    writer.pages[1].indirect_reference,
+                    NameObject("/FitH"),
+                    NumberObject(375),
+                ]
+            ),
+        ),
+        ("/GoTo", "/D", TextStringObject("section-quatre")),
+        ("/Launch", "/F", TextStringObject("https://example.invalid/launch")),
+        (
+            "/JavaScript",
+            "/JS",
+            TextStringObject("app.launchURL('https://example.invalid/script');"),
+        ),
+        ("/URI", "/URI", TextStringObject("javascript:alert(1)")),
+    ]
+    for row, (kind, key, target) in enumerate(actions):
+        baseline = 540 - (75 + row * 25)
+        annotation = DictionaryObject(
+            {
+                NameObject("/Type"): NameObject("/Annot"),
+                NameObject("/Subtype"): NameObject("/Link"),
+                NameObject("/Rect"): ArrayObject(
+                    [NumberObject(n) for n in (32, baseline - 4, 214, baseline + 15)]
+                ),
+                NameObject("/Border"): ArrayObject([NumberObject(0)] * 3),
+                NameObject("/A"): DictionaryObject(
+                    {NameObject("/S"): NameObject(kind), NameObject(key): target}
+                ),
+            }
+        )
+        writer.add_annotation(0, annotation)
+    path = output_dir / "pdf-links-layout.pdf"
+    with path.open("wb") as output:
+        writer.write(output)
+    return path
+
+
 def generate(include_large: bool, output_dir: Path = FIXTURE_DIR) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     generated = [
@@ -426,6 +520,12 @@ def generate(include_large: bool, output_dir: Path = FIXTURE_DIR) -> list[Path]:
         write_pdf("pdf-text-position.pdf", [(612, 792)], output_dir=output_dir),
         create_native_text_fixture(output_dir=output_dir),
         create_acroform_fixture(output_dir=output_dir),
+        create_links_fixture(output_dir=output_dir),
+        write_pdf(
+            "pdf-multipage-250.pdf",
+            [(340 + index % 25, 480 + index % 11) for index in range(250)],
+            output_dir=output_dir,
+        ),
         write_pdf(
             "pdf-small-5-pages.pdf",
             [(300 + index * 25, 500) for index in range(5)],

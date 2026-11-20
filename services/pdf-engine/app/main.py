@@ -30,6 +30,7 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
 from pypdf.generic import NameObject, NumberObject
 
+from app.pdf_links import PdfEditRect, PdfLinkEdit, apply_pdf_links
 from app.image_dimensions import raster_dimensions
 from app.image_documents import make_png_mask_portable, router as image_documents_router
 from app.stamp_layout import layout_stamp
@@ -59,19 +60,6 @@ class OrganizeExportPage(BaseModel):
             raise ValueError("La rotation doit être un multiple de 90 degrés.")
 
         return value % 360
-
-
-class PdfEditRect(BaseModel):
-    x0: float = Field(allow_inf_nan=False)
-    y0: float = Field(allow_inf_nan=False)
-    x1: float = Field(allow_inf_nan=False)
-    y1: float = Field(allow_inf_nan=False)
-
-    @model_validator(mode="after")
-    def validate_dimensions(self) -> "PdfEditRect":
-        if self.x1 <= self.x0 or self.y1 <= self.y0:
-            raise ValueError("Le rectangle d'édition doit avoir une surface positive.")
-        return self
 
 
 class PdfEditPoint(BaseModel):
@@ -682,6 +670,7 @@ class OrganizeExportPlan(BaseModel):
     text_markups: list[TextMarkupEdit] = Field(
         default_factory=list, alias="textMarkups"
     )
+    links: list[PdfLinkEdit] = Field(default_factory=list, max_length=5000)
     comments: list[PdfCommentEdit] = Field(default_factory=list)
     form_values: list[PdfFormValue] = Field(default_factory=list, alias="formValues")
     form_locks: list[PdfFormLock] = Field(default_factory=list, alias="formLocks")
@@ -1959,20 +1948,27 @@ def _reader_has_acroform(reader: PdfReader) -> bool:
     return "/AcroForm" in reader.trailer.get("/Root", {})
 
 
-def _can_preserve_acroform(
+def _has_original_page_order(
     plan: OrganizeExportPlan, readers: dict[str, PdfReader]
 ) -> bool:
-    """pypdf can clone an AcroForm safely only for an unchanged source order."""
-    if len(readers) != 1 or not any(
-        _reader_has_acroform(reader) for reader in readers.values()
-    ):
+    if len(readers) != 1:
         return False
     document_id, reader = next(iter(readers.items()))
     return len(plan.pages) == len(reader.pages) and all(
         page.source_document_id in {None, document_id}
         and page.source_page_index == index
-        and page.rotation == 0
         for index, page in enumerate(plan.pages)
+    )
+
+
+def _can_preserve_acroform(
+    plan: OrganizeExportPlan, readers: dict[str, PdfReader]
+) -> bool:
+    """Preserve the existing support boundary for editable AcroForms."""
+    return (
+        _has_original_page_order(plan, readers)
+        and any(_reader_has_acroform(reader) for reader in readers.values())
+        and all(page.rotation == 0 for page in plan.pages)
     )
 
 
@@ -2372,7 +2368,12 @@ def export_organized_pdf(
 
     writer = PdfWriter()
     preserve_acroform = _can_preserve_acroform(plan, readers)
-    if preserve_acroform:
+    preserve_catalog = preserve_acroform or (
+        _has_original_page_order(plan, readers)
+        and not plan.redactions
+        and not any(_reader_has_acroform(reader) for reader in readers.values())
+    )
+    if preserve_catalog:
         writer.clone_document_from_reader(next(iter(readers.values())))
 
     form_values_by_source_page: dict[tuple[str, int], dict[str, str | list[str]]] = {}
@@ -2553,6 +2554,7 @@ def export_organized_pdf(
     native_text_edits_by_output_page: dict[int, list[NativeTextEdit]] = {}
     form_values_by_output_page: dict[int, dict[str, str | list[str]]] = {}
 
+    output_sources: list[tuple[str, int]] = []
     for output_page_index, page_plan in enumerate(plan.pages):
         source_document_id = _resolve_source_document_id(
             page_plan.source_document_id,
@@ -2579,10 +2581,11 @@ def export_organized_pdf(
                 ),
             )
 
-        if not preserve_acroform:
+        output_sources.append((source_document_id, page_plan.source_page_index))
+        if not preserve_catalog:
             writer.add_page(reader.pages[page_plan.source_page_index])
-            if page_plan.rotation:
-                writer.pages[-1].rotate(page_plan.rotation)
+        if page_plan.rotation:
+            writer.pages[output_page_index].rotate(page_plan.rotation)
         page_edits = edits_by_source_page.get(
             (source_document_id, page_plan.source_page_index),
         )
@@ -2628,6 +2631,7 @@ def export_organized_pdf(
         _apply_form_values_to_writer(writer, form_values_by_output_page)
     if form_lock_source_ids:
         _apply_acroform_read_only_lock(writer)
+    apply_pdf_links(writer, readers, output_sources, plan.links, preserve_catalog)
     output = io.BytesIO()
     writer.write(output)
     composed = apply_visual_edits(
