@@ -124,6 +124,12 @@ les conversions locales dans Chromium et Firefox. Elle génère ses propres PDF
 non confidentiels et ne lit aucun document personnel. Les observations humaines
 historiques restent dans `QA_BROWSER_REPORT.md`.
 
+Le fichier `pdf-links-layout-sidebar.spec.ts` vérifie l’export et la réouverture
+de liens PDF, les destinations et signets, la géométrie des rangées et des
+menus, le clavier et le rendu partiel sur 250 pages. Exécution ciblée depuis
+`apps/web` avec `npm run qa:e2e:quick -- pdf-links-layout-sidebar.spec.ts`.
+Les témoins mixtes et le document de 250 pages sont synthétiques et reproductibles.
+
 `QA_AUTOMATION.md` décrit le protocole ; ce n'est pas un résultat de campagne.
 Seuls `QA_AUTOMATED_REPORT.md` et les fichiers sous `apps/web/test-results/`
 produits par la dernière commande représentent une exécution. Ils sont ignorés

@@ -394,8 +394,10 @@ points sont conservés : le nettoyage ne garantit pas zéro temporaire après cr
 La fenêtre est ajustée avant affichage à la work area physique, aux décorations
 et au facteur DPI. Changement de moniteur/DPI déclenche un clamp tout en gardant
 le resize manuel ; aucune géométrie n'est persistée. Présentation utilise la
-Fullscreen API Web avec repli sur la surface applicative ; Échap revient à
-Page unique. Un viewport/DPR Playwright simulé ne qualifie pas le comportement natif.
+Fullscreen API Web avec repli sur la surface applicative. Échap rétablit
+Double page ou Multipage automatique si la présentation a été lancée depuis
+ces modes. Pour les vues historiques, il revient à Page unique.
+Un viewport/DPR Playwright simulé reste une vérification navigateur.
 
 Debug : `PDF_STUDIO_OPEN_DEVTOOLS=1 npm run desktop:dev` ouvre les DevTools.
 Sous WSLg, une WebView blanche liée au rendu peut être diagnostiquée avec
@@ -407,7 +409,9 @@ Sous WSLg, une WebView blanche liée au rendu peut être diagnostiquée avec
 Les commandes Rust `open_pdf`, `save_pdf` et `save_pdf_as` possèdent les dialogues
 système et les chemins. React reçoit les octets, un nom et un identifiant opaque,
 sans accès arbitraire au filesystem. La capability n'expose que `core:default` ;
-le plugin shell n'est utilisé que par Rust pour le sidecar déclaré.
+Rust utilise le plugin shell pour le sidecar déclaré et pour la commande
+`open_pdf_web_link`. Cette commande valide le protocole HTTP(S) et ouvre le
+navigateur système. Le WebView conserve ses autorisations IPC minimales.
 
 Le premier Ctrl+S ouvre **Enregistrer sous** et préserve la source. Seule une
 réussite établit la destination de copie pour les Ctrl+S suivants de la session.

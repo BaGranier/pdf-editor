@@ -33,8 +33,11 @@ supporté en production.
 
 ## Capacités actuelles
 
-- Lecture, miniatures, recherche, navigation multi-document ; modes Continu,
-  Page unique et Présentation avec transition à deux buffers.
+- Lecture, miniatures, recherche et navigation multi-document. Le sélecteur
+  propose Continu, Page unique, Présentation, Double page et Multipage automatique.
+- Liens PDF web et internes, sommaires imprimés contenant de vrais liens et
+  signets hiérarchiques. Création, édition et suppression de liens dans
+  **Annotations → Lien**, avec historique et export PDF natif.
 - Texte ajouté et édition limitée du texte natif, polices locales, signatures
   graphiques, images PNG/JPEG avec crop non destructif, formes et dessin libre.
 - Plans/transparence des objets ajoutés, commentaires, markup et undo/redo.
@@ -51,6 +54,31 @@ La signature graphique, le chiffrement et l'aplatissement sont distincts de la
 signature cryptographique avec certificat, qui n'est pas implémentée. La fidélité
 DOCX complexe et la qualité OCR dépendent du document. Les permissions PDF peuvent
 être ignorées par des lecteurs tiers.
+
+## Liens et vue multipage
+
+En mode **Sélection**, cliquez sur un lien dans la page ou ouvrez **Signets**
+au-dessus des miniatures. Les renvois internes rejoignent la page et, si le PDF
+l’indique, la position. Les URL HTTP et HTTPS s’ouvrent dans un nouvel onglet web
+ou dans le navigateur système sur desktop. Les autres protocoles et les actions
+PDF de lancement ou de script sont ignorés.
+
+Dans **Annotations → Lien**, tracez une zone ou cliquez sur un lien à modifier.
+Le menu de sélection de texte permet aussi de créer un lien sur plusieurs lignes.
+L’inspecteur enregistre une URL ou un renvoi vers une page source. Les destinations
+nommées et certains types de liens restent consultables en lecture seule. Si une
+réorganisation supprime la cible d’un lien d’origine, l’export omet ce lien.
+Une cible manquante pour un lien édité déclenche une erreur à corriger avant export.
+
+**Double page** dispose deux pages par rangée et centre la dernière page si le
+nombre de pages est impair. **Multipage automatique** place autant de pages que
+le permettent la largeur disponible, leurs dimensions et le zoom PDF. Les deux
+vues utilisent les mêmes miniatures, outils et coordonnées PDF. Le zoom peut
+descendre à 25 %.
+
+La barre d’outils affiche les infobulles au survol et au focus. Les menus restent
+dans la fenêtre et défilent verticalement sur petit écran. Un libellé tronqué
+visuellement conserve son nom accessible complet.
 
 ## PDF protégés
 

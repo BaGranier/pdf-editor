@@ -10,6 +10,13 @@ test("sidebar groups: keyboard, single disclosure, clean navigation and narrow d
   await page.getByRole("switch", { name: "Basculer le thème" }).click();
   const rail = page.getByRole("navigation", { name: "Outils d'édition" });
   await expect(rail.getByRole("button")).toHaveCount(6);
+  // Opening a PDF writes the initial file and then its hydrated editing state.
+  // Start observing the sidebar after both initial writes have settled.
+  await expect(page.locator("main")).toHaveAttribute("data-persistence-state", "saved");
+  await expect.poll(async () => (await getStoredDocuments(page)).some((document) =>
+    "edits" in document && Array.isArray(document.edits) &&
+    "editsDirty" in document && document.editsDirty === false
+  )).toBe(true);
   const before = JSON.stringify(await getStoredDocuments(page));
   const layer = page.getByLabel("Couche d'édition de la page 1", { exact: true });
   const bounds = await layer.boundingBox();

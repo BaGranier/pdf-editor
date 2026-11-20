@@ -59,6 +59,12 @@ effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 
 ## Journal MVP
 
+### 2026-11-20 — FEAT-PDF-LINKS-MULTIPAGE-TOOLTIPS
+- Liens HTTP(S), renvois et signets hiérarchiques intégrés à la navigation PDF.
+- Création et édition avec historique, puis export de liens PDF natifs.
+- Double page et Multipage automatique réutilisent la fenêtre de rendu différé.
+- Infobulles et sous-menus repliés dans la fenêtre, avec libellés accessibles et icônes SVG.
+
 ### 2026-11-19 — FIX-IMAGE-OPEN-BLANK
 - Rectangle blanc reproduit sur un PNG couleur de 640 × 400 dans Chromium et Firefox.
 - Masques alpha binaires des PNG convertis encodés en Flate pour PDF.js.

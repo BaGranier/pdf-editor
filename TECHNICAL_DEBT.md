@@ -59,7 +59,7 @@ Le prochain `cargo check` ou build recompilera les dépendances nécessaires.
 
 ## VIEWER-QA-001 — Validation navigateur finale des modes viewer
 
-Les modes Continu, Page unique et Présentation sont fonctionnellement terminés.
+Les modes Continu, Page unique, Présentation et les deux vues multipages sont disponibles.
 Les scénarios Playwright Chromium et Firefox sont désormais exécutables dans le
 workspace. Il reste la QA manuelle sur un écran HiDPI et dans la WebView Tauri,
 notamment portrait, paysage, fullscreen, sortie `Escape`, navigation clavier et
@@ -67,6 +67,25 @@ netteté du texte fin.
 
 Le code ne contient pas de branche Firefox : le canvas PDF.js utilise le même
 backing store proportionnel au DPR dans les deux navigateurs.
+
+## Liens PDF et export réorganisé
+
+Les signets restent en lecture seule. Les liens d’origine en URI HTTP(S) et
+GoTo explicite de type Fit ou XYZ sont éditables lorsque leur annotation est
+identifiable. Les destinations nommées et autres variantes GoTo restent
+navigables dans la visionneuse. La navigation conserve les coordonnées utiles
+de la cible. Le zoom prescrit par un lien ne modifie pas le zoom du lecteur.
+
+Un ordre de pages identique conserve le catalogue, les signets et les
+destinations nommées hors des restrictions existantes pour le biffage sécurisé
+et les AcroForms réorganisés. Les liens internes d’un document réorganisé
+pointent vers la première occurrence de la cible, ou vers leur propre occurrence
+pour un renvoi à la même page. Une cible d’origine absente est omise. Les signets
+ne sont pas reconstruits après extraction, fusion ou réorganisation des pages.
+
+Le worker PDF.js expose le type d’action d’origine par un correctif déterministe
+à revérifier lors d’une montée de version. Les contrôles de redistribution
+comparent le worker livré au résultat attendu de ce correctif.
 
 ## IMAGE-MEMORY-004 — Assets et sessions longues
 
@@ -82,9 +101,10 @@ totale. Le rapport 004 contient les snapshots, sans faux seuil de release.
 ## PDF-PERF-001 — Limites mémoire et exports extrêmes
 
 Les seuils de 50 Mo, 250 pages et huit documents ouverts restent des
-avertissements non bloquants. L'extraction de texte natif est bornée à la page
-active, le rendu mono-page à deux buffers et le mode Continu à une fenêtre de
-pages visibles avec deux pages de marge. PDF.js charge néanmoins les documents
+avertissements non bloquants. Le texte natif est chargé sur la page active en
+Continu et sur les pages rendues en multipage. Le rendu mono-page utilise deux
+buffers et les modes défilants partagent une fenêtre de pages visibles avec
+deux pages de marge. PDF.js charge les documents
 en mémoire et IndexedDB les persiste intégralement ; les exports de plusieurs
 milliers de pages, les quotas navigateur, la RAM/GPU réelle et la WebView native
 doivent encore être mesurés sur les machines cibles. Le warning Vite sur la
