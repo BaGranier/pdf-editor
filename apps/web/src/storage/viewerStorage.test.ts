@@ -1,3 +1,4 @@
+import { THEMES } from "../viewer/themes";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearViewerStorage,
@@ -36,6 +37,19 @@ describe("viewerStorage", () => {
 
     expect(parseViewerPreferences(serialized)).toEqual(preferences);
   });
+
+  it.each(THEMES)("round-trips $id without changing document preferences", ({ id }) => {
+    const preferences = { theme: id, sidebarVisible: false, activeDocumentId: "pdf-1", documentOrder: ["pdf-1"] };
+    expect(parseViewerPreferences(serializeViewerPreferences(preferences))).toEqual(preferences);
+  });
+
+  it.each([[true, "dark"], [false, "light"], ["unknown", "light"], [undefined, "light"]])(
+    "resolves legacy or invalid theme %s independently of the rest of the preferences",
+    (oldValue, theme) => {
+      const preferences = { sidebarVisible: false, activeDocumentId: "pdf-1", documentOrder: ["pdf-1"] };
+      expect(parseViewerPreferences(JSON.stringify({ ...preferences, theme: oldValue }))).toEqual({ ...preferences, theme });
+    },
+  );
 
   it("persists viewer preferences in localStorage", () => {
     saveViewerPreferences({

@@ -193,8 +193,8 @@ test("infobulles et sous-menus contenus, SVG et navigation clavier", async ({ pa
   const tooltip = page.getByRole("tooltip");
   for (const [width, height, theme] of [[1440, 900, "light"], [550, 430, "dark"], [345, 350, "light"]] as const) {
     await page.setViewportSize({ width, height });
-    const themeToggle = page.getByRole("switch", { name: "Basculer le thème" });
-    if (await themeToggle.getAttribute("aria-checked") !== String(theme === "dark")) await themeToggle.click();
+    const themeToggle = page.getByRole("combobox", { name: "Thème de l’interface" });
+    await themeToggle.selectOption(theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     await marking.hover();
     await expectContained(tooltip);

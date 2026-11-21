@@ -56,7 +56,7 @@ test("sidebar SVG icons: marking, state, keyboard, themes and narrow HiDPI viewp
   await menu.getByRole("button", { name: "Biffer", exact: true }).click();
   await expect(page.getByLabel("Créer un filigrane")).toBeHidden();
   await expect(page.getByLabel("Couche d'édition de la page 1", { exact: true })).toHaveAttribute("data-active-editing-tool", "redaction");
-  await page.getByRole("switch", { name: "Basculer le thème" }).click();
+  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
   await page.setViewportSize({ width: 760, height: 600 });
   await marking.click(); await assertVectors();
   await expect(menu.getByRole("button", { name: "Biffer", exact: true })).toHaveAttribute("aria-pressed", "true");

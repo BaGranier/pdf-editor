@@ -2,11 +2,11 @@ import type { ImageSource } from "../images/imageDocument";
 import type { OrganizePagePlan, OrganizedPage, PageRotation } from "../organize/pagePlan";
 import type { NativeTextEdit, PdfFormStateEdit, PdfEdit, SignatureImage } from "../editing/types";
 
-export type ThemeMode = "light" | "dark";
+import { isThemeId, systemTheme, type ThemeId } from "../viewer/themes";
 export type ViewerMode = "continuous" | "single-page" | "facing" | "adaptive";
 
 export type ViewerPreferences = {
-  theme: ThemeMode;
+  theme: ThemeId;
   sidebarVisible: boolean;
   activeDocumentId: string | null;
   documentOrder: string[];
@@ -91,10 +91,6 @@ type RawStoredOrganizationPlan = {
   selectedPageId?: unknown;
 };
 
-function isThemeMode(value: unknown): value is ThemeMode {
-  return value === "light" || value === "dark";
-}
-
 function isViewerMode(value: unknown): value is ViewerMode {
   return value === "continuous" || value === "single-page" || value === "facing" || value === "adaptive";
 }
@@ -176,7 +172,6 @@ export function parseViewerPreferences(serialized: string | null): ViewerPrefere
     const parsed = JSON.parse(serialized) as RawViewerPreferences;
 
     if (
-      !isThemeMode(parsed.theme) ||
       typeof parsed.sidebarVisible !== "boolean" ||
       (parsed.activeDocumentId !== null && typeof parsed.activeDocumentId !== "string") ||
       !isStringArray(parsed.documentOrder)
@@ -185,7 +180,11 @@ export function parseViewerPreferences(serialized: string | null): ViewerPrefere
     }
 
     return {
-      theme: parsed.theme,
+      theme: isThemeId(parsed.theme)
+        ? parsed.theme
+        : typeof parsed.theme === "boolean"
+          ? parsed.theme ? "dark" : "light"
+          : systemTheme(),
       sidebarVisible: parsed.sidebarVisible,
       activeDocumentId: parsed.activeDocumentId,
       documentOrder: parsed.documentOrder,

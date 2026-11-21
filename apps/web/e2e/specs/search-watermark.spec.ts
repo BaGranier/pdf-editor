@@ -74,9 +74,9 @@ test("search redaction watermark: auto-fit stamp, verified search, linked pages 
   await page.keyboard.press("Escape");
   await expect(page.locator(".app-shell")).not.toHaveClass(/app-shell--presentation/);
   await page.getByLabel("Mode d'affichage").selectOption("continuous");
-  await page.getByRole("switch", { name: "Basculer le thème" }).click();
+  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
   await page.screenshot({ path: testInfo.outputPath("pending-watermark-dark.png") });
-  await page.getByRole("switch", { name: "Basculer le thème" }).click();
+  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("light");
   await page.screenshot({ path: testInfo.outputPath("pending-watermark.png") });
   await enterOrganizeMode(page);
   await page.getByLabel("Nom du PDF exporté").fill("searched-watermark.pdf");

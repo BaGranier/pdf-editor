@@ -1,0 +1,148 @@
+:root {
+  color-scheme: light;
+  color: var(--text-primary);
+  background: var(--app-bg);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --app-bg: #eef1f5;
+  --surface: #ffffff;
+  --surface-secondary: #f8fafc;
+  --border: #d8dde6;
+  --accent-hover: #0b4fd0;
+  --selection: rgb(21 94 239 / 14%);
+  --shadow: 0 10px 30px rgb(23 32 51 / 10%);
+  --surface-bg: var(--surface);
+  --surface-alt: var(--surface-secondary);
+  --surface-accent: #eef4ff;
+  --surface-muted: #f3f5f8;
+  --text-primary: #172033;
+  --text-secondary: #465266;
+  --text-muted: #556579;
+  --border-color: var(--border);
+  --border-strong: #bdc6d4;
+  --button-bg: var(--surface);
+  --button-text: var(--text-primary);
+  --button-border: var(--border-strong);
+  --button-hover: rgb(21 94 239 / 8%);
+  --button-danger-hover: rgb(239 68 68 / 10%);
+  --toolbar-shadow: 0 1px 2px rgb(23 32 51 / 6%);
+  --card-shadow: 0 1px 2px rgb(23 32 51 / 4%);
+  --page-shadow: 0 12px 30px rgb(23 32 51 / 14%);
+  --focus-ring: var(--accent);
+  --accent: #155eef;
+  --accent-soft: rgb(21 94 239 / 18%);
+  --danger: #b42318;
+  --on-accent: #ffffff;
+  --success: #166534;
+  --warning: #854d0e;
+  --canvas-bg: #ffffff;
+}
+
+:root:is([data-theme="dark"], [data-theme="ocean"], [data-theme="plum"]) {
+  color-scheme: dark;
+  --on-accent: #111827;
+  --success: #86efac;
+  --warning: #fcd34d;
+  --danger: #fca5a5;
+  --shadow: 0 10px 30px rgb(0 0 0 / 32%);
+  --toolbar-shadow: 0 1px 2px rgb(0 0 0 / 30%);
+  --card-shadow: 0 1px 2px rgb(0 0 0 / 28%);
+  --page-shadow: 0 12px 30px rgb(0 0 0 / 38%);
+}
+
+:root[data-theme="dark"] {
+  --app-bg: #0f172a;
+  --surface: #111827;
+  --surface-secondary: #0b1220;
+  --border: #243244;
+  --accent-hover: #9ebeff;
+  --selection: rgb(122 166 255 / 20%);
+  --surface-accent: #172554;
+  --surface-muted: #1f2937;
+  --text-primary: #e5edf7;
+  --text-secondary: #b3c0d4;
+  --text-muted: #8b9ab3;
+  --border-strong: #37506c;
+  --button-hover: rgb(96 165 250 / 14%);
+  --button-danger-hover: rgb(248 113 113 / 14%);
+  --focus-ring: #8ab4ff;
+  --accent: #7aa6ff;
+  --accent-soft: rgb(122 166 255 / 22%);
+}
+
+:root[data-theme="ocean"] {
+  --app-bg: #102330;
+  --surface: #172e3b;
+  --surface-secondary: #112633;
+  --border: #2d495b;
+  --border-strong: #526f80;
+  --surface-accent: #1e4251;
+  --surface-muted: #1c3947;
+  --text-primary: #e7f5f9;
+  --text-secondary: #bed6df;
+  --text-muted: #a2bdca;
+  --accent: #83dbee;
+  --accent-hover: #b5f0fb;
+  --selection: color-mix(in srgb, var(--accent) 15%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 19%, transparent);
+  --button-hover: color-mix(in srgb, var(--accent) 10%, transparent);
+  --button-danger-hover: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+:root[data-theme="forest"] {
+  --app-bg: #e8efe6;
+  --surface: #f8fcf6;
+  --surface-secondary: #edf5eb;
+  --border: #c6d8c5;
+  --border-strong: #809881;
+  --surface-accent: #deeedd;
+  --surface-muted: #e4efe2;
+  --text-primary: #1b3025;
+  --text-secondary: #3d594a;
+  --text-muted: #4b6454;
+  --accent: #246247;
+  --accent-hover: #184c35;
+  --selection: color-mix(in srgb, var(--accent) 15%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 19%, transparent);
+  --button-hover: color-mix(in srgb, var(--accent) 10%, transparent);
+  --button-danger-hover: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+:root[data-theme="plum"] {
+  --app-bg: #231927;
+  --surface: #2f2335;
+  --surface-secondary: #271c2e;
+  --border: #4c3a54;
+  --border-strong: #806687;
+  --surface-accent: #4a3057;
+  --surface-muted: #392b42;
+  --text-primary: #f5eaf8;
+  --text-secondary: #e0cce7;
+  --text-muted: #c6accf;
+  --accent: #e6b0f3;
+  --accent-hover: #f6d1fc;
+  --selection: color-mix(in srgb, var(--accent) 15%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 19%, transparent);
+  --button-hover: color-mix(in srgb, var(--accent) 10%, transparent);
+  --button-danger-hover: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+:root[data-theme="sand"] {
+  --app-bg: #f4eadb;
+  --surface: #fffaf0;
+  --surface-secondary: #f8efdf;
+  --border: #dfd0b7;
+  --border-strong: #a08769;
+  --surface-accent: #f4e5cb;
+  --surface-muted: #f5ecd9;
+  --text-primary: #382b20;
+  --text-secondary: #604a34;
+  --text-muted: #705b43;
+  --accent: #86501d;
+  --accent-hover: #64370e;
+  --selection: color-mix(in srgb, var(--accent) 15%, transparent);
+  --accent-soft: color-mix(in srgb, var(--accent) 19%, transparent);
+  --button-hover: color-mix(in srgb, var(--accent) 10%, transparent);
+  --button-danger-hover: color-mix(in srgb, var(--danger) 12%, transparent);
+}

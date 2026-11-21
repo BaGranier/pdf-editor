@@ -62,9 +62,9 @@ test("redaction stamp: two pages, history, persistence and secure copy", async (
     const pageBox = await page.getByLabel("Couche d'édition de la page 1", { exact: true }).boundingBox();
     expect(zoneBox && pageBox && zoneBox.width / pageBox.width).toBeCloseTo(190 / 400, 2);
   }
-  await page.getByRole("switch", { name: "Basculer le thème" }).click();
+  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
   await page.screenshot({ path: testInfo.outputPath("pending-dark.png") });
-  await page.getByRole("switch", { name: "Basculer le thème" }).click();
+  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("light");
   await page.getByLabel("Tampon page 2", { exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("stamp-pending.png") });
   await enterOrganizeMode(page);

@@ -12,18 +12,19 @@
   min-height: 0;
   margin: 0;
   padding: 1px 3px;
-  border: 1px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  border: 1px solid rgb(21 94 239 / 58%);
   border-radius: 2px;
-  background: color-mix(in srgb, var(--surface-bg) 12%, transparent);
-  color: var(--text-primary);
+  background: rgb(255 255 255 / 12%);
+  color: #172033;
   font: inherit;
+  color-scheme: light;
   pointer-events: auto;
 }
 
 .pdf-form-field[type="checkbox"],
 .pdf-form-field[type="radio"] {
   padding: 0;
-  accent-color: var(--accent);
+  accent-color: #155eef;
 }
 
 .pdf-form-field:focus-visible { outline: 2px solid var(--selection); outline-offset: 1px; }

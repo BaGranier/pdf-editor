@@ -16,7 +16,7 @@ test("QA-E2E-008 @smoke restaure IndexedDB, préférences, scroll et plan sans d
   await openApp(page);
   await openPdf(page, fixtures.onePage);
   await openPdf(page, fixtures.fivePages);
-  await page.getByRole("switch", { name: "Basculer le thème" }).click();
+  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
 
   const viewer = page.getByTestId("pdf-viewer");
   await viewer.evaluate((element) => {
@@ -49,10 +49,7 @@ test("QA-E2E-008 @smoke restaure IndexedDB, préférences, scroll et plan sans d
   await expect(
     page.getByRole("button", { name: "pdf-small-5-pages.pdf, document actif" }),
   ).toBeVisible();
-  await expect(page.getByRole("switch", { name: "Basculer le thème" })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
+  await expect(page.getByRole("combobox", { name: "Thème de l’interface" })).toHaveValue("dark");
   await expect(page.getByTestId("zoom-level")).toHaveText("110%");
   await expect
     .poll(() => page.getByTestId("pdf-viewer").evaluate((element) => element.scrollTop))
@@ -74,7 +71,7 @@ test("QA-E2E-009 @smoke efface les données locales et conserve un état initial
     .first()
     .getByRole("button", { name: "Dupliquer la page 1" })
     .click();
-  await page.getByRole("switch", { name: "Basculer le thème" }).click();
+  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
 
   await clearLocalData(page);
   await expect
@@ -99,10 +96,10 @@ test("QA-E2E-009 @smoke efface les données locales et conserve un état initial
 
 test("QA-E2E-017 @regression persiste les thèmes clair et sombre", async ({ page }) => {
   await openApp(page);
-  const themeSwitch = page.getByRole("switch", { name: "Basculer le thème" });
+  const themeSwitch = page.getByRole("combobox", { name: "Thème de l’interface" });
   const initialTheme = await page.evaluate(() => document.documentElement.dataset.theme);
-  await themeSwitch.click();
   const toggledTheme = initialTheme === "dark" ? "light" : "dark";
+  await themeSwitch.selectOption(toggledTheme);
   await expect
     .poll(() => page.evaluate(() => document.documentElement.dataset.theme))
     .toBe(toggledTheme);
@@ -112,7 +109,7 @@ test("QA-E2E-017 @regression persiste les thèmes clair et sombre", async ({ pag
   await expect
     .poll(() => page.evaluate(() => document.documentElement.dataset.theme))
     .toBe(toggledTheme);
-  await page.getByRole("switch", { name: "Basculer le thème" }).click();
+  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption(initialTheme!);
   await expect
     .poll(() => page.evaluate(() => document.documentElement.dataset.theme))
     .toBe(initialTheme);

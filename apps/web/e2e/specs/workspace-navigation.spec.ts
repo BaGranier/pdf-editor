@@ -19,7 +19,7 @@ test("EDITOR-UX-003 navigue depuis les miniatures et garde le header compact", a
   const open = page.locator("button.toolbar-icon-button[aria-label='Ouvrir un PDF']");
   const save = page.getByRole("button", { name: "Enregistrer sous…" });
   const reset = page.getByRole("button", { name: "Réinitialiser les données locales" });
-  const theme = page.getByRole("switch", { name: "Basculer le thème" });
+  const theme = page.getByRole("combobox", { name: "Thème de l’interface" });
   const [openBox, saveBox, resetBox, themeBox] = await Promise.all([open.boundingBox(), save.boundingBox(), reset.boundingBox(), theme.boundingBox()]);
   expect(openBox?.x).toBeLessThan(themeBox?.x ?? Infinity);
   expect(saveBox?.x).toBeLessThan(themeBox?.x ?? Infinity);

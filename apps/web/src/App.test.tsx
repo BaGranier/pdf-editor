@@ -87,10 +87,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Augmenter le zoom" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Masquer la barre latérale" })).toBeInTheDocument();
     expect(sidebar).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Basculer le thème" })).toHaveAttribute(
-      "aria-checked",
-      "false",
-    );
+    expect(screen.getByRole("combobox", { name: "Thème de l’interface" })).toHaveValue("light");
     expect(within(sidebar).getByLabelText("Ouvrir un PDF")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Réinitialiser les données locales" })).toBeInTheDocument();
     expect(within(sidebar).getByText("Aucun document ouvert.")).toBeInTheDocument();
@@ -502,13 +499,10 @@ describe("App", () => {
       expect(screen.getByRole("button", { name: "gamma.pdf, document actif" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("switch", { name: "Basculer le thème" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Thème de l’interface" }), { target: { value: "dark" } });
 
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
-    expect(screen.getByRole("switch", { name: "Basculer le thème" })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect(screen.getByRole("combobox", { name: "Thème de l’interface" })).toHaveValue("dark");
 
     fireEvent.click(screen.getByRole("button", { name: "Masquer la barre latérale" }));
 
@@ -519,7 +513,7 @@ describe("App", () => {
 
     expect(screen.getByRole("complementary", { name: "Documents ouverts" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "gamma.pdf, document actif" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("switch", { name: "Basculer le thème" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Thème de l’interface" }), { target: { value: "light" } });
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
   });
 
@@ -2266,7 +2260,7 @@ describe("App", () => {
       expect(screen.getByRole("button", { name: "persist-b.pdf, document actif" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("switch", { name: "Basculer le thème" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Thème de l’interface" }), { target: { value: "dark" } });
     fireEvent.click(screen.getByRole("button", { name: "Masquer la barre latérale" }));
 
     await waitFor(() => {

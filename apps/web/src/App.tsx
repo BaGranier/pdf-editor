@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { PdfLinks, PdfOutline, LinkInspector, followWebLink } from "./components/PdfLinks";
 import type { LinkDestination, PdfLinkEdit } from "./editing/types";
 import { ImageDocumentDialog } from "./components/ImageDocumentDialog";
+import { THEMES, isThemeId, systemTheme, type ThemeId } from "./viewer/themes";
 import { ToolbarIcon } from "./components/ToolbarIcon";
 import { DOCUMENT_ACCEPT, readImageSource, createImagePdf, type ImageSource, type ImageLayout, DEFAULT_IMAGE_LAYOUT, type ImageTransform, validateImageDocumentSession } from "./images/imageDocument";
 import { ImagesPdfDialog } from "./components/ImagesPdfDialog";
@@ -52,8 +53,6 @@ import {
   saveOrganizationPlan,
   saveStoredDocument,
   saveViewerPreferences,
-  type ThemeMode,
-  type ViewerPreferences,
   type ViewerMode as PersistedViewerMode,
 } from "./storage/viewerStorage";
 import {
@@ -271,18 +270,6 @@ function clearCanvas(canvas: HTMLCanvasElement | null) {
   canvas.width = 0;
   canvas.height = 0;
   canvas.removeAttribute("style");
-}
-
-function getSystemTheme(): ThemeMode {
-  if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-    return "dark";
-  }
-
-  return "light";
-}
-
-function getInitialTheme(preferences: ViewerPreferences | null): ThemeMode {
-  return preferences?.theme ?? getSystemTheme();
 }
 
 function clonePdfEdit(edit: PdfEdit): PdfEdit {
@@ -2798,7 +2785,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const documentButtonRefs = useRef(new Map<string, HTMLButtonElement | null>());
   const pendingFocusTargetRef = useRef<FocusTarget>(null);
   const sidebarId = "documents-sidebar";
-  const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme(storedPreferences));
+  const [theme, setTheme] = useState<ThemeId>(() => storedPreferences?.theme ?? systemTheme());
   const [isSidebarVisible, setIsSidebarVisible] = useState(() => storedPreferences?.sidebarVisible ?? true);
   const [pageView, setPageView] = useState<"list" | "grid">("list");
   const [isPropertiesPanelVisible, setIsPropertiesPanelVisible] = useState(true);
@@ -3138,9 +3125,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     };
   }, [exitPresentation, viewerMode]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
-    document.documentElement.style.colorScheme = theme;
   }, [theme]);
 
   useEffect(() => {
@@ -4262,10 +4248,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     closeDocument(activeDocument.id);
   }, [activeDocument, closeDocument]);
 
-  const toggleTheme = useCallback(() => {
-    setTheme((currentTheme) => (currentTheme === "light" ? "dark" : "light"));
-  }, []);
-
   const selectDocumentFromSidebar = useCallback((documentId: string) => {
     pendingFocusTargetRef.current = "viewer";
     setActiveDocumentId(documentId);
@@ -4660,7 +4642,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setStatus("Sélectionnez un PDF local.");
     setIsSidebarVisible(true);
     setIsRestoringDocuments(false);
-    setTheme(getSystemTheme());
+    setTheme(systemTheme());
     nextDocumentId.current = 1;
     nextTextEditId.current = 1;
     nextShapeEditId.current = 1;
@@ -5425,7 +5407,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <button type="button" className="toolbar-icon-button toolbar-icon-button--danger" aria-label="Réinitialiser les données locales" title="Réinitialiser les données locales" onClick={clearLocalData}><ResetIcon /></button>
           </div>
           <span className="toolbar-actions__spacer" aria-hidden="true" />
-          <button type="button" className="toolbar-icon-button" role="switch" aria-label="Basculer le thème" aria-checked={theme === "dark"} title={theme === "light" ? "Passer au thème sombre" : "Passer au thème clair"} onClick={toggleTheme}><span aria-hidden="true">{theme === "light" ? "☾" : "☀"}</span></button>
+          <div className="theme-selector">
+            <span className="theme-selector__preview" aria-hidden="true"><i /><i /><i /></span>
+            <select aria-label="Thème de l’interface" value={theme} onChange={(event) => {
+              const value = event.currentTarget.value;
+              if (isThemeId(value)) setTheme(value);
+            }}>
+              {THEMES.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+            </select>
+          </div>
           <div className="toolbar-action-group" aria-label="Fichier">
             <div className="insert-menu file-menu">
               <button

@@ -7,7 +7,7 @@ import { validatePdf } from "../helpers/pdf-validation";
 test("sidebar groups: keyboard, single disclosure, clean navigation and narrow dark viewport", async ({ page }, info) => {
   await openApp(page); await openPdf(page, fixtures.onePage);
   await page.setViewportSize({ width: 760, height: 430 });
-  await page.getByRole("switch", { name: "Basculer le thème" }).click();
+  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
   const rail = page.getByRole("navigation", { name: "Outils d'édition" });
   await expect(rail.getByRole("button")).toHaveCount(7);
   // Opening a PDF writes the initial file and then its hydrated editing state.
@@ -100,7 +100,7 @@ test("tiled watermark: mixed pages, live preview, history, persistence, zoom and
   }
   await page.reload(); await expect(mark).toBeVisible();
   expect(await mark.locator("text").count()).toBeGreaterThan(20);
-  await page.getByRole("switch", { name: "Basculer le thème" }).click();
+  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
   await page.screenshot({ path: info.outputPath("tiled-preview-dark.png") });
   await chooseNavigationTool(page, "Biffer");
   const layer = await page.getByLabel("Couche d'édition de la page 1", { exact: true }).boundingBox();
