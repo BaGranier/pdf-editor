@@ -11,7 +11,7 @@ Dernier gate MVP-004 : `npm run qa:mvp` **exit 0**, commit de build `ae97cb8`, p
 
 - fonctionnel / redistribution : PASS ; Microsoft CRT / MuPDF / WebView2 : PASS ;
 - `release:verify` : PASS ; `qa:mvp` : PASS ; signature Authenticode : hors MVP ;
-- VM clean : **À VALIDER MANUELLEMENT**, non exécutée.
+- VM clean : **NON VALIDÉ — QA manuelle Windows requise**. Voir le [relevé STAB-2026-11](docs/qa/runs/2026-11-21-windows-preview.md).
 
 - frontend : PASS, 348 tests, types et build ;
 - backend : PASS, 270 tests MVP dont les garde-fous CRT/redistribution ; OCR embarqué : 18 tests ciblés PASS ; OCR système `fra` non qualifié ;
@@ -58,6 +58,12 @@ Action unique : installer **cette candidate MVP-004** sur une VM Windows clean e
 effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 
 ## Journal MVP
+
+### 2026-11-21 — STAB-2026-11
+- Candidat historique identifié par son commit de build et son hash attendu.
+- Artefact et VM Windows propre indisponibles dans le runner Linux.
+- Installation Preview et impression native restent à qualifier séparément.
+- Matrice de reprise et preuves attendues consignées dans le rapport de qualification.
 
 ### 2026-11-21 — FEAT-PDF-UX-THEMES-NAV-AUDIT
 - Six palettes persistées dans les préférences web, avec compatibilité clair/sombre.
