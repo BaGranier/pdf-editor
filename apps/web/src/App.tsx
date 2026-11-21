@@ -4911,8 +4911,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       delivering = true;
       setExportPhase("writing");
       const desktopSource = document?.saveDestination ?? null;
+      const needsNativeDialog = hasRedactions || operation === "save_as" || operation === "export";
       const nativeSave = isDesktopRuntime()
-        ? hasRedactions || operation === "save_as" || operation === "export"
+        ? needsNativeDialog
           ? await saveDesktopPdfAs(exported.downloadedName, exported.pdfBlob, Boolean(hasRedactions || sessionOnly || document?.media?.kind === "image"))
           : desktopSource
             ? await saveDesktopPdf(desktopSource.documentId, exported.pdfBlob)
@@ -4920,7 +4921,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         : null;
 
       if (isDesktopRuntime() && nativeSave === null) {
-        if (operation === "save_as" || operation === "export") {
+        if (needsNativeDialog) {
           setExportFeedback({ kind: "warning", message: "Enregistrement annulé." });
         } else {
           setExportFeedback({
