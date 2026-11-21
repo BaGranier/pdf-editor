@@ -4846,8 +4846,19 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         setExportFeedback({ kind: "error", message: payload.message });
         return false;
       }
-      const hasRedactions = JSON.parse(String(payload.formData.get("plan"))).redactions?.length > 0;
-      if (hasRedactions && !window.confirm("Les informations biffées ne pourront pas être restaurées dans la copie exportée. Le document source reste inchangé. Les données ailleurs et les métadonnées ne sont pas anonymisées.")) return false;
+      const redactionPages = payload.redactionPages ?? [];
+      const hasRedactions = redactionPages.length > 0;
+      if (hasRedactions) {
+        const list = redactionPages.slice(0, 12).join(", ");
+        const remaining = redactionPages.length - 12;
+        const details = remaining > 0 ? `${list} et ${remaining} autre(s)` : list;
+        const preflight = [
+          `Biffage sécurisé de la copie, pages de sortie concernées : ${details}.`,
+          "Vérifiez les rectangles « En attente ». Leur contenu sera supprimé définitivement dans la copie. Le PDF source sera conservé.",
+          "Le contenu hors des zones et les métadonnées peuvent rester dans la copie. Ce traitement ne nettoie pas les pièces jointes, formulaires, annotations ou autres structures sensibles. Le moteur refuse les structures incompatibles et les zones qu’il ne peut pas traiter de façon sûre.",
+        ].join("\n\n");
+        if (!window.confirm(preflight)) return false;
+      }
       const exported = await executePdfExport({
         backendUrl,
         formData: payload.formData,

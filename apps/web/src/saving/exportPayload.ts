@@ -59,7 +59,7 @@ export type BuildPdfExportPayloadInput = {
 };
 
 export type BuildPdfExportPayloadResult =
-  | { ok: true; formData: FormData; outputName: string }
+  | { ok: true; formData: FormData; outputName: string; redactionPages?: number[] }
   | { ok: false; message: string };
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -133,6 +133,11 @@ export function buildPdfExportPayload(
       return pageIsExported && editIsExportable ? [{ ...edit, sourceDocumentId: documentId, order }] : [];
     }),
   );
+  const redactions = exportedEdits.filter((edit) => edit.type === "redaction");
+  const redactedSources = new Set(redactions.map((edit) => `${edit.sourceDocumentId}:${edit.page}`));
+  const redactionPages = organizationPlan.pages.flatMap((page, index) =>
+    redactedSources.has(`${page.sourceDocumentId}:${page.sourcePageIndex + 1}`) ? [index + 1] : [],
+  );
   const textEdits = exportedEdits.filter((edit): edit is AddTextEdit & ExportedEdit => edit.type === "add_text");
   const nativeTextEdits = exportedEdits.filter((edit): edit is NativeTextEdit & ExportedEdit => edit.type === "native_text");
   const signatureEdits = exportedEdits.filter((edit): edit is SignatureEdit & ExportedEdit => edit.type === "signature");
@@ -196,7 +201,7 @@ export function buildPdfExportPayload(
       ...(imageEdits.length > 0 ? { images: imageEdits } : {}),
       ...(signatureImages.length > 0 ? { signatureImages: signatureImages.map(({ dataUrl: _dataUrl, ...metadata }) => metadata) } : {}),
       ...(stampEdits.length ? { stamps: stampEdits } : {}),
-      ...(exportedEdits.some((edit) => edit.type === "redaction") ? { redactions: exportedEdits.filter((edit) => edit.type === "redaction") } : {}),
+      ...(redactions.length ? { redactions } : {}),
       ...(shapeEdits.length > 0 ? { shapes: shapeEdits } : {}),
       ...(freehandEdits.length > 0 ? { freehands: freehandEdits } : {}),
       ...(textMarkupEdits.length > 0 ? { textMarkups: textMarkupEdits } : {}),
@@ -209,7 +214,7 @@ export function buildPdfExportPayload(
         formLocks: formLocks.map((edit) => ({ sourceDocumentId: edit.sourceDocumentId, locked: edit.locked })),
       } : {}),
     }));
-    return { ok: true, formData, outputName };
+    return { ok: true, formData, outputName, ...(redactionPages.length ? { redactionPages } : {}) };
   };
 
   if (customFontRefs.length === 0) {

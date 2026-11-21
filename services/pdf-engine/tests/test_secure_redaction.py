@@ -69,6 +69,27 @@ def test_native_text_rotation_crop_and_neighbor(rotation, crop):
         assert SECRET in original[0].get_text()
 
 
+def test_redaction_zone_and_metadata_are_checked_separately():
+    outside = "OUTSIDE_ZONE_WITNESS"
+    metadata = "METADATA_WITNESS"
+    with fitz.open() as source:
+        page = source.new_page(width=400, height=400)
+        page.insert_text((40, 110), SECRET)
+        page.insert_text((40, 220), outside)
+        source.set_metadata({"subject": metadata})
+        original_bytes = source.tobytes()
+
+    result = export(original_bytes, [zone()])
+    assert_no_secret(result)
+    with fitz.open(stream=result, filetype="pdf") as copy:
+        assert copy[0].search_for(outside)
+        # Recomposition drops this document-level field. It is not a metadata scrub.
+        assert copy.metadata["subject"] == ""
+    with fitz.open(stream=original_bytes, filetype="pdf") as source:
+        assert source[0].search_for(SECRET)
+        assert source.metadata["subject"] == metadata
+
+
 def test_scan_pixels_and_vector_content_removed():
     with fitz.open() as image_doc:
         page = image_doc.new_page(width=400, height=400)
