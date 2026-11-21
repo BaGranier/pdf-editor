@@ -5,8 +5,8 @@ import { validatePdf } from "../helpers/pdf-validation";
 type ShapeName = "Rectangle" | "Ellipse" | "Ligne";
 
 async function selectShape(page: import("@playwright/test").Page, shape: ShapeName) {
-  await page.getByRole("button", { name: "Édition" }).click();
-  const picker = page.getByRole("region", { name: "Outils Édition" });
+  await page.getByRole("button", { name: "Formes et images" }).click();
+  const picker = page.getByRole("region", { name: "Outils Formes et images" });
   await expect(picker).toBeVisible();
   await picker.getByRole("button", { name: shape }).click();
 }

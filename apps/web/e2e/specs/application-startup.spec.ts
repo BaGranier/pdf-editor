@@ -19,6 +19,6 @@ test("QA-E2E-001 @smoke démarre le frontend et le backend dans un état utilisa
   await qa.measure("frontend-startup", () => openApp(page));
   await expect(page.getByLabel("Aucun PDF ouvert")).toBeVisible();
   await expect(page.getByRole("button", { name: "OCR" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Organiser" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pages", exact: true })).toBeVisible();
   await expectInitialLocalState(page);
 });

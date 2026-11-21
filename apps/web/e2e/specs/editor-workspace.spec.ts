@@ -27,11 +27,11 @@ test("EDITOR-UX-002 organise les panneaux et crée les objets par glisser", asyn
   await expect(page.locator("aside.properties-panel")).toHaveCount(0);
   await page.getByRole("button", { name: "Afficher les propriétés" }).click();
 
-  await page.getByRole("button", { name: "Édition" }).click();
-  await expect(page.getByRole("region", { name: "Outils Édition" })).toBeVisible();
+  await page.getByRole("button", { name: "Texte" }).click();
+  await expect(page.getByRole("region", { name: "Outils Texte" })).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("region", { name: "Outils Édition" })).toBeHidden();
-  await page.getByRole("button", { name: "Édition" }).click();
+  await expect(page.getByRole("region", { name: "Outils Texte" })).toBeHidden();
+  await page.getByRole("button", { name: "Texte" }).click();
   await page.getByRole("button", { name: /Rectangle/ }).click();
   await dragInLayer(page, { x: 40, y: 70 }, { x: 190, y: 150 });
   await expect(page.getByLabel("Rectangle page 1")).toBeVisible();

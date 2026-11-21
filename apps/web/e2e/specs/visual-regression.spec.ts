@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import {
   enterOrganizeMode,
@@ -20,7 +21,7 @@ test("QA-E2E-018 @slow @visual capture les états stables par moteur", async ({
 
   await enterOrganizeMode(page);
   await expect(page).toHaveScreenshot("organize-mode.png", { fullPage: true });
-  await page.getByRole("button", { name: "Revenir à la lecture" }).click();
+  await chooseNavigationTool(page, "Revenir à la lecture");
 
   const currentTheme = await page.evaluate(() => document.documentElement.dataset.theme);
   if (currentTheme !== "light") {

@@ -106,7 +106,7 @@ test("QA-E2E-017 @regression persiste les thèmes clair et sombre", async ({ pag
   await expect
     .poll(() => page.evaluate(() => document.documentElement.dataset.theme))
     .toBe(toggledTheme);
-  await expect(page.getByRole("button", { name: "Organiser" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pages", exact: true })).toBeVisible();
 
   await page.reload();
   await expect

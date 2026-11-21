@@ -143,7 +143,7 @@ test("stamp reference proportions: large REÇU, turquoise rotated REÇU and BROU
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: testInfo.outputPath("three-reference-stamps.png") });
   await page.setViewportSize({ width: 760, height: 920 });
-  await expect(page.getByRole("button", { name: "Marquage", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Biffage et tampons", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("reference-narrow.png") });
 });
 

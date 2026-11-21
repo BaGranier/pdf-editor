@@ -1,4 +1,4 @@
-import { NAVIGATION_GROUPS } from "../../src/viewer/navigationGroups";
+import { NAVIGATION_GROUPS, PAGE_TOOLS } from "../../src/viewer/navigationGroups";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Locator, type Page } from "@playwright/test";
@@ -144,7 +144,7 @@ export function organizedPages(page: Page): Locator {
 }
 
 export async function enterOrganizeMode(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Organiser" }).click();
+  await chooseNavigationTool(page, "Organiser");
   await expect(page.getByRole("heading", { name: "Organiser les pages" })).toBeVisible();
 }
 
@@ -167,7 +167,8 @@ export async function drawTextBox(page: Page, position: { x: number; y: number }
 }
 
 export async function chooseNavigationTool(page: Page, label: string): Promise<void> {
-  const group = NAVIGATION_GROUPS.find((item) => item.tools.some((tool) => tool.label === label));
+  const group = NAVIGATION_GROUPS.find((item) => item.tools.some((tool) => tool.label === label ||
+    (tool.id === "organize" && label === PAGE_TOOLS.read.label)));
   if (!group) throw new Error(`Unknown navigation tool: ${label}`);
   const parent = page.getByRole("button", { name: group.label, exact: true });
   if (await parent.getAttribute("aria-expanded") !== "true") await parent.click();

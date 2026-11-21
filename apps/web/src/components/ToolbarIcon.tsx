@@ -16,7 +16,7 @@ export type ToolbarIconName =
   | "pencil" | "shield" | "image" | "edit-text"
   | "redaction" | "visual-mask" | "watermark" | "stamp"
   | "rectangle" | "square" | "ellipse" | "circle" | "line" | "arrow"
-  | "read" | "check";
+  | "read" | "check" | "list" | "chevron-left" | "chevron-right";
 
 export function ToolbarIcon({ name, className = "" }: { name: ToolbarIconName; className?: string }) {
   return (
@@ -48,6 +48,9 @@ export function ToolbarIcon({ name, className = "" }: { name: ToolbarIconName; c
       {name === "line" ? <path d="m3 17 14-14" /> : null}
       {name === "arrow" ? <path d="m3 17 14-14M8 3h9v9" /> : null}
       {name === "read" ? <><path d="M4 2h9l3 3v13H4zM12 2v4h4M7 10h6M7 14h6" /></> : null}
+      {name === "list" ? <path d="M3 4h14M3 10h14M3 16h14" /> : null}
+      {name === "chevron-left" ? <path d="m12 4-6 6 6 6" /> : null}
+      {name === "chevron-right" ? <path d="m8 4 6 6-6 6" /> : null}
       {name === "check" ? <path d="m4 10 4 4 8-8" /> : null}
       {name === "save-as" ? (
         <>

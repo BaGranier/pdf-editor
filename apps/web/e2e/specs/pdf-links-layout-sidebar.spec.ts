@@ -138,9 +138,9 @@ test("rangées adaptatives, page courante et rendu partiel sur 250 pages", async
   await expect(status(page)).toContainText("Page 2 / 8");
   await expect(dirty(page)).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Organiser", exact: true }).click();
+  await chooseNavigationTool(page, "Organiser");
   await page.getByRole("button", { name: "Tourner la page 1 vers la droite", exact: true }).click();
-  await page.getByRole("button", { name: "Revenir à la lecture" }).click();
+  await chooseNavigationTool(page, "Revenir à la lecture");
   await selectPage(page, 1);
   await page.setViewportSize({ width: 1024, height: 768 });
   await expect(pdfPage(page, 1)).toHaveAttribute("data-rotation", "90");
@@ -188,8 +188,8 @@ test("infobulles et sous-menus contenus, SVG et navigation clavier", async ({ pa
   await openApp(page);
   await openPdf(page, fixtures.onePage);
   const rail = page.getByRole("navigation", { name: "Outils d'édition" });
-  const editing = rail.getByRole("button", { name: "Édition" });
-  const marking = rail.getByRole("button", { name: "Marquage" });
+  const editing = rail.getByRole("button", { name: "Texte" });
+  const marking = rail.getByRole("button", { name: "Biffage et tampons" });
   const tooltip = page.getByRole("tooltip");
   for (const [width, height, theme] of [[1440, 900, "light"], [550, 430, "dark"], [345, 350, "light"]] as const) {
     await page.setViewportSize({ width, height });
@@ -198,7 +198,7 @@ test("infobulles et sous-menus contenus, SVG et navigation clavier", async ({ pa
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     await marking.hover();
     await expectContained(tooltip);
-    await expect(tooltip).toHaveText("Marquage");
+    await expect(tooltip).toHaveText("Biffage et tampons");
     await expect(tooltip).toHaveCSS("white-space", "nowrap");
     await page.keyboard.press("Escape");
     await expect(tooltip).toHaveCount(0);
@@ -209,7 +209,7 @@ test("infobulles et sous-menus contenus, SVG et navigation clavier", async ({ pa
     await expect(editing).toBeFocused();
     await expectContained(tooltip);
     await page.keyboard.press("Enter");
-    const panel = page.getByRole("region", { name: "Outils Édition" });
+    const panel = page.getByRole("region", { name: "Outils Texte" });
     await expect(editing).toHaveAttribute("aria-expanded", "true");
     await expectContained(panel);
     const long = panel.getByRole("button", { name: "Modifier le texte existant", exact: true });
@@ -218,7 +218,7 @@ test("infobulles et sous-menus contenus, SVG et navigation clavier", async ({ pa
     await expect(long.locator("svg")).toHaveAttribute("aria-hidden", "true");
     await expect(panel.locator("button > svg:not([data-icon=check])")).toHaveCount(await panel.getByRole("button").count());
     await page.keyboard.press("End");
-    await expect(panel.getByRole("button", { name: "Flèche", exact: true })).toBeFocused();
+    await expect(panel.getByRole("button", { name: "Lien", exact: true })).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(panel).toHaveCount(0);
     await expect(editing).toBeFocused();
@@ -227,7 +227,7 @@ test("infobulles et sous-menus contenus, SVG et navigation clavier", async ({ pa
   await page.setViewportSize({ width: 190, height: 330 });
   const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
   await editing.press("Space");
-  const smallPanel = page.getByRole("region", { name: "Outils Édition" });
+  const smallPanel = page.getByRole("region", { name: "Outils Texte" });
   await expectContained(smallPanel);
   const clipped = smallPanel.getByRole("button", { name: "Modifier le texte existant", exact: true });
   await expect.poll(() => clipped.locator("span").evaluate((label) => label.scrollWidth > label.clientWidth)).toBe(true);
@@ -237,5 +237,5 @@ test("infobulles et sous-menus contenus, SVG et navigation clavier", async ({ pa
   await page.keyboard.press("Escape");
   await expect(smallPanel).toHaveCount(0);
   await expect(dirty(page)).toHaveCount(0);
-  await expect(rail.getByRole("button", { name: "Sélection" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Sélection" })).toHaveAttribute("aria-pressed", "true");
 });

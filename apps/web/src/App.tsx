@@ -2679,8 +2679,8 @@ function DocumentSidebar({
           <button type="button" role="tab" aria-selected={commentsView} onClick={() => onCommentsViewChange(true)}><span>Commentaires</span>{comments.length > 0 ? <span className="sidebar-tab-badge" aria-label={`${comments.length} commentaires`}>{comments.length}</span> : null}</button>
         </div>
         {!commentsView ? <div className="sidebar-page-view" role="group" aria-label="Affichage des pages">
-          <button type="button" aria-label="Vue liste" aria-pressed={pageView === "list"} onClick={() => onPageViewChange("list")}>▤</button>
-          <button type="button" aria-label="Vue grille" aria-pressed={pageView === "grid"} onClick={() => onPageViewChange("grid")}>▦</button>
+          <button type="button" aria-label="Vue liste" aria-pressed={pageView === "list"} onClick={() => onPageViewChange("list")}><ToolbarIcon name="list" /></button>
+          <button type="button" aria-label="Vue grille" aria-pressed={pageView === "grid"} onClick={() => onPageViewChange("grid")}><ToolbarIcon name="organize" /></button>
           <span className="sidebar-count">{pagePlan?.pages.length ?? 0}</span>
         </div> : null}
       </div>
@@ -5329,8 +5329,18 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, [propertiesPanelWidth]);
 
   const selectNavigationTool = (tool: NavigationAction) => {
+    if (tool === "thumbnails" || tool === "comments_list") {
+      setIsSidebarVisible(true);
+      setIsCommentsView(tool === "comments_list");
+      return;
+    }
     if (activeDocument?.media?.kind === "image" && (tool === "redaction" || tool === "edit_text")) return false;
     if (!requestToolChange()) return false;
+    if (tool === "organize") {
+      setWorkspaceMode((mode) => mode === "read" ? "organize" : "read");
+      return;
+    }
+    if (tool === "images_pdf") { setIsImagesPdfOpen(true); return; }
     setExportFeedback(null);
     if (tool === "ocr") { setIsOcrDialogOpen(true); return; }
     if (tool === "convert") { setIsConversionDialogOpen(true); return; }
@@ -5409,6 +5419,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               onClick={isDesktopRuntime() ? saveActiveDocument : openActiveSaveAsDialog}
               disabled={!activeDocument || !isActiveDocumentDirty || isExporting}
             ><ToolbarIcon name="save-as" /></button>
+            <button type="button" className="toolbar-icon-button" aria-label="Sélection" title="Sélection"
+              aria-pressed={workspaceMode === "read" && activeEditingTool === "select"}
+              disabled={!activeDocument || workspaceMode !== "read"} onClick={() => selectNavigationTool("select")}><ToolbarIcon name="select" /></button>
             <button type="button" className="toolbar-icon-button toolbar-icon-button--danger" aria-label="Réinitialiser les données locales" title="Réinitialiser les données locales" onClick={clearLocalData}><ResetIcon /></button>
           </div>
           <span className="toolbar-actions__spacer" aria-hidden="true" />
@@ -5655,11 +5668,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         aria-label="Espace de travail PDF"
         style={{ "--properties-panel-width": `${propertiesPanelWidth}px` } as CSSProperties}
       >
-        <SidebarNavigation rasterSource={activeDocument?.media?.kind === "image"} activeTool={activeEditingTool} organizing={workspaceMode === "organize"}
+        <SidebarNavigation key={`${activeDocumentId ?? ""}:${viewerMode === "presentation"}`} rasterSource={activeDocument?.media?.kind === "image"} activeTool={activeEditingTool} organizing={workspaceMode === "organize"}
           disabled={!activeDocument || workspaceMode !== "read"}
           processingDisabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
           imageDisabled={!activeDocument || workspaceMode !== "read" || activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourceDocumentId !== activeDocument.id}
-          onSelect={selectNavigationTool} onOrganize={() => { if (requestToolChange()) setWorkspaceMode((mode) => mode === "read" ? "organize" : "read"); }} />
+          onSelect={selectNavigationTool} />
         <input ref={stampImageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier tampon image" hidden onChange={(event) => void insertImage(event, true)} />
         <input ref={imageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier image" hidden onChange={(event) => void insertImage(event)} />
 
@@ -5671,7 +5684,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           aria-expanded={isSidebarVisible}
           aria-label={isSidebarVisible ? "Masquer la barre latérale" : "Afficher la barre latérale"}
         >
-          <span aria-hidden="true">{isSidebarVisible ? "❮" : "❯"}</span>
+          <span aria-hidden="true"><ToolbarIcon name={isSidebarVisible ? "chevron-left" : "chevron-right"} /></span>
         </button>
 
         {isSidebarVisible ? (

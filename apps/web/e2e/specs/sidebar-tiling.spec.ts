@@ -6,10 +6,10 @@ import { validatePdf } from "../helpers/pdf-validation";
 
 test("sidebar groups: keyboard, single disclosure, clean navigation and narrow dark viewport", async ({ page }, info) => {
   await openApp(page); await openPdf(page, fixtures.onePage);
-  await page.setViewportSize({ width: 760, height: 600 });
+  await page.setViewportSize({ width: 760, height: 430 });
   await page.getByRole("switch", { name: "Basculer le thème" }).click();
   const rail = page.getByRole("navigation", { name: "Outils d'édition" });
-  await expect(rail.getByRole("button")).toHaveCount(6);
+  await expect(rail.getByRole("button")).toHaveCount(7);
   // Opening a PDF writes the initial file and then its hydrated editing state.
   // Start observing the sidebar after both initial writes have settled.
   await expect(page.locator("main")).toHaveAttribute("data-persistence-state", "saved");
@@ -20,7 +20,7 @@ test("sidebar groups: keyboard, single disclosure, clean navigation and narrow d
   const before = JSON.stringify(await getStoredDocuments(page));
   const layer = page.getByLabel("Couche d'édition de la page 1", { exact: true });
   const bounds = await layer.boundingBox();
-  const marking = page.getByRole("button", { name: "Marquage", exact: true });
+  const marking = page.getByRole("button", { name: "Biffage et tampons", exact: true });
   await marking.focus(); await page.keyboard.press("Enter");
   await expect(marking).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByRole("button", { name: "Biffer", exact: true })).toBeFocused();
@@ -30,10 +30,10 @@ test("sidebar groups: keyboard, single disclosure, clean navigation and narrow d
   expect(JSON.stringify(await getStoredDocuments(page))).toBe(before);
   await expect(page.getByRole("button", { name: "Annuler", exact: true })).toBeDisabled();
   expect(await layer.boundingBox()).toEqual(bounds);
-  await marking.click(); await page.getByRole("button", { name: "Édition", exact: true }).click();
+  await marking.click(); await page.getByRole("button", { name: "Formes et images", exact: true }).click();
   await expect(marking).toHaveAttribute("aria-expanded", "false");
-  const menu = page.getByRole("region", { name: "Outils Édition" });
-  const box = await menu.boundingBox(); expect(box && box.y >= 0 && box.y + box.height <= 600).toBeTruthy();
+  const menu = page.getByRole("region", { name: "Outils Formes et images" });
+  const box = await menu.boundingBox(); expect(box && box.y >= 0 && box.y + box.height <= 430).toBeTruthy();
   expect(await menu.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
   await page.keyboard.press("End"); await expect(page.getByRole("button", { name: "Flèche", exact: true })).toBeFocused();
   await page.screenshot({ path: info.outputPath("compact-menu-dark-narrow.png") });

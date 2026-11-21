@@ -6,14 +6,14 @@ test.use({ deviceScaleFactor: 2 });
 test("sidebar SVG icons: marking, state, keyboard, themes and narrow HiDPI viewport", async ({ page }, info) => {
   await openApp(page); await openPdf(page, fixtures.onePage);
   const rail = page.getByRole("navigation", { name: "Outils d'édition" });
-  await expect(rail.locator('button > svg:not([data-icon="check"])')).toHaveCount(6);
+  await expect(rail.locator('button > svg:not([data-icon="check"])')).toHaveCount(7);
   const documentEdits = async () => {
     const documents = await getStoredDocuments(page) as Array<{ fileName: string; edits?: unknown[]; editsDirty?: boolean }>;
     return documents.map(({ fileName, edits, editsDirty }) => ({ fileName, edits: edits ?? [], dirty: editsDirty ?? false }));
   };
   const before = JSON.stringify(await documentEdits());
-  const marking = rail.getByRole("button", { name: "Marquage", exact: true });
-  const menu = page.getByRole("region", { name: "Outils Marquage" });
+  const marking = rail.getByRole("button", { name: "Biffage et tampons", exact: true });
+  const menu = page.getByRole("region", { name: "Outils Biffage et tampons" });
   const assertVectors = async () => {
     const icons = page.locator(".tool-rail svg, .navigation-popover svg");
     expect(await icons.count()).toBeGreaterThanOrEqual(10);
@@ -65,4 +65,50 @@ test("sidebar SVG icons: marking, state, keyboard, themes and narrow HiDPI viewp
   await page.keyboard.press("Escape"); await expect(marking).toBeFocused();
   expect(JSON.stringify(await documentEdits())).toBe(before);
   await expect(page.getByRole("button", { name: "Annuler", exact: true })).toBeDisabled();
+});
+
+test("parcourt les sept catégories et leurs sous-outils sans édition implicite", async ({ page }) => {
+  await openApp(page);
+  await openPdf(page, fixtures.onePage);
+  const categories: [string, string[]][] = [
+    ["Texte", ["Ajouter du texte", "Modifier le texte existant", "Lien"]],
+    ["Formes et images", ["Image", "Dessiner", "Rectangle", "Carré", "Ellipse", "Cercle", "Ligne", "Flèche"]],
+    ["Biffage et tampons", ["Biffer", "Masquage visuel", "Filigrane", "Tampon"]],
+    ["Signature", ["Ajouter une signature"]],
+    ["Pages", ["Afficher les miniatures", "Organiser"]],
+    ["Conversion", ["OCR", "Convertir", "Nouveau PDF à partir d’images"]],
+    ["Annotations", ["Commentaire", "Afficher les commentaires"]],
+  ];
+  const rail = page.getByRole("navigation", { name: "Outils d'édition" });
+  await expect(rail.getByRole("button")).toHaveText(categories.map(() => ""));
+  await expect(rail.locator("button")).toHaveCount(categories.length);
+  for (const [index, [label, tools]] of categories.entries()) {
+    const category = rail.locator("button").nth(index);
+    await expect(category).toHaveAccessibleName(label);
+    await category.press("Space");
+    const menu = page.getByRole("region", { name: `Outils ${label}`, exact: true });
+    await expect(menu.getByRole("button")).toHaveCount(tools.length);
+    for (const [toolIndex, name] of tools.entries()) {
+      await expect(menu.getByRole("button").nth(toolIndex)).toHaveAccessibleName(name);
+    }
+    await page.keyboard.press("Escape");
+    await expect(category).toBeFocused();
+  }
+
+  await rail.getByRole("button", { name: "Biffage et tampons" }).click();
+  await page.getByRole("button", { name: "Filigrane", exact: true }).click();
+  await expect(page.getByLabel("Créer un filigrane")).toBeVisible();
+  await expect(rail.getByRole("button", { name: "Biffage et tampons" })).toHaveAttribute("aria-pressed", "true");
+  await rail.getByRole("button", { name: "Signature" }).click();
+  await expect(page.getByLabel("Créer un filigrane")).toBeVisible();
+  await page.getByRole("button", { name: "Ajouter une signature", exact: true }).click();
+  const signature = page.getByRole("dialog", { name: "Ajouter une signature" });
+  await expect(signature).toBeVisible();
+  await signature.getByRole("button", { name: "Annuler", exact: true }).click();
+  await rail.getByRole("button", { name: "Pages" }).click();
+  await page.getByRole("button", { name: "Organiser", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Organiser les pages", exact: true })).toBeVisible();
+  await expect(rail.getByRole("button", { name: "Pages" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Annuler", exact: true })).toBeDisabled();
+  await expect(page.getByTitle("Modifications non sauvegardées")).toHaveCount(0);
 });

@@ -328,14 +328,14 @@ describe("OCR in App", () => {
       { timeout: 1200 },
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
     expect(screen.getByText("Ordre d'origine")).toBeInTheDocument();
   });
 
   it("warns that pending organization changes are not included", async () => {
     render(<App />);
     await openPdf("organized-source.pdf", 2);
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
     fireEvent.click(
       within(screen.getByLabelText("Page 1")).getByRole("button", {
         name: "Tourner la page 1 vers la droite",

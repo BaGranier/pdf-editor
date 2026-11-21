@@ -3,18 +3,21 @@ import { describe, expect, it, vi } from "vitest";
 import { SidebarNavigation } from "./SidebarNavigation";
 import { NAVIGATION_GROUPS } from "../viewer/navigationGroups";
 
-const props = { activeTool: "watermark" as const, organizing: false, disabled: false, processingDisabled: false, imageDisabled: false, onSelect: vi.fn(), onOrganize: vi.fn() };
+const props = { activeTool: "watermark" as const, organizing: false, disabled: false, processingDisabled: false, imageDisabled: false, onSelect: vi.fn() };
 describe("compact navigation", () => {
-  it("declares every action once and uses six top-level entries", () => {
+  it("declares every action once and uses seven icon-only entries", () => {
     const ids = NAVIGATION_GROUPS.flatMap((group) => group.tools.map((tool) => tool.id));
     expect(new Set(ids).size).toBe(ids.length);
     render(<SidebarNavigation {...props} />);
-    expect(screen.getAllByRole("button")).toHaveLength(6);
+    expect(screen.getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual(
+      ["Texte", "Formes et images", "Biffage et tampons", "Signature", "Pages", "Conversion", "Annotations"],
+    );
+    for (const button of screen.getAllByRole("button")) expect(button).toHaveTextContent(/^$/);
   });
   it("separates open group from selected tool and restores focus on Escape", () => {
     const onSelect = vi.fn();
     const { rerender } = render(<SidebarNavigation {...props} onSelect={onSelect} />);
-    const parent = screen.getByRole("button", { name: "Marquage" });
+    const parent = screen.getByRole("button", { name: "Biffage et tampons" });
     fireEvent.click(parent);
     expect(parent).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("button", { name: "Filigrane" })).toHaveAttribute("aria-pressed", "true");
@@ -30,7 +33,7 @@ describe("compact navigation", () => {
     expect(parent).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(parent);
     expect(screen.getByRole("button", { name: "Filigrane" })).toHaveAttribute("aria-pressed", "false");
-    fireEvent.click(screen.getByRole("button", { name: "Édition" }));
+    fireEvent.click(screen.getByRole("button", { name: "Texte" }));
     expect(screen.queryByRole("button", { name: "Filigrane" })).not.toBeInTheDocument();
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("region")).not.toBeInTheDocument();
@@ -74,13 +77,13 @@ describe("compact navigation", () => {
   it("keeps disabled states and both Pages/Read icons vectorial", () => {
     const onSelect = vi.fn();
     const { rerender } = render(<SidebarNavigation {...props} disabled onSelect={onSelect} />);
-    expect(screen.getByRole("button", { name: "Sélection" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Marquage" }));
+    fireEvent.click(screen.getByRole("button", { name: "Biffage et tampons" }));
     for (const label of ["Biffer", "Masquage visuel", "Filigrane", "Tampon"]) {
       const button = screen.getByRole("button", { name: label });
       expect(button).toBeDisabled(); fireEvent.click(button);
     }
     expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Pages" }));
     expect(screen.getByRole("button", { name: "Organiser" }).querySelector("svg")).toHaveAttribute("data-icon", "organize");
     rerender(<SidebarNavigation {...props} organizing onSelect={onSelect} />);
     expect(screen.getByRole("button", { name: "Revenir à la lecture" }).querySelector("svg")).toHaveAttribute("data-icon", "read");
@@ -89,10 +92,10 @@ describe("compact navigation", () => {
 it("shows and dismisses a portaled tooltip without selecting a tool", () => {
   const onSelect = vi.fn();
   render(<SidebarNavigation {...props} onSelect={onSelect} />);
-  const button = screen.getByRole("button", { name: "Marquage" });
+  const button = screen.getByRole("button", { name: "Biffage et tampons" });
   fireEvent.mouseEnter(button);
   const tooltip = screen.getByRole("tooltip");
-  expect(tooltip).toHaveTextContent("Marquage");
+  expect(tooltip).toHaveTextContent("Biffage et tampons");
   expect(tooltip.parentElement).toBe(document.body);
   fireEvent.keyDown(button, { key: "Escape" });
   expect(screen.queryByRole("tooltip")).toBeNull();

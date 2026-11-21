@@ -728,7 +728,7 @@ describe("App", () => {
     fireEvent.click(navigationTool("Ajouter du texte"));
     expect(layer).toHaveAttribute("data-active-editing-tool", "add_text");
     expect(navigationTool("Ajouter du texte")).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(screen.getByRole("button", { name: "Édition" }));
+    fireEvent.click(screen.getByRole("button", { name: "Texte" }));
     fireEvent.keyDown(window, { key: "Escape" });
     expect(layer).toHaveAttribute("data-active-editing-tool", "select");
     expect(navigationTool("Ajouter du texte")).toHaveAttribute("aria-pressed", "false");
@@ -1206,7 +1206,7 @@ describe("App", () => {
       target: { value: "Deuxième bloc" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
     fireEvent.click(screen.getByRole("button", { name: "Exporter le PDF" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
@@ -1394,7 +1394,7 @@ describe("App", () => {
       clientY: 125,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
     fireEvent.click(screen.getByRole("button", { name: "Exporter le PDF" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
@@ -1747,8 +1747,8 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(screen.getByRole("button", { name: "Organiser" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    expect(navigationTool("Organiser")).toBeInTheDocument();
+    fireEvent.click(navigationTool("Organiser"));
 
     expect(screen.getByText("Ouvrez un PDF pour organiser ses pages.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Exporter le PDF" })).toBeDisabled();
@@ -1767,7 +1767,7 @@ describe("App", () => {
     expect(within(grid).getAllByLabelText(/Miniature de la page source/)).toHaveLength(3);
     expect(screen.getByLabelText("Plan d'export")).toBeInTheDocument();
     expect(screen.getByLabelText("3 pages seront exportées")).toHaveTextContent("3 pages");
-    expect(screen.getByRole("button", { name: "Revenir à la lecture" })).toHaveAttribute(
+    expect(navigationTool("Revenir à la lecture")).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -1832,7 +1832,7 @@ describe("App", () => {
       expect(screen.getByRole("region", { name: "Aperçu PDF export.pdf" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
     fireEvent.click(screen.getByRole("button", { name: "Exporter le PDF" }));
 
     expect(screen.getByRole("button", { name: "Export en cours…" })).toBeDisabled();
@@ -1877,7 +1877,7 @@ describe("App", () => {
       "aria-current",
       "true",
     );
-    expect(screen.getByRole("button", { name: "Organiser" })).toHaveAttribute("aria-pressed", "false");
+    expect(navigationTool("Organiser")).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByRole("status")).toHaveTextContent("PDF exporté avec succès : edited.pdf");
     expect(screen.getByRole("status")).toHaveTextContent(
       "1 zone de texte dépassait de son cadre. Son export a été réalisé en mode best effort.",
@@ -1915,7 +1915,7 @@ describe("App", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "alpha.pdf" }));
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
 
     expect(screen.getByRole("button", { name: "Ajouter depuis un PDF ouvert" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Ajouter depuis un PDF ouvert" }));
@@ -1998,7 +1998,7 @@ describe("App", () => {
       expect(screen.getByRole("button", { name: "alpha-close.pdf" })).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: "alpha-close.pdf" }));
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
     fireEvent.click(screen.getByRole("button", { name: "Ajouter depuis un PDF ouvert" }));
     fireEvent.click(screen.getByLabelText("Ajouter beta-close.pdf, page 1"));
     fireEvent.click(screen.getByRole("button", { name: "Ajouter les pages sélectionnées" }));
@@ -2057,7 +2057,7 @@ describe("App", () => {
       expect(screen.getByRole("button", { name: "alpha-restored.pdf" })).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: "alpha-restored.pdf" }));
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
     fireEvent.click(screen.getByRole("button", { name: "Ajouter depuis un PDF ouvert" }));
     fireEvent.click(screen.getByLabelText("Ajouter beta-restored.pdf, page 2"));
     fireEvent.click(screen.getByRole("button", { name: "Ajouter les pages sélectionnées" }));
@@ -2074,7 +2074,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByRole("region", { name: "Aperçu PDF alpha-restored.pdf" })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
 
     await waitFor(() => {
       expect(screen.getByText("beta-restored.pdf — p. 2")).toBeInTheDocument();
@@ -2122,7 +2122,7 @@ describe("App", () => {
       expect(screen.getByRole("region", { name: "Aperçu PDF plan.pdf" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
 
     await waitFor(() => {
       expect(screen.getByLabelText("Grille des pages organisées")).toBeInTheDocument();
@@ -2197,7 +2197,7 @@ describe("App", () => {
     });
     expect(screen.getByText("Ordre d'origine")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Revenir à la lecture" }));
+    fireEvent.click(navigationTool("Revenir à la lecture"));
     expect(screen.getByRole("region", { name: "Aperçu PDF plan.pdf" })).toBeInTheDocument();
   });
 
@@ -2217,7 +2217,7 @@ describe("App", () => {
       expect(screen.getByRole("region", { name: "Aperçu PDF saved-plan.pdf" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
     await waitFor(() => {
       expect(screen.getByLabelText("Grille des pages organisées")).toBeInTheDocument();
     });
@@ -2241,7 +2241,7 @@ describe("App", () => {
       expect(screen.getByRole("region", { name: "Aperçu PDF saved-plan.pdf" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
 
     await waitFor(() => {
       expect(screen.queryByLabelText("Miniature de la page source 1")).not.toBeInTheDocument();

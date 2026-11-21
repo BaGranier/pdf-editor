@@ -59,7 +59,7 @@ test("IMAGE-001 JPEG : transformations, historique, annotations, persistance et 
   await page.reload();
   await expect(page.locator(".document-title")).toContainText("photo.jpg · Image · JPEG");
   await expect(page.getByLabel("Texte ajouté page 1")).toHaveValue("Image annotée");
-  await page.getByRole("button", { name: "Marquage", exact: true }).click();
+  await page.getByRole("button", { name: "Biffage et tampons", exact: true }).click();
   await expect(page.getByRole("button", { name: "Biffer", exact: true })).toBeDisabled();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Fichier", exact: true }).click();

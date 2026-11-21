@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "re
 import { createPortal } from "react-dom";
 import type { EditingTool } from "../editing/types";
 import { sidePanelPosition } from "../viewer/floatingPosition";
-import { NAVIGATION_GROUPS, type NavigationAction } from "../viewer/navigationGroups";
+import { NAVIGATION_GROUPS, PAGE_TOOLS, type NavigationAction } from "../viewer/navigationGroups";
 
 function useFloatingPosition(
   enabled: boolean,
@@ -38,9 +38,9 @@ function useFloatingPosition(
   return position;
 }
 
-export function SidebarNavigation({ rasterSource = false, activeTool, organizing, disabled, processingDisabled, imageDisabled, onSelect, onOrganize }: {
+export function SidebarNavigation({ rasterSource = false, activeTool, organizing, disabled, processingDisabled, imageDisabled, onSelect }: {
   rasterSource?: boolean; activeTool: EditingTool; organizing: boolean; disabled: boolean; processingDisabled: boolean; imageDisabled: boolean;
-  onSelect: (tool: NavigationAction) => boolean | void; onOrganize: () => void;
+  onSelect: (tool: NavigationAction) => boolean | void;
 }) {
   const [openNavigationGroup, setOpenNavigationGroup] = useState<string | null>(null);
   const [hovered, setHovered] = useState<HTMLButtonElement | null>(null);
@@ -119,11 +119,8 @@ export function SidebarNavigation({ rasterSource = false, activeTool, organizing
       const target = event.relatedTarget;
       if (!target || (target instanceof Node && !rail.current?.contains(target) && !panel.current?.contains(target))) close();
     }}>
-    <button {...tooltipEvents} type="button" aria-label="Sélection" aria-pressed={!organizing && activeTool === "select"} disabled={disabled} onClick={() => { close(); onSelect("select"); }}>
-      <ToolbarIcon name="select" /><span className="tool-rail__label">Sélection</span>
-    </button>
     {NAVIGATION_GROUPS.map((item) => {
-      const active = !organizing && item.tools.some((tool) => tool.id === activeTool);
+      const active = organizing ? item.id === "pages" : item.tools.some((tool) => tool.id === activeTool);
       return <button {...tooltipEvents} key={item.id} type="button" aria-label={item.label} aria-expanded={openNavigationGroup === item.id} aria-controls={openNavigationGroup === item.id ? `navigation-${item.id}` : undefined} aria-pressed={active}
         onClick={(event) => {
           trigger.current = event.currentTarget;
@@ -131,12 +128,9 @@ export function SidebarNavigation({ rasterSource = false, activeTool, organizing
           setOpenNavigationGroup((current) => current === item.id ? null : item.id);
           setDismissedTooltip(event.currentTarget);
         }}>
-        <ToolbarIcon name={item.icon} /><span className="tool-rail__label">{item.label}</span>{active ? <ToolbarIcon name="check" className="tool-rail__active-marker" /> : null}
+        <ToolbarIcon name={item.icon} />{active ? <ToolbarIcon name="check" className="tool-rail__active-marker" /> : null}
       </button>;
     })}
-    <button {...tooltipEvents} type="button" aria-label={organizing ? "Revenir à la lecture" : "Organiser"} aria-pressed={organizing} onClick={() => { close(); onOrganize(); }}>
-      <ToolbarIcon name={organizing ? "read" : "organize"} /><span className="tool-rail__label">{organizing ? "Lecture" : "Pages"}</span>
-    </button>
     {group ? createPortal(<div ref={panel} id={`navigation-${group.id}`} className="navigation-popover" role="region" aria-label={`Outils ${group.label}`} style={position}
       onKeyDown={(event) => {
         if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(true); }
@@ -148,13 +142,24 @@ export function SidebarNavigation({ rasterSource = false, activeTool, organizing
         }
       }}>
       <strong>{group.label}</strong>
-      {group.tools.map((tool) => <button {...tooltipEvents} key={tool.id} type="button" aria-label={tool.label} aria-pressed={activeTool === tool.id && !organizing}
-        aria-description={"description" in tool ? tool.description : undefined}
-        disabled={rasterSource && (tool.id === "redaction" || tool.id === "edit_text") ? true : tool.id === "ocr" || tool.id === "convert" ? processingDisabled : tool.id === "image" ? imageDisabled : disabled}
-        onClick={() => { const changed = onSelect(tool.id); close(changed !== false); }}>
-        <ToolbarIcon name={tool.icon} /><span>{tool.label}</span>{activeTool === tool.id && !organizing ? <ToolbarIcon name="check" className="navigation-popover__active-marker" /> : null}
-        {"description" in tool ? <small>{tool.description}</small> : null}
-      </button>)}
+      {group.tools.map((entry) => {
+        const tool = entry.id === "organize" && organizing ? PAGE_TOOLS.read : entry;
+        const active = tool.id === "organize" ? organizing : !organizing && activeTool === tool.id;
+        const unavailable = tool.id === "organize" || tool.id === "thumbnails" || tool.id === "comments_list" || tool.id === "images_pdf"
+          ? false
+          : tool.id === "ocr" || tool.id === "convert"
+            ? processingDisabled
+            : tool.id === "image"
+              ? imageDisabled
+              : disabled || (rasterSource && (tool.id === "redaction" || tool.id === "edit_text"));
+        return <button {...tooltipEvents} key={tool.id} type="button" aria-label={tool.label} aria-pressed={active}
+          aria-description={"description" in tool ? tool.description : undefined}
+          disabled={unavailable} onClick={() => { const changed = onSelect(tool.id); close(changed !== false); }}>
+          <ToolbarIcon name={tool.icon} /><span>{tool.label}</span>
+          {active ? <ToolbarIcon name="check" className="navigation-popover__active-marker" /> : null}
+          {"description" in tool ? <small>{tool.description}</small> : null}
+        </button>;
+      })}
       {group.id === "annotations" ? <p>Sélectionnez du texte dans la page pour surligner, souligner ou barrer.</p> : null}
     </div>, document.body) : null}
     {tooltipVisible ? createPortal(<div className="tool-rail-tooltip" ref={tooltip} role="tooltip" style={tooltipPosition}>

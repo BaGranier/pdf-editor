@@ -49,7 +49,7 @@ test("MVP-FORMS protège l'organisation et réouvre les valeurs sauvegardées", 
   await organizedPages(page).first().getByRole("button", { name: "Tourner la page 1 vers la droite" }).click();
   await expect(page.getByText(/Organisation annulée/)).toBeVisible();
   await expect(organizedPages(page).first()).toHaveAttribute("data-rotation", "0");
-  await page.getByRole("button", { name: "Revenir à la lecture" }).click();
+  await chooseNavigationTool(page, "Revenir à la lecture");
   await page.keyboard.press("Control+Shift+s");
   const pending = page.waitForEvent("download");
   await page.getByRole("dialog", { name: "Enregistrer sous" }).getByRole("button", { name: "Enregistrer", exact: true }).click();
@@ -64,7 +64,7 @@ test("MVP-FORMS désactive les champs et le verrou PDF après organisation", asy
   await openPdf(page, fixtures.acroform);
   await enterOrganizeMode(page);
   await organizedPages(page).first().getByRole("button", { name: "Tourner la page 1 vers la droite" }).click();
-  await page.getByRole("button", { name: "Revenir à la lecture" }).click();
+  await chooseNavigationTool(page, "Revenir à la lecture");
   await expect(page.getByText(/Formulaires après organisation — WIP/)).toBeVisible();
   await expect(page.getByRole("textbox", { name: "person.name (requis)" })).toHaveAttribute("readonly");
   await expect(page.getByRole("checkbox", { name: "options.newsletter" })).toBeDisabled();

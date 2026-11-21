@@ -40,7 +40,7 @@ test("QA-E2E-019 @smoke contrôle noms accessibles, clavier, focus et contraste 
   );
   expect(unnamedControls).toEqual([]);
 
-  await page.getByRole("button", { name: "Organiser" }).focus();
+  await page.getByRole("button", { name: "Pages", exact: true }).focus();
   await page.keyboard.press("Tab");
   const focusedTag = await page.evaluate(() => document.activeElement?.tagName);
   expect(["BUTTON", "INPUT", "SELECT"]).toContain(focusedTag);
@@ -72,6 +72,6 @@ test("QA-E2E-019 @smoke contrôle noms accessibles, clavier, focus et contraste 
         `Contraste non bloquant du contrôle d'ouverture en thème ${theme}: ${ratio.toFixed(2)}:1 (< 3:1).`,
       );
     }
-    await expect(page.getByRole("button", { name: "Organiser" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pages", exact: true })).toBeVisible();
   }
 });

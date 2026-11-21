@@ -64,7 +64,7 @@ test("UI-WORKSPACE-RESPONSIVE-001 garde les overlays d'édition alignés après 
   await openPdf(page, fixtures.fivePages);
   await page.getByLabel("Mode d'affichage").selectOption("single-page");
 
-  await page.getByRole("button", { name: "Édition" }).click();
+  await page.getByRole("button", { name: "Formes et images" }).click();
   await page.getByRole("button", { name: "Rectangle" }).click();
   await dragInEditLayer(page, { x: 45, y: 70 }, { x: 180, y: 135 });
   await expect(page.getByLabel("Rectangle page 1")).toBeVisible();

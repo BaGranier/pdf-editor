@@ -264,7 +264,7 @@ describe("PDF.js text layer in App", () => {
     await waitFor(() => {
       expect(pdfMock.textLayers).toHaveLength(1);
     });
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
 
     await waitFor(() => {
       expect(document.querySelector(".pdf-text-layer")).not.toBeInTheDocument();
@@ -277,7 +277,7 @@ describe("PDF.js text layer in App", () => {
     });
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Revenir à la lecture" }),
+      navigationTool("Revenir à la lecture"),
     );
 
     await waitFor(() => {
@@ -293,11 +293,11 @@ describe("PDF.js text layer in App", () => {
     render(<App />);
     await openPdf("organized-read.pdf");
 
-    fireEvent.click(screen.getByRole("button", { name: "Organiser" }));
+    fireEvent.click(navigationTool("Organiser"));
     fireEvent.click(
       screen.getByRole("button", { name: "Tourner la page 1 vers la droite" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Revenir à la lecture" }));
+    fireEvent.click(navigationTool("Revenir à la lecture"));
 
     await waitFor(() => {
       expect(document.querySelector(".pdf-page")).toHaveAttribute(

@@ -1,9 +1,10 @@
 import { fireEvent, screen } from "@testing-library/react";
-import { NAVIGATION_GROUPS } from "../viewer/navigationGroups";
+import { NAVIGATION_GROUPS, PAGE_TOOLS } from "../viewer/navigationGroups";
 
 /** Follow the same category disclosure as a user before accessing a sub-tool. */
 export function navigationTool(label: string): HTMLElement {
-  const group = NAVIGATION_GROUPS.find((item) => item.tools.some((tool) => tool.label === label));
+  const group = NAVIGATION_GROUPS.find((item) => item.tools.some((tool) => tool.label === label ||
+    (tool.id === "organize" && label === PAGE_TOOLS.read.label)));
   if (!group) throw new Error(`Unknown navigation tool: ${label}`);
   const parent = screen.getByRole("button", { name: group.label });
   if (parent.getAttribute("aria-expanded") !== "true") fireEvent.click(parent);

@@ -1,3 +1,4 @@
+import { chooseNavigationTool } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import {
   enterOrganizeMode,
@@ -81,7 +82,7 @@ test("QA-E2E-011 @regression réinitialise uniquement le plan du document actif"
     .getByRole("button", { name: "Tourner la page 1 vers la droite" })
     .click();
 
-  await page.getByRole("button", { name: "Revenir à la lecture" }).click();
+  await chooseNavigationTool(page, "Revenir à la lecture");
   await openPdf(page, fixtures.fivePages);
   await enterOrganizeMode(page);
   await createComplexPlan(page);
@@ -126,7 +127,7 @@ test("ORGANIZE-UX-001 quitte sans sauvegarder et conserve le plan en lecture", a
     .getByTitle("Retirer du plan d'organisation")
     .click();
 
-  await page.getByRole("button", { name: "Revenir à la lecture" }).click();
+  await chooseNavigationTool(page, "Revenir à la lecture");
 
   const visiblePages = page.locator(".pdf-page");
   await expect(visiblePages).toHaveCount(4);

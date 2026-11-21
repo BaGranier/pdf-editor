@@ -291,7 +291,7 @@ test("PERF-MEMORY-002 @slow @performance exporte un gros PDF modifié sans conse
   await page.mouse.move(editLayerBox.x + 180, editLayerBox.y + 92, { steps: 3 });
   await page.mouse.up();
   await page.getByLabel("Texte ajouté page 1").fill("Mesure PERF-MEMORY-002");
-  await page.getByRole("button", { name: "Organiser" }).click();
+  await chooseNavigationTool(page, "Organiser");
   await expect(page.getByRole("heading", { name: "Organiser les pages" })).toBeVisible();
   await page.getByLabel("Nom du PDF exporté").fill("qa-large-export.pdf");
   const downloadPromise = page.waitForEvent("download");
