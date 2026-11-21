@@ -103,5 +103,5 @@ test("EDIT-SIGN-001 @smoke dessine, place et exporte une signature visuelle", as
   const exported = validatePdf(outputPath, 1);
   expect(exported.imageCount).toBeGreaterThanOrEqual(1);
   expect(readFileSync(fixtures.onePage)).toEqual(sourceBefore);
-  await expect(page.getByText(/PDF exporté avec succès/)).toBeVisible();
+  await expect(page.getByText(/Téléchargement demandé/)).toBeVisible();
 });

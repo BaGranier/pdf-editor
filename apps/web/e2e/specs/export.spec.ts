@@ -51,7 +51,7 @@ test("QA-E2E-012 @smoke exporte un plan complexe et valide le PDF avec pypdf", a
   expect(exported.pages.map((item) => item.width)).toEqual([325, 325, 300, 350, 375]);
   expect(exported.pages.map((item) => item.rotation)).toEqual([90, 90, 0, 0, 0]);
 
-  await expect(page.getByText(/PDF exporté avec succès/)).toBeVisible();
+  await expect(page.getByText(/Téléchargement demandé/)).toBeVisible();
   await expect(page.locator(".document-tab")).toHaveCount(2);
   await expect(
     page.getByRole("button", { name: "pdf-small-5-pages.pdf", exact: true }),
@@ -90,7 +90,7 @@ test("QA-E2E-013 @regression exporte plusieurs documents sans altérer les sourc
   const exported = validatePdf(outputPath, 6);
   expect(exported.pages.map((item) => item.width)).toEqual([320, 300, 325, 350, 375, 400]);
 
-  await expect(page.getByText(/PDF exporté avec succès/)).toBeVisible();
+  await expect(page.getByText(/Téléchargement demandé/)).toBeVisible();
   await expect(page.locator(".document-tab")).toHaveCount(3);
   await page.getByRole("button", { name: "pdf-small-1-page.pdf", exact: true }).click();
   await expect(page.locator(".pdf-page")).toHaveCount(1);

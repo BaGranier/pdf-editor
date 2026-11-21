@@ -98,6 +98,9 @@ test("EDIT-SAVE-001 @smoke sauvegarde texte et signature puis nettoie l'état di
   expect(compactPdfText(saved.text)).toContain("CyclesauvegardePDF");
   expect(saved.imageCount).toBeGreaterThanOrEqual(1);
   expect(readFileSync(fixtures.onePage)).toEqual(sourceBefore);
+  await expect(sourceDocument).toHaveAttribute("aria-describedby", /document-dirty-/);
+  await expect(page.getByText(/Téléchargement demandé/)).toBeVisible();
+  await page.getByRole("button", { name: "J’ai enregistré cette copie" }).click();
   await expect(sourceDocument).not.toHaveAttribute("aria-describedby");
   await expect(
     page.getByRole("button", {
@@ -105,7 +108,7 @@ test("EDIT-SAVE-001 @smoke sauvegarde texte et signature puis nettoie l'état di
     }),
   ).toBeVisible();
   await expect(saveButton).toBeDisabled();
-  await expect(page.getByText(/PDF sauvegardé avec succès/)).toBeVisible();
+  await expect(page.getByText(/Vous avez confirmé l’enregistrement/)).toBeVisible();
 });
 
 test("EDIT-SAVE-001 Enregistrer sous choisit le nom et le conserve", async ({
@@ -128,14 +131,15 @@ test("EDIT-SAVE-001 Enregistrer sous choisit le nom et le conserve", async ({
   const dialog = page.getByRole("dialog", { name: "Enregistrer sous" });
   const fileNameInput = dialog.getByLabel("Nom du fichier");
   await expect(fileNameInput).toHaveValue("pdf-small-1-page-modifie.pdf");
-  await fileNameInput.fill("contrat-client-été-2026");
+  const longName = `contrat-client-été-${"version-".repeat(10)}2026`;
+  await fileNameInput.fill(longName);
 
   const downloadPromise = page.waitForEvent("download");
   await qa.measure("save-as-combined-edits", () =>
     dialog.getByRole("button", { name: "Enregistrer" }).click(),
   );
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toBe("contrat-client-été-2026.pdf");
+  expect(download.suggestedFilename()).toBe(`${longName}.pdf`);
   const outputPath = testInfo.outputPath("contrat-client-été-2026.pdf");
   await download.saveAs(outputPath);
 
@@ -145,7 +149,7 @@ test("EDIT-SAVE-001 Enregistrer sous choisit le nom et le conserve", async ({
   expect(readFileSync(fixtures.onePage)).toEqual(sourceBefore);
   await expect(
     page.getByRole("button", {
-      name: "contrat-client-été-2026.pdf, document actif",
+      name: `${longName}.pdf, document actif`,
     }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Enregistrer sous…" })).toBeDisabled();

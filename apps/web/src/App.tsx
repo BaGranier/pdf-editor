@@ -258,6 +258,11 @@ type SidebarKeyTarget = "file-input" | string | null;
 type ViewerFocusTarget = "viewer" | null;
 type FocusTarget = SidebarKeyTarget | ViewerFocusTarget;
 type TextMarkupSelection = { page: number; rects: PdfRect[]; anchor: Range };
+type PendingBrowserSave = {
+  sourceName: string;
+  outputName: string;
+  snapshot: Pick<ReturnType<typeof getDocumentEditingState>, "revision" | "edits" | "externalRevision">;
+};
 
 function clampZoom(value: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * 100) / 100));
@@ -2874,7 +2879,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [selectedPageIdsByDocument, setSelectedPageIdsByDocument] = useState<Record<string, string | null>>({});
   const [outputName, setOutputName] = useState("");
   const [saveToOutputDir, setSaveToOutputDir] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportPhase, setExportPhase] = useState<"preparing" | "writing" | null>(null);
+  const exportInProgress = useRef(false);
+  const isExporting = exportPhase !== null;
+  const [pendingBrowserSaves, setPendingBrowserSaves] = useState<Record<string, PendingBrowserSave>>({});
+  const pendingSaveEntries = Object.entries(pendingBrowserSaves);
+  const [pendingBrowserDocumentId, pendingBrowserSave] = pendingSaveEntries[pendingSaveEntries.length - 1] ?? [];
   const [exportFeedback, setExportFeedback] = useState<ExportFeedback | null>(null);
   const [printPreview, setPrintPreview] = useState<{
     documentName: string;
@@ -4168,6 +4178,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       pendingFocusTargetRef.current = fallbackDocument?.id ?? "file-input";
 
       setExportFeedback(null);
+      setPendingBrowserSaves(({ [documentId]: _closed, ...remaining }) => remaining);
       setDocuments(nextDocuments);
       forgetPdfSearchDocument(documentId);
       dispatchPdfEdits({ type: "remove_document", documentId });
@@ -4232,6 +4243,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
   const closeDocument = useCallback(
     (documentId: string) => {
+      if (exportInProgress.current) return;
       if (getDocumentEditingState(pdfEditsByDocument, documentId).isDirty) {
         setPendingCloseDocumentId(documentId);
         setCloseAfterSaveDocumentId(null);
@@ -4647,7 +4659,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   });
 
   const clearLocalData = useCallback(() => {
-    if (!window.confirm("Effacer toutes les données locales de ce viewer ?")) {
+    if (exportInProgress.current || !window.confirm("Effacer toutes les données locales de ce viewer ?")) {
       return;
     }
 
@@ -4677,7 +4689,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setCloseAfterSaveDocumentId(null);
     setOutputName("");
     setSaveToOutputDir(false);
-    setIsExporting(false);
+    setPendingBrowserSaves({});
     setExportFeedback(null);
     resetDocumentProcessing();
     setStorageWarning(null);
@@ -4815,6 +4827,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     requestedOutputName?: string,
     exportOptions?: ExportOptions,
   ): Promise<boolean> => {
+    if (exportInProgress.current) return false;
     const includesPendingImage = imageJobs.some(({ id }) =>
       id === documentId || organizationPlans[documentId]?.pages.some((page) => page.sourceDocumentId === id));
     if (includesPendingImage) {
@@ -4823,8 +4836,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     }
     const document = documents.find((candidate) => candidate.id === documentId);
     const sessionOnly = document?.sessionOnly;
-    setIsExporting(true);
+    const saving = operation === "save" || operation === "save_as";
+    const savedState = getDocumentEditingState(pdfEditsByDocument, documentId);
+    if (saving) setPendingBrowserSaves(({ [documentId]: _previous, ...remaining }) => remaining);
+    exportInProgress.current = true;
+    setExportPhase("preparing");
     setExportFeedback(null);
+    let delivering = false;
     try {
       const payloadResult = buildPdfExportPayload({
         documentId,
@@ -4857,7 +4875,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           "Vérifiez les rectangles « En attente ». Leur contenu sera supprimé définitivement dans la copie. Le PDF source sera conservé.",
           "Le contenu hors des zones et les métadonnées peuvent rester dans la copie. Ce traitement ne nettoie pas les pièces jointes, formulaires, annotations ou autres structures sensibles. Le moteur refuse les structures incompatibles et les zones qu’il ne peut pas traiter de façon sûre.",
         ].join("\n\n");
-        if (!window.confirm(preflight)) return false;
+        if (!window.confirm(preflight)) {
+          setExportFeedback({ kind: "warning", message: "Opération annulée avant le biffage." });
+          return false;
+        }
       }
       const exported = await executePdfExport({
         backendUrl,
@@ -4887,6 +4908,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const textOverflowMessage = textOverflowWarningCount
         ? ` ${textOverflowWarningCount} zone${textOverflowWarningCount > 1 ? "s" : ""} de texte dépassai${textOverflowWarningCount > 1 ? "ent" : "t"} de ${textOverflowWarningCount > 1 ? "leur" : "son"} cadre. ${textOverflowWarningCount > 1 ? "Leur export a" : "Son export a"} été réalisé en mode best effort.`
         : "";
+      delivering = true;
+      setExportPhase("writing");
       const desktopSource = document?.saveDestination ?? null;
       const nativeSave = isDesktopRuntime()
         ? hasRedactions || operation === "save_as" || operation === "export"
@@ -4916,11 +4939,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         : downloadPdfToBrowser(exported.pdfBlob, exported.downloadedName);
       const operationLabel = operation === "export" ? "exporté" : "sauvegardé";
       const sizeReport = exportOptions ? ` Taille source : ${documents.filter((doc) => organizationPlans[documentId]?.pages.some((page) => page.sourceDocumentId === doc.id) || doc.id === documentId).reduce((size, doc) => size + doc.file.size, 0).toLocaleString("fr-FR")} octets. Taille exportée : ${exported.pdfBlob.size.toLocaleString("fr-FR")} octets. Profil : ${EXPORT_QUALITY_LABELS[exportOptions.quality]}.` : "";
-      const exportMessage = exported.outputWarning
-        ? `PDF ${operationLabel} avec succès : ${savedFileName}. ${exported.outputWarning}`
-        : exported.outputStatus === "saved"
-          ? `PDF ${operationLabel} avec succès : ${savedFileName}. Copie enregistrée dans data/output.`
-          : `PDF ${operationLabel} avec succès : ${savedFileName}.`;
+      const delivery = nativeSave
+        ? `PDF ${operationLabel} avec succès : ${savedFileName}.`
+        : `Téléchargement demandé : ${savedFileName}.`;
+      const exportMessage = [delivery, exported.outputStatus === "saved" ? "Copie enregistrée dans data/output." : "", exported.outputWarning].filter(Boolean).join(" ");
 
       try {
         if ((!hasRedactions && document?.media?.kind !== "image" && isDesktopRuntime() && operation !== "export") || Boolean(exportOptions?.openPassword || exportOptions?.ownerPassword)) {
@@ -4965,26 +4987,48 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       } catch {
         setExportFeedback({
           kind: "warning",
-          message: `${exportMessage}${sizeReport}${textOverflowMessage} Le téléchargement est disponible, mais l'ouverture dans l'application a échoué.`,
+          message: `${exportMessage}${sizeReport}${textOverflowMessage} La copie n’a pas pu être rouverte dans l’application.`,
         });
       }
-      if (operation === "save" || operation === "save_as") {
-        const savedState = getDocumentEditingState(pdfEditsByDocument, documentId);
+      if (saving && nativeSave) {
         dispatchPdfEdits({ type: "mark_saved", documentId, revision: savedState.revision, edits: savedState.edits, externalRevision: savedState.externalRevision });
+      } else if (saving && document) {
+        const { revision, edits, externalRevision } = savedState;
+        setPendingBrowserSaves((current) => ({
+          ...current,
+          [documentId]: { sourceName: document.fileName, outputName: savedFileName, snapshot: { revision, edits, externalRevision } },
+        }));
       }
       return true;
     } catch (error) {
-      const message = error instanceof Error && error.name === "PreviewSaveLimitError" ? error.message : error instanceof TypeError
-        ? "Backend indisponible ou erreur réseau. Vérifiez que le service PDF est démarré."
-        : error instanceof Error
-          ? `Erreur du backend : ${error.message}`
-          : "Le PDF n'a pas pu être exporté.";
+      const message = delivering
+        ? error instanceof Error && error.name === "PreviewSaveLimitError"
+          ? error.message
+          : `${isDesktopRuntime() ? "Écriture de la destination impossible." : "Téléchargement impossible."}${error instanceof Error ? ` ${error.message}` : ""}`
+        : "La préparation du PDF a échoué. Vérifiez que le service PDF est démarré.";
       setExportFeedback({ kind: "error", message });
       return false;
     } finally {
-      setIsExporting(false);
+      exportInProgress.current = false;
+      setExportPhase(null);
     }
   }, [imageJobsKey, imageBackgroundError, activeDocumentId, backendUrl, documents, openGeneratedPdfDocument, organizationPlans, outputName, pdfEditsByDocument, saveToOutputDir, signatureImages]);
+
+  const confirmBrowserSave = (documentId: string) => {
+    const pending = pendingBrowserSaves[documentId];
+    if (!pending || exportInProgress.current) return;
+    setPendingBrowserSaves(({ [documentId]: _confirmed, ...remaining }) => remaining);
+    const current = getDocumentEditingState(pdfEditsByDocument, documentId);
+    const { snapshot } = pending;
+    if (current.revision !== snapshot.revision || current.edits !== snapshot.edits ||
+        current.externalRevision !== snapshot.externalRevision) {
+      setCloseAfterSaveDocumentId((closing) => closing === documentId ? null : closing);
+      setExportFeedback({ kind: "warning", message: "Des modifications plus récentes restent à enregistrer." });
+      return;
+    }
+    dispatchPdfEdits({ type: "mark_saved", documentId, ...snapshot });
+    setExportFeedback({ kind: "success", message: `Vous avez confirmé l’enregistrement de la copie ${pending.outputName}.` });
+  };
 
   const exportActiveOrganizationPlan = useCallback(() => {
     if (!activeDocument) {
@@ -5463,7 +5507,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <button type="button" className="toolbar-icon-button" aria-label="Sélection" title="Sélection"
               aria-pressed={workspaceMode === "read" && activeEditingTool === "select"}
               disabled={!activeDocument || workspaceMode !== "read"} onClick={() => selectNavigationTool("select")}><ToolbarIcon name="select" /></button>
-            <button type="button" className="toolbar-icon-button toolbar-icon-button--danger" aria-label="Réinitialiser les données locales" title="Réinitialiser les données locales" onClick={clearLocalData}><ResetIcon /></button>
+            <button type="button" className="toolbar-icon-button toolbar-icon-button--danger" aria-label="Réinitialiser les données locales" title="Réinitialiser les données locales" disabled={isExporting} onClick={clearLocalData}><ResetIcon /></button>
           </div>
           <span className="toolbar-actions__spacer" aria-hidden="true" />
           <div className="theme-selector">
@@ -5803,15 +5847,21 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <span className="organize-spinner" aria-hidden="true" />
             <span>Conversion en cours…</span>
           </div>
-        ) : workspaceMode === "read" && exportFeedback ? (
+        ) : workspaceMode === "read" && exportPhase ? (
+          <div className="export-read-feedback organize-feedback organize-feedback--progress" role="status">
+            <span>{exportPhase === "preparing" ? "Préparation du PDF…" : "Remise de la copie à la destination…"}</span>
+          </div>
+        ) : (workspaceMode === "read" && exportFeedback) || pendingBrowserSave ? (
           <div
-            className={`export-read-feedback organize-feedback organize-feedback--${exportFeedback.kind}`}
-            role={exportFeedback.kind === "error" ? "alert" : "status"}
+            className={`export-read-feedback organize-feedback organize-feedback--${exportFeedback?.kind ?? "warning"}`}
+            role={exportFeedback?.kind === "error" ? "alert" : "status"}
           >
-            <span>{exportFeedback.message}</span>
-            <button type="button" onClick={() => setExportFeedback(null)} aria-label="Fermer le message">
-              Fermer
-            </button>
+            <div>
+              {workspaceMode === "read" && exportFeedback ? <span>{exportFeedback.message}</span> : null}
+              {pendingBrowserSave ? <span>Vérifiez la copie « {pendingBrowserSave.outputName} » de « {pendingBrowserSave.sourceName} » dans vos téléchargements.</span> : null}
+            </div>
+            {pendingBrowserDocumentId ? <button type="button" disabled={isExporting} onClick={() => confirmBrowserSave(pendingBrowserDocumentId)}>J’ai enregistré cette copie</button> : null}
+            {exportFeedback ? <button type="button" onClick={() => setExportFeedback(null)} aria-label="Fermer le message">Fermer</button> : null}
           </div>
           ) : null}
 
@@ -6115,6 +6165,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           title={activeDocument?.fileName}
         >
           {activeDocument?.fileName ?? ""}{activeDocument?.sessionOnly ? " · Session temporaire" : ""}
+          {activeDocument && isDesktopRuntime() ? activeDocument.saveDestination
+            ? " · Destination active"
+            : " · Choisir une destination avec Enregistrer sous…" : null}
         </span>
         <div className="page-controls" aria-label="Affichage et zoom">
           <label className="viewer-mode-control">

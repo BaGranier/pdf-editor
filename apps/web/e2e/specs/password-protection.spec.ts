@@ -82,6 +82,7 @@ test("closing one legacy tab purges its ID and a protected tab leaves other reco
   await openPdf(page, fixtures.fivePages);
   await page.reload();
   await expect(page.locator(".document-select")).toHaveCount(2);
+  await page.setViewportSize({ width: 760, height: 640 });
   await page.getByRole("button", { name: "Fermer pdf-small-5-pages.pdf" }).click();
   await expect.poll(async () => (await getStoredDocuments(page)).map((doc) => doc.fileName)).toEqual(["pdf-small-1-page.pdf"]);
   await page.locator("input[type=file][aria-label='Ouvrir un PDF']").setInputFiles(protectedFixture);

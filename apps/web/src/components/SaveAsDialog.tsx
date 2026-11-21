@@ -67,6 +67,7 @@ export function SaveAsDialog({
         }}
       >
         <h2 id={titleId}>Enregistrer sous</h2>
+        <p>Le navigateur choisit le dossier de téléchargement. Vérifiez la copie avant de confirmer l’enregistrement dans l’éditeur.</p>
         <label htmlFor={`${titleId}-file-name`}>Nom du fichier</label>
         <input
           id={`${titleId}-file-name`}

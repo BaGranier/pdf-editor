@@ -768,7 +768,7 @@ describe("App", () => {
       .mockResolvedValueOnce({
         ok: true,
         blob: vi.fn().mockResolvedValue(
-          new Blob(["saved-pdf"], { type: "application/pdf" }),
+          new Blob(["%PDF-saved-pdf"], { type: "application/pdf" }),
         ),
         headers: new Headers({
           "content-disposition": 'attachment; filename="save-cycle-modifie.pdf"',
@@ -777,7 +777,7 @@ describe("App", () => {
       .mockResolvedValueOnce({
         ok: true,
         blob: vi.fn().mockResolvedValue(
-          new Blob(["saved-pdf-2"], { type: "application/pdf" }),
+          new Blob(["%PDF-saved-pdf-2"], { type: "application/pdf" }),
         ),
         headers: new Headers({
           "content-disposition": 'attachment; filename="save-cycle-modifie-2.pdf"',
@@ -846,11 +846,11 @@ describe("App", () => {
     const originalButton = screen.getByRole("button", {
       name: "save-cycle.pdf",
     });
+    expect(originalButton).toHaveAttribute("aria-describedby");
+    expect(screen.getByRole("status")).toHaveTextContent("Téléchargement demandé");
+    fireEvent.click(screen.getByRole("button", { name: "J’ai enregistré cette copie" }));
     expect(originalButton).not.toHaveAttribute("aria-describedby");
     expect(screen.getByRole("button", { name: "Enregistrer sous…" })).toBeDisabled();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "PDF sauvegardé avec succès",
-    );
     const [, successfulRequest] = fetchMock.mock.calls[1] as [
       string,
       { body: FormData },
@@ -889,14 +889,14 @@ describe("App", () => {
       .mockResolvedValueOnce({
         ok: true,
         blob: vi.fn().mockResolvedValue(
-          new Blob(["saved-as-pdf"], { type: "application/pdf" }),
+          new Blob(["%PDF-saved-as-pdf"], { type: "application/pdf" }),
         ),
         headers: new Headers(),
       } as unknown as Response)
       .mockResolvedValueOnce({
         ok: true,
         blob: vi.fn().mockResolvedValue(
-          new Blob(["saved-again-pdf"], { type: "application/pdf" }),
+          new Blob(["%PDF-saved-again-pdf"], { type: "application/pdf" }),
         ),
         headers: new Headers(),
       } as unknown as Response);
@@ -1096,7 +1096,7 @@ describe("App", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       blob: vi.fn().mockResolvedValue(
-        new Blob(["saved-before-close"], { type: "application/pdf" }),
+        new Blob(["%PDF-saved-before-close"], { type: "application/pdf" }),
       ),
       headers: new Headers({
         "content-disposition": 'attachment; filename="close-save-modifie.pdf"',
@@ -1145,6 +1145,9 @@ describe("App", () => {
       within(saveAsDialog).getByRole("button", { name: "Enregistrer" }),
     );
 
+    const confirmation = await screen.findByRole("button", { name: "J’ai enregistré cette copie" });
+    expect(screen.getByRole("button", { name: "close-save.pdf" })).toBeInTheDocument();
+    fireEvent.click(confirmation);
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledOnce();
       expect(screen.queryByRole("button", { name: "close-save.pdf" })).not.toBeInTheDocument();
@@ -1795,7 +1798,7 @@ describe("App", () => {
     );
     const exportResponse = {
       ok: true,
-      blob: vi.fn().mockResolvedValue(new Blob(["exported"], { type: "application/pdf" })),
+      blob: vi.fn().mockResolvedValue(new Blob(["%PDF-exported"], { type: "application/pdf" })),
       headers: new Headers({
         "content-disposition": 'attachment; filename="edited.pdf"',
         "x-pdf-export-warnings": JSON.stringify([
@@ -1872,7 +1875,7 @@ describe("App", () => {
       "true",
     );
     expect(navigationTool("Organiser")).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("status")).toHaveTextContent("PDF exporté avec succès : edited.pdf");
+    expect(screen.getByRole("status")).toHaveTextContent("Téléchargement demandé : edited.pdf");
     expect(screen.getByRole("status")).toHaveTextContent(
       "1 zone de texte dépassait de son cadre. Son export a été réalisé en mode best effort.",
     );
@@ -2026,7 +2029,7 @@ describe("App", () => {
     }) as never);
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      blob: vi.fn().mockResolvedValue(new Blob(["exported"], { type: "application/pdf" })),
+      blob: vi.fn().mockResolvedValue(new Blob(["%PDF-exported"], { type: "application/pdf" })),
       headers: new Headers({ "content-disposition": 'attachment; filename="restored.pdf"' }),
     });
     const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
@@ -2093,7 +2096,7 @@ describe("App", () => {
     expect(documentIds).toHaveLength(2);
     expect(plan.pages.map((page) => page.sourcePageIndex)).toEqual([0, 1, 1]);
     expect(new Set(plan.pages.map((page) => page.sourceDocumentId))).toEqual(new Set(documentIds));
-    expect(screen.getByRole("status")).toHaveTextContent("PDF exporté avec succès : restored.pdf");
+    expect(screen.getByRole("status")).toHaveTextContent("Téléchargement demandé : restored.pdf");
 
     anchorClick.mockRestore();
     vi.unstubAllGlobals();

@@ -70,7 +70,7 @@ test("EDIT-TEXT-001 @smoke ajoute, déplace et exporte du texte libre", async ({
   const exported = validatePdf(outputPath, 1);
   expect(exported.text).toContain("Été 2026 : 42,50 !");
   expect(readFileSync(fixtures.onePage)).toEqual(sourceBefore);
-  await expect(page.getByText(/PDF exporté avec succès/)).toBeVisible();
+  await expect(page.getByText(/Téléchargement demandé/)).toBeVisible();
   await expect(
     page.getByRole("button", {
       name: "qa-texte-ajoute.pdf, document actif",

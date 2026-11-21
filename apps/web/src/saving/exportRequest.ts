@@ -71,9 +71,14 @@ export async function executePdfExport(
       return { ok: false, kind: "backend", message: detail };
     }
 
+    const pdfBlob = await response.blob();
+    if (await pdfBlob.slice(0, 5).text() !== "%PDF-") {
+      return { ok: false, kind: "backend", message: "Le moteur n’a pas renvoyé de fichier PDF." };
+    }
+
     return {
       ok: true,
-      pdfBlob: await response.blob(),
+      pdfBlob,
       downloadedName: getDownloadFileName(
         response.headers.get("content-disposition"),
         input.fallbackFileName,

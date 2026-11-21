@@ -84,6 +84,14 @@ describe("desktop file bridge", () => {
     expect(invokeMock).not.toHaveBeenCalled();
   });
 
+  it("can forward exactly the Preview limit to the native destination", async () => {
+    invokeMock.mockResolvedValue(null);
+    const blob = new Blob([new Uint8Array(MVP_DESKTOP_SAVE_MAX_BYTES)]);
+    await expect(saveDesktopPdfAs("boundary.pdf", blob)).resolves.toBeNull();
+    const bytes = invokeMock.mock.calls[0]?.[1] as Uint8Array;
+    expect(bytes.byteLength).toBe(MVP_DESKTOP_SAVE_MAX_BYTES);
+  });
+
   it("transports Unicode names as metadata while keeping PDF bytes binary", async () => {
     invokeMock.mockResolvedValue(null);
     await saveDesktopPdfAs("été.pdf", new Blob(["%PDF-1.7"]));

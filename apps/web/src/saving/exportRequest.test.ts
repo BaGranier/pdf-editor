@@ -12,7 +12,7 @@ describe("executePdfExport", () => {
           { type: "text_overflow", editId: "text-1", page: 1, rendering: "expanded" },
         ]),
       }),
-      blob: vi.fn().mockResolvedValue(new Blob(["%PDF"], { type: "application/pdf" })),
+      blob: vi.fn().mockResolvedValue(new Blob(["%PDF-1.7"], { type: "application/pdf" })),
     } as unknown as Response);
 
     const result = await executePdfExport({
@@ -30,6 +30,15 @@ describe("executePdfExport", () => {
     expect(result.downloadedName).toBe("resultat.pdf");
     expect(result.outputStatus).toBe("saved");
     expect(result.warnings).toHaveLength(1);
+  });
+
+  it("rejects an HTTP success with a non-PDF body before delivery", async () => {
+    expect(await executePdfExport({
+      backendUrl: "http://backend.test",
+      formData: new FormData(),
+      fallbackFileName: "fallback.pdf",
+      fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(new Response("<html>erreur</html>")),
+    })).toEqual({ ok: false, kind: "backend", message: "Le moteur n’a pas renvoyé de fichier PDF." });
   });
 
   it("preserves a backend error detail", async () => {
