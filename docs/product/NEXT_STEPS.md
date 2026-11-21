@@ -7,13 +7,13 @@ puis impression dans un lecteur externe. Linux/macOS restent WIP.
 
 Décision du gate 006 : **NOT READY**. Ne retirer un point qu'après preuve de
 fermeture ; un test automatique ou un poste dev ne qualifie pas une VM clean.
-La [reprise du 21 novembre 2026](docs/qa/runs/2026-11-21-windows-preview.md)
+La [reprise du 21 novembre 2026](../qa/runs/2026-11-21-windows-preview.md)
 consigne les preuves manquantes pour l'artefact exact.
 
 - **Redistribution AGPL** : voie approuvée ; préparer la livraison des sources
   correspondantes et les mentions requises, fermer les notices transitives
   MuPDF/codecs, Rust et npm, et vérifier les droits MSVC CRT. Voir la politique
-  dans `DESKTOP.md`.
+  dans le [contrat Desktop](../architecture/DESKTOP.md).
 - **VM clean** (`ENV`, aucune VM accessible) : NSIS interactif, raccourcis/menu,
   absence d'outils dev, OCR eng/fra/mixte réseau coupé, WebView2 absent online
   et échec offline lisible, upgrade et désinstallation sans descendants/ports.
@@ -31,4 +31,4 @@ consigne les preuves manquantes pour l'artefact exact.
 
 Les preuves, inventaires et matrice détaillée de cette campagne restent ignorés
 sous `data/output/release-gate-006/`. Les sujets P1/P2 et structurels restent
-dans `TECHNICAL_DEBT.md` et ne font pas partie de cette clôture P0.
+dans la [dette technique](TECHNICAL_DEBT.md) et ne font pas partie de cette clôture P0.

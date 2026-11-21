@@ -1,7 +1,7 @@
 # PDF Studio Local
 
-[Documentation](docs/README.md) · [Statut Preview](MVP_STATUS.md)
-Installation et dossier de redistribution : [Windows Preview](WINDOWS_PREVIEW.md).
+[Documentation](docs/README.md) · [Statut Preview](docs/product/MVP_STATUS.md)
+Installation et dossier de redistribution : [Windows Preview](docs/getting-started/WINDOWS_PREVIEW.md).
 
 Éditeur PDF local-first disponible dans un navigateur ou dans une application
 desktop Tauri. Les documents restent sur la machine : le frontend communique
@@ -12,7 +12,7 @@ La voie de distribution **AGPL-3.0** a été approuvée pour la campagne Windows
 licences. La release Windows reste **NOT READY** : VM clean indisponible,
 qualification native incomplète et obligations de redistribution encore à fermer.
 La politique et les exigences de sources/notices sont dans
-[DESKTOP.md](DESKTOP.md#distribution-windows-et-licences).
+[DESKTOP.md](docs/architecture/DESKTOP.md#distribution-windows-et-licences).
 
 ## Capacités actuelles
 
@@ -55,7 +55,7 @@ suppression ciblée des anciennes copies et les limites de stockage.
 Environnement de référence : Node **22**, Python **>= 3.11** et uv ; Rust
 **>= 1.88** pour Tauri. Les dépendances sont verrouillées par les lockfiles de
 chaque workspace. Prérequis OCR système et conteneur :
-[DEVELOPMENT.md](DEVELOPMENT.md).
+[DEVELOPMENT.md](docs/getting-started/DEVELOPMENT.md).
 
 Dans deux terminaux, depuis la racine :
 
@@ -75,13 +75,13 @@ Ouvrir `http://localhost:5173`. Le backend répond sur `/health`.
 Dans le devcontainer, remplacer les deux hôtes par `0.0.0.0` pour les mappings
 locaux de ports. Le serveur desktop reste exclusivement sur loopback.
 
-Pour Tauri, installer aussi les dépendances natives de [DESKTOP.md](DESKTOP.md),
+Pour Tauri, installer aussi les dépendances natives de [DESKTOP.md](docs/architecture/DESKTOP.md),
 puis lancer `npm ci` et `npm run desktop:dev` depuis `apps/desktop`.
 
 ## Vérifier
 
 Les commandes de test, les fixtures synthétiques et les critères de réussite
-sont dans [QA_AUTOMATION.md](QA_AUTOMATION.md). Pour les preuves historiques
+sont dans [QA_AUTOMATION.md](docs/qa/QA_AUTOMATION.md). Pour les preuves historiques
 et les validations Windows en attente, consulter l’[index QA](docs/qa/README.md).
 Depuis la racine, `python scripts/check-doc-links.py` vérifie les liens internes.
 

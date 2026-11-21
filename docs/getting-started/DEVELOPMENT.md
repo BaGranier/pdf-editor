@@ -6,7 +6,7 @@ Le devcontainer utilise le service `dev` de `docker-compose.yml`, construit depu
 `Dockerfile.dev` (Node 22 Bookworm), avec le dépôt dans `/workspace` et l'utilisateur
 `node`. Il fournit Python, uv, les outils de compilation Debian, QPDF, Poppler,
 Ghostscript, OCRmyPDF, Tesseract eng/fra et LibreOffice. Rust et WebKitGTK ne sont
-pas installés : le build Tauri demande les prérequis de [DESKTOP.md](DESKTOP.md).
+pas installés : le build Tauri demande les prérequis de [DESKTOP.md](../architecture/DESKTOP.md).
 
 Les caches npm/pip/uv et la configuration locale de l'agent sont des volumes
 persistants ; ne pas copier les secrets ou fichiers d'authentification dans Git.
@@ -14,7 +14,7 @@ Les versions de uv et de la CLI installée ne sont pas épinglées par le Docker
 Les dépendances applicatives sont contrôlées par les lockfiles npm, uv et Cargo.
 
 Les ports hôte `5173`/`8000` sont publiés sur `127.0.0.1`. Dans le conteneur,
-lancer Vite/FastAPI avec `--host 0.0.0.0` selon le [README](README.md).
+lancer Vite/FastAPI avec `--host 0.0.0.0` selon le [README](../../README.md).
 Le compose n'expose pas le socket Docker ; son profil `SYS_ADMIN`, seccomp et
 AppArmor désactivés est réservé au développement.
 
@@ -28,10 +28,10 @@ sudo apt-get install ghostscript ocrmypdf qpdf \
 QPDF contrôle les résultats PDF ; LibreOffice rend les DOCX pour la QA et
 n'est pas appelé par la conversion applicative. Pour Tesseract système,
 `TESSDATA_PREFIX` doit contenir langues, `configs` et `tessconfigs`.
-Le runtime gelé a une stratégie distincte décrite dans [DESKTOP.md](DESKTOP.md).
+Le runtime gelé a une stratégie distincte décrite dans [DESKTOP.md](../architecture/DESKTOP.md).
 
-Commandes d'installation/lancement : [README.md](README.md).
-Fixtures, navigateurs et tests : [QA_AUTOMATION.md](QA_AUTOMATION.md).
+Commandes d'installation/lancement : [README.md](../../README.md).
+Fixtures, navigateurs et tests : [QA_AUTOMATION.md](../qa/QA_AUTOMATION.md).
 Les données privées restent sous `data/input`, les résultats sous `data/output` ;
 les deux sont ignorés. Les fixtures versionnées sont exclusivement synthétiques.
 
@@ -120,4 +120,4 @@ Page unique/Présentation utilisent au maximum deux buffers de page, sans cache
 bitmap des pages visitées. Le swap attend la frame complète et rejette les rendus
 obsolètes. Viewer/toolbar/inspecteur possèdent leurs scrolls ; le shell ne doit
 pas créer de scroll global. Les tests de rendu et responsive sont dans
-[QA_AUTOMATION.md](QA_AUTOMATION.md).
+[QA_AUTOMATION.md](../qa/QA_AUTOMATION.md).

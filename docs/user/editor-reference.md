@@ -119,7 +119,7 @@ après fermeture de l'onglet.
 Les fixtures reproductibles versionnées sont dans `apps/web/e2e/fixtures`. Les
 documents complémentaires placés dans `data/input` restent locaux et ignorés par
 Git. La campagne manuelle est décrite dans
-[les contrôles humains de la campagne QA](../../QA_AUTOMATION.md#contrôles-humains-et-gates-de-release).
+[les contrôles humains de la campagne QA](../qa/QA_AUTOMATION.md#contrôles-humains-et-gates-de-release).
 
 Limites actuelles : pas de split avancé ni d'édition arbitraire des objets PDF
 existants. L'édition ajoute des blocs de texte et des signatures lors de

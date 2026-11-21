@@ -54,4 +54,4 @@ L'environnement navigateur a nécessité des bibliothèques Linux extraites dans
 Non vérifiés : impression papier, lecteur PDF externe, session desktop Windows,
 qualification manuelle exhaustive de tous les outils et modes, souris tactile,
 performances sur gros scans. La portée conservatrice et les limites fonctionnelles
-sont décrites dans `REDACTION_STAMPS.md` ; aucun anonymiseur global n'est annoncé.
+sont décrites dans le [contrat de biffage](../../features/REDACTION_STAMPS.md) ; aucun anonymiseur global n'est annoncé.

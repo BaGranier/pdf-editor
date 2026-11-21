@@ -1,8 +1,8 @@
 # Qualification et preuves QA
 
-Le [guide QA canonique](../../QA_AUTOMATION.md) décrit les installations, les
-commandes et les critères de réussite. Le [statut Preview](../../MVP_STATUS.md)
-porte le verdict du candidat exact. Le [gate de diffusion](../../NEXT_STEPS.md)
+Le [guide QA canonique](QA_AUTOMATION.md) décrit les installations, les
+commandes et les critères de réussite. Le [statut Preview](../product/MVP_STATUS.md)
+porte le verdict du candidat exact. Le [gate de diffusion](../product/NEXT_STEPS.md)
 porte les obligations supplémentaires.
 
 - [21 novembre 2026 — Gate Windows STAB-2026-11](runs/2026-11-21-windows-preview.md)
@@ -10,7 +10,7 @@ porte les obligations supplémentaires.
 - [Images](../QA_IMAGE_DOCUMENTS.md)
 - [Icônes](../QA_SIDEBAR_ICONS.md)
 - [Filigranes répétés](../QA_SIDEBAR_WATERMARK_TILING.md)
-- [Biffage et tampons](../../QA_BROWSER_REPORT.md)
+- [Biffage et tampons](runs/QA_BROWSER_REPORT.md)
 
 Pour reprendre PERF-01, associer chaque exécution au hash de l'artefact,
 à l'OS, à la RAM, au navigateur ou à WebView2, au nombre de pixels et au DPR.

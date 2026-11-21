@@ -41,7 +41,7 @@ export const PDF_STANDARD_FONTS: readonly FontFaceDescriptor[] = [
   { id: "pdf-standard:courier:400:normal", family: "Courier", displayName: "Courier", source: "pdf-standard", category: "monospace", weight: 400, style: "normal", embeddable: true },
 ] as const;
 
-/** Regular faces are intentionally lazy-loaded. See public/fonts/NOTICE.md. */
+/** Regular faces are intentionally lazy-loaded. See docs/architecture/NOTICE.md. */
 export const BUNDLED_FONTS: readonly FontFaceDescriptor[] = [
   regular("inter", "Inter", "sans-serif", "Inter-Regular.ttf"),
   regular("roboto", "Roboto", "sans-serif", "Roboto-Regular.ttf"),

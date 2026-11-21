@@ -1,6 +1,6 @@
 # DESKTOP-RELEASE-001 — shell Tauri et préparation de release
 
-État Preview Windows et limitations assumées : [MVP_STATUS.md](MVP_STATUS.md).
+État Preview Windows et limitations assumées : [MVP_STATUS.md](../product/MVP_STATUS.md).
 `desktop:check` / `desktop:check-source` utilisent uniquement la configuration
 source, sans sidecar ni notices générées. `desktop:build` prépare les vrais
 artefacts puis applique `src-tauri/tauri.package.conf.json` ;
@@ -12,10 +12,10 @@ le parcours supporté. La VM clean reste une qualification ultérieure distincte
 
 Gate Windows 006 : **NOT READY**. La VM clean est indisponible (confirmation
 utilisateur) ; les résultats du poste de développement ne la remplacent pas.
-Les blockers actifs sont dans [NEXT_STEPS.md](NEXT_STEPS.md).
+Les blockers actifs sont dans [NEXT_STEPS.md](../product/NEXT_STEPS.md).
 
 Les anciennes campagnes natives 002/004 ne sont pas versionnées dans ce checkout.
-La procédure active est dans [QA_AUTOMATION.md](QA_AUTOMATION.md).
+La procédure active est dans [QA_AUTOMATION.md](../qa/QA_AUTOMATION.md).
 Le backend Windows utilise maintenant un Job Object : la disparition forcée
 du shell termine aussi ses descendants PyInstaller. Un dossier temporaire peut
 subsister après crash brutal. Le MSI est construit, mais son installation sur
@@ -24,7 +24,7 @@ impression produite et smoke test de VM clean restent à qualifier. Le package
 Windows inclut désormais l'OCR ; sa portée est décrite dans le rapport 004.
 
 Les limites historiques de l'audit Windows 11 doivent être distinguées des
-preuves courantes de [MVP_STATUS.md](MVP_STATUS.md).
+preuves courantes de [MVP_STATUS.md](../product/MVP_STATUS.md).
 Build MSVC, bundles MSI/NSIS et parcours depuis une installation NSIS ont été
 exécutés ; la qualification des autres DPI et du multi-écran reste ouverte.
 
@@ -35,7 +35,7 @@ frontend React/Vite utilisable seul et `services/pdf-engine` reste le backend
 FastAPI. Cette séparation garde les cycles de développement, les dépendances et
 les responsabilités de packaging indépendants.
 
-Le devcontainer général est décrit dans [DEVELOPMENT.md](DEVELOPMENT.md). Il ne
+Le devcontainer général est décrit dans [DEVELOPMENT.md](../getting-started/DEVELOPMENT.md). Il ne
 contient pas actuellement la toolchain Rust/Tauri nécessaire à ce workspace.
 
 ```text
@@ -217,7 +217,7 @@ npm run desktop:dev
 Vite écoute strictement sur `127.0.0.1:5173`. Le debug lance
 `uv run python -m app.desktop_server` dans les sources backend ; le placeholder
 `externalBin` n'est pas exécuté. Le devcontainer général ne fournit pas Rust
-ni WebKitGTK : voir [DEVELOPMENT.md](DEVELOPMENT.md).
+ni WebKitGTK : voir [DEVELOPMENT.md](../getting-started/DEVELOPMENT.md).
 
 ## Build et sidecar
 
@@ -454,8 +454,8 @@ pas cross-compilé. Sous Windows : `target/release/bundle/nsis` et `msi`.
 Les artefacts `target`, `build`, `gen` et sidecars sont ignorés.
 
 Le premier build télécharge les ressources/notices verrouillées. Les scripts
-[prepare-ocr-resources.py](scripts/prepare-ocr-resources.py) et
-[audit-ocr-licenses.py](scripts/audit-ocr-licenses.py) contrôlent les SHA-256.
+[prepare-ocr-resources.py](../../scripts/prepare-ocr-resources.py) et
+[audit-ocr-licenses.py](../../scripts/audit-ocr-licenses.py) contrôlent les SHA-256.
 Les données eng/fra/osd et le manifest sont embarqués sous `sys._MEIPASS/ocr` ;
 les notices sont installées sous `licenses/ocr`. Sources, révisions et empreintes
 exactes restent dans ces scripts et les manifests générés.
@@ -477,7 +477,7 @@ LibreOffice et QPDF CLI sont des outils QA, pas des dépendances runtime du pack
 
 La voie AGPL-3.0 a été approuvée et figure dans `LICENSE`. Les sources
 correspondantes, notices transitives et droits CRT restent à vérifier contre
-l'artefact final ; voir [MVP_STATUS.md](MVP_STATUS.md). La présence d'un inventaire
+l'artefact final ; voir [MVP_STATUS.md](../product/MVP_STATUS.md). La présence d'un inventaire
 ne constitue pas une clôture des obligations de distribution.
 [Source officielle PyMuPDF](https://pymupdf.readthedocs.io/en/latest/about.html#license-and-copyright).
 
@@ -494,4 +494,4 @@ Node, Rust, MSVC/SDK et Python de développement sont des outils de build, sans
 installation attendue chez l'utilisateur final. Signature Windows, notarisation
 macOS et mise à jour automatique ne sont pas configurées.
 La procédure native et les preuves requises figurent dans
-[QA_AUTOMATION.md](QA_AUTOMATION.md).
+[QA_AUTOMATION.md](../qa/QA_AUTOMATION.md).

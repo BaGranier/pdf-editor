@@ -27,7 +27,12 @@ def test_sources_reject_uncommitted_tracked_changes(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "path,allowed", [("MVP_STATUS.md", True), ("apps/web/src/App.tsx", False)]
+    "path,allowed", [
+        ("MVP_STATUS.md", True),
+        ("docs/product/MVP_STATUS.md", True),
+        ("docs/architecture/NOTICE.md", False),
+        ("apps/web/src/App.tsx", False),
+    ]
 )
 def test_build_commit_allows_documentation_review_only(monkeypatch, path, allowed):
     release = module()
@@ -39,6 +44,22 @@ def test_build_commit_allows_documentation_review_only(monkeypatch, path, allowe
     else:
         with pytest.raises(ValueError, match="rebuild"):
             release.build_identity({"commit": "built", "trackedChanges": ""})
+
+
+def test_release_documentation_keeps_archive_names_and_cross_links():
+    release = module()
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        release.write_release_documentation(archive)
+    with zipfile.ZipFile(payload) as archive:
+        assert set(archive.namelist()) == {
+            "release-documentation/MVP_STATUS.md",
+            "release-documentation/THIRD_PARTY_NOTICES.md",
+            "release-documentation/WINDOWS_PREVIEW.md",
+        }
+        preview = archive.read("release-documentation/WINDOWS_PREVIEW.md").decode()
+        assert "](MVP_STATUS.md)" in preview
+        assert "](THIRD_PARTY_NOTICES.md)" in preview
 
 
 @pytest.mark.parametrize("status", ["NEEDS_REVIEW", "BLOCKED", "UNKNOWN"])

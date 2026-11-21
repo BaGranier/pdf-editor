@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import io
 import json
+import posixpath
 from pathlib import Path
 import re
 import subprocess
@@ -21,6 +22,12 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data/output/mvp-004"
 NOTICES = ROOT / "services/pdf-engine/build/redistribution"
+FONT_NOTICE = "docs/architecture/NOTICE.md"
+RELEASE_DOCUMENTS = (
+    "docs/product/MVP_STATUS.md",
+    "docs/architecture/THIRD_PARTY_NOTICES.md",
+    "docs/getting-started/WINDOWS_PREVIEW.md",
+)
 SOURCES = {
     "nsis-v311.tar.gz": ("https://codeload.github.com/kichik/nsis/tar.gz/refs/tags/v311", "6ba0e34576f95282e4c7ab4347c016eaaa929fb5f20c90c6a28fb84ca1e2724e"),
     "pymupdf-1.26.3.tar.gz": ("https://files.pythonhosted.org/packages/source/p/pymupdf/pymupdf-1.26.3.tar.gz", "b7d2c3ffa9870e1e4416d18862f5ccd356af5fe337b4511093bbbce2ca73b7e5"),
@@ -45,9 +52,22 @@ def build_identity(provenance: dict) -> str:
     if provenance["trackedChanges"] or git("diff", "HEAD", "--name-only"):
         raise ValueError("Release requires committed tracked sources")
     changes = set(git("diff", "--name-only", provenance["commit"], "HEAD").splitlines())
-    if not changes <= {"MVP_STATUS.md", "THIRD_PARTY_NOTICES.md", "WINDOWS_PREVIEW.md"}:
+    historical_paths = {Path(path).name for path in RELEASE_DOCUMENTS}
+    if not changes <= (set(RELEASE_DOCUMENTS) | historical_paths):
         raise ValueError("Compiled sources changed; rebuild from this commit")
     return provenance["commit"]
+
+
+def write_release_documentation(archive: zipfile.ZipFile) -> None:
+    for path in RELEASE_DOCUMENTS:
+        content = (ROOT / path).read_text(encoding="utf-8")
+        for linked_path in RELEASE_DOCUMENTS:
+            relative_link = posixpath.relpath(linked_path, posixpath.dirname(path))
+            for suffix in (")", "#"):
+                content = content.replace(
+                    f"]({relative_link}{suffix}", f"]({Path(linked_path).name}{suffix}"
+                )
+        archive.writestr("release-documentation/" + Path(path).name, content)
 
 
 def licenses(directory: Path, destination: Path) -> list[str]:
@@ -165,7 +185,7 @@ def prepare(*, final: bool = False) -> dict:
         destination.write_bytes(tar.extractfile(member).read())
     add("NSIS", "3.11", "installer", "zlib/libpng + bzip2 + CPL-1.0 (LZMA)", "https://github.com/kichik/nsis/tree/v311", "NSIS stub/plugins and LZMA compressor, generated installer.nsi selects lzma", "NSIS-COPYING.txt", "complete upstream source included; no linkage mode change")
     add("tessdata eng/fra/osd", "87416418657359cb625c412a48b6e1d6d41c29bd", "OCR data", "Apache-2.0", "https://github.com/tesseract-ocr/tessdata_fast", "byte-inventoried traineddata", "licenses/ocr/tessdata-LICENSE.txt", "data with locked hashes in build script")
-    add("Bundled font families", "repository pinned TTF/OTF bytes", "text", "OFL / Ubuntu / DejaVu / Liberation; per-font NOTICE", "apps/web/public/fonts/NOTICE.md", "web assets + frozen fonts/", "fonts/NOTICE.md and LICENSE-*", "font binaries and notices in application sources")
+    add("Bundled font families", "repository pinned TTF/OTF bytes", "text", "OFL / Ubuntu / DejaVu / Liberation; per-font NOTICE", FONT_NOTICE, "web assets + frozen fonts/", "fonts/NOTICE.md and LICENSE-*", "font binaries and notices in application sources")
     add("Microsoft CRT", "MSVCP140 / VCRUNTIME140 / VCRUNTIME140_1, exact DLL hashes in component inventory", "native runtime", "Microsoft redistributable terms", "https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution", "DLLs in frozen Python payload; UCRT is OS dependency", "Microsoft terms referenced in THIRD_PARTY_NOTICES.md", "not an open-source source obligation", "NEEDS_REVIEW")
     add("WebView2", "bootstrapper downloaded by installer", "WebView runtime", "Microsoft WebView2 terms", "https://developer.microsoft.com/en-us/microsoft-edge/webview2/", "downloadBootstrapper; no fixed offline runtime", "installer terms + user prerequisites", "not applicable", "NOT_APPLICABLE")
     add("WebView2Loader SDK", "webview2-com-sys 0.38.2 bundled loader", "native WebView loader", "Microsoft SDK terms, distinct from MIT Rust bindings", "https://github.com/wravery/webview2-rs", "static loader link declared in bindings; no fixed WebView runtime", "native Microsoft clearance dossier", "not an open-source source obligation", "NEEDS_REVIEW")
@@ -226,8 +246,8 @@ def kit() -> dict:
                 if path.is_file() and (directory.name != "fonts" or path.suffix.lower() in {".txt", ".md"}):
                     output.write(path, directory.name + "/" + path.relative_to(directory).as_posix())
         output.write(ROOT / "LICENSE", "APPLICATION-LICENSE.txt")
-        for name in ["MVP_STATUS.md", "THIRD_PARTY_NOTICES.md", "WINDOWS_PREVIEW.md"]:
-            output.write(ROOT / name, "release-documentation/" + name)
+        output.write(ROOT / FONT_NOTICE, "fonts/NOTICE.md")
+        write_release_documentation(output)
     nsis = ROOT / f"apps/desktop/src-tauri/target/release/bundle/nsis/PDF Studio Local_{version}_x64-setup.exe"
     if nsis.stat().st_mtime < dt.datetime.fromisoformat(provenance["date"]).timestamp():
         raise ValueError("NSIS predates build provenance; rebuild this commit")

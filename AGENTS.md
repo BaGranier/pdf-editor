@@ -57,10 +57,10 @@ contract; Python and TypeScript models must not be duplicated there manually.
 ### Remaining work before a general desktop release
 
 Windows Preview MVP status and its short remaining roadmap are maintained in
-`MVP_STATUS.md`. Every MVP ticket must update it with 3–6 short journal lines.
-General release qualification beyond the Preview remains in `NEXT_STEPS.md`.
-Structural constraints are maintained in `TECHNICAL_DEBT.md`; runtime and
-platform qualification boundaries are described in `DESKTOP.md`.
+`docs/product/MVP_STATUS.md`. Every MVP ticket must update it with 3–6 short journal lines.
+General release qualification beyond the Preview remains in `docs/product/NEXT_STEPS.md`.
+Structural constraints are maintained in `docs/product/TECHNICAL_DEBT.md`; runtime and
+platform qualification boundaries are described in `docs/architecture/DESKTOP.md`.
 
 ### Explicitly out of scope
 

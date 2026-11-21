@@ -70,6 +70,9 @@ METADATA_PATHS = {
     "MVP_STATUS.md",
     "THIRD_PARTY_NOTICES.md",
     "WINDOWS_PREVIEW.md",
+    "docs/product/MVP_STATUS.md",
+    "docs/architecture/THIRD_PARTY_NOTICES.md",
+    "docs/getting-started/WINDOWS_PREVIEW.md",
 }
 
 
@@ -637,7 +640,7 @@ def publish() -> dict:
         for name in ["native-inventory.json", "redistribution-inventory.json"]:
             target.write(OUT / name, "mvp-003-review/" + name)
         target.write(
-            ROOT / "THIRD_PARTY_NOTICES.md", "mvp-003-review/THIRD_PARTY_NOTICES.md"
+            ROOT / "docs/architecture/THIRD_PARTY_NOTICES.md", "mvp-003-review/THIRD_PARTY_NOTICES.md"
         )
     original = json.loads((BASE / "RELEASE_MANIFEST.json").read_text("utf-8"))
     artifacts = [

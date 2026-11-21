@@ -11,7 +11,7 @@ Dernier gate MVP-004 : `npm run qa:mvp` **exit 0**, commit de build `ae97cb8`, p
 
 - fonctionnel / redistribution : PASS ; Microsoft CRT / MuPDF / WebView2 : PASS ;
 - `release:verify` : PASS ; `qa:mvp` : PASS ; signature Authenticode : hors MVP ;
-- VM clean : **NON VALIDÉ — QA manuelle Windows requise**. Voir le [relevé STAB-2026-11](docs/qa/runs/2026-11-21-windows-preview.md).
+- VM clean : **NON VALIDÉ — QA manuelle Windows requise**. Voir le [relevé STAB-2026-11](../qa/runs/2026-11-21-windows-preview.md).
 
 - frontend : PASS, 348 tests, types et build ;
 - backend : PASS, 270 tests MVP dont les garde-fous CRT/redistribution ; OCR embarqué : 18 tests ciblés PASS ; OCR système `fra` non qualifié ;
@@ -45,7 +45,7 @@ SHA-256 : `f207904fcb1521c62460c54f98bbf9169d9b245b70a8d73052a1adb28c1bb735`.
 
 Aucun blocker de préparation MVP. Trois CRT x64 officiels VC\Redist, version
 homogène 14.44.35211.0, imports/exports et chargement réel vérifiés. Aucun
-NEEDS_REVIEW dans l'inventaire courant. Voir `THIRD_PARTY_NOTICES.md`.
+NEEDS_REVIEW dans l'inventaire courant. Voir les [preuves de redistribution](../architecture/THIRD_PARTY_NOTICES.md).
 
 MVP-004 reconstruit le sidecar et le NSIS ; les anciennes candidates sont historiques.
 Le kit lie sources, commit de build, notices, preuves natives et hashes. Une mise à
@@ -90,13 +90,13 @@ même gate sur ce nouvel artefact.
 - Ouverture de PNG, JPEG et WebP statiques avec conservation locale des originaux.
 - Rotation, miroirs et recadrage visuel du fond avec historique et annotations.
 - PDF multipage ordonné, formats A4, Lettre ou image et réglages de cadrage.
-- Résultats Chromium, Firefox, backend et limites Desktop dans [le rapport QA](docs/QA_IMAGE_DOCUMENTS.md).
+- Résultats Chromium, Firefox, backend et limites Desktop dans [le rapport QA](../QA_IMAGE_DOCUMENTS.md).
 
 ### 2026-11-19 — FIX-PDF-SIDEBAR-ICONS
 - Catégories, sous-outils et coches de navigation passent aux SVG monochromes intégrés.
 - ToolbarIcon existant partagé, mapping typé, tailles 20/18 px, aucun ajout de dépendance.
 - Libellés, commandes, focus, états actifs et historique PDF conservés.
-- Vérification du correctif isolée des ajouts images ; captures et résultats dans docs/QA_SIDEBAR_ICONS.md.
+- Vérification du correctif isolée des ajouts images ; captures et résultats dans [QA Sidebar](../QA_SIDEBAR_ICONS.md).
 
 
 ### 2026-11-16 — FEAT-PDF-WATERMARK-TILING
@@ -111,7 +111,7 @@ même gate sur ce nouvel artefact.
 - Barre gauche réduite à six entrées ; inventaire centralisé et aucun outil supprimé.
 - Biffage, masquage, filigrane et tampon réunis sous Marquage avec explications.
 - Menus temporaires accessibles, focus restauré, état de navigation indépendant du PDF.
-- Parcours de tests adaptés à la navigation par catégories ; détail dans SIDEBAR_AND_WATERMARKS.md.
+- Parcours de tests adaptés à la navigation par catégories ; détail dans [Sidebar et filigranes](../features/SIDEBAR_AND_WATERMARKS.md).
 
 
 ### 2026-10-28 — MVP-001
@@ -147,7 +147,7 @@ même gate sur ce nouvel artefact.
 - Biffage natif PyMuPDF en dernière étape de contenu ; copie réécrite et nettoyée.
 - Refus explicite des structures complexes non qualifiées et des images partagées touchées.
 - Qualification synthétique : texte, pixels, vecteurs, rotations/CropBox et historique incrémental.
-- Périmètre et limites décrits dans `REDACTION_STAMPS.md` ; aucun push.
+- Périmètre et limites décrits dans [Biffage et tampons](../features/REDACTION_STAMPS.md) ; aucun push.
 
 ### 2026-11-16 — FEAT-PDF-REDACTION-STAMPS / tampons
 - Galerie française, texte personnalisé/date figée, import PNG/JPEG local et inspecteur intégrés.

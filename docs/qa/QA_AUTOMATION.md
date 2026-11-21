@@ -2,7 +2,7 @@
 
 ## Gate MVP Preview Windows
 
-Périmètre et verdict actif : [MVP_STATUS.md](MVP_STATUS.md). Depuis `apps/web`,
+Périmètre et verdict actif : [MVP_STATUS.md](../product/MVP_STATUS.md). Depuis `apps/web`,
 `npm run qa:mvp` prépare les petites fixtures et les langues OCR verrouillées,
 exécute tests/types/build, backend MVP, worker OCR embarqué, Chromium/Firefox,
 desktop source/package et Rust. Installer d'abord les dépendances verrouillées
@@ -49,7 +49,7 @@ Décision : **NOT READY**. Voie AGPL approuvée ; notices transitives et livrais
 des sources restent incomplètes. VM clean indisponible, confirmée par
 l'utilisateur. Les résultats 002/004 restent historiques. Les nouvelles preuves
 sont ignorées sous `data/output/release-gate-006/` : inventaire, hashes,
-environnement, logs et matrice. `NEXT_STEPS.md` conserve seulement les blockers.
+environnement, logs et matrice. Le [gate de diffusion](../product/NEXT_STEPS.md) conserve les blockers.
 
 Statuts de cette campagne : `OK` (exécuté nativement, environnement indiqué),
 `KO`, `R`, `NT`, `ENV`, `AUTO`, `PARTIAL`. `AUTO` ne vaut jamais `OK` natif ;
@@ -122,7 +122,7 @@ ne remplace pas les reproductions synthétiques du dépôt.
 La campagne Playwright couvre les parcours navigateur, un OCR réel sur scan et
 les conversions locales dans Chromium et Firefox. Elle génère ses propres PDF
 non confidentiels et ne lit aucun document personnel. Les observations humaines
-historiques restent dans `QA_BROWSER_REPORT.md`.
+historiques restent dans le [rapport navigateur](runs/QA_BROWSER_REPORT.md).
 
 Le fichier `pdf-links-layout-sidebar.spec.ts` vérifie l’export et la réouverture
 de liens PDF, les destinations et signets, la géométrie des rangées et des
@@ -157,8 +157,8 @@ PLAYWRIGHT_BROWSERS_PATH=../../.playwright-browsers \
 Sur Linux, `npx playwright install --with-deps chromium firefox` peut installer
 les dépendances système nécessaires. La campagne Web requiert aussi
 OCRmyPDF/Tesseract/Ghostscript, langues eng/fra ; QPDF et LibreOffice servent aux
-validations PDF/DOCX. Voir [DEVELOPMENT.md](DEVELOPMENT.md) et
-[DESKTOP.md](DESKTOP.md) pour le runtime gelé et les prérequis natifs.
+validations PDF/DOCX. Voir [DEVELOPMENT.md](../getting-started/DEVELOPMENT.md) et
+[DESKTOP.md](../architecture/DESKTOP.md) pour le runtime gelé et les prérequis natifs.
 
 Avant les tests ci-dessous, suivre la [préparation unique des assets](#préparation-unique-des-assets).
 
@@ -395,7 +395,7 @@ Linux sur six cycles ; ce ne sont pas des métriques Windows. Le diagnostic
 `profile-editor-robustness --native-rewrite-only` reproduit la croissance native
 sans exporteur applicatif ; `--diagnose-native --quality balanced --no-render`
 isole recompression/allocateur. Ces nettoyages sont uniquement diagnostiques.
-La limite encore active est détaillée dans [TECHNICAL_DEBT.md](TECHNICAL_DEBT.md).
+La limite encore active est détaillée dans [TECHNICAL_DEBT.md](../product/TECHNICAL_DEBT.md).
 
 Contraste sombre : couleurs calculées avec composition des fonds, ratios de
 luminance ciblés toolbar, menu, palette, inspector, dialogue et erreur ; seuil
@@ -507,7 +507,7 @@ node scripts/windows-qa-cdp.cjs ocr-fra
 Autres pilotes disponibles : `editor-004` (plans/formes/AES), `presentation-004`
 (slides/fullscreen), `ocr-multipage`, `ocr-close-004`, `ocr-errors-004`, `idle-004`,
 `retry`, `conversion`, `print`, `stress`. Lire les fixtures/préconditions dans
-[scripts/windows-qa-cdp.cjs](scripts/windows-qa-cdp.cjs) avant invocation.
+[scripts/windows-qa-cdp.cjs](../../scripts/windows-qa-cdp.cjs) avant invocation.
 `ocr-errors-004` altère puis restaure uniquement les ressources extraites QA ;
 les anciens scénarios d'absence des outils PATH ne s'appliquent pas au sidecar gelé.
 `print` contrôle une demande d'impression, pas une sortie OS réellement produite.
@@ -541,7 +541,7 @@ Ne pas convertir un skip ou un outil absent en résultat vert.
 
 Avant release : exécuter la complète Web, pytest/Ruff, Rust au MSRV et build natif ;
 installer l'artefact final sur VM clean et couvrir les P0 de
-[NEXT_STEPS.md](NEXT_STEPS.md). Examiner notamment :
+[NEXT_STEPS.md](../product/NEXT_STEPS.md). Examiner notamment :
 
 - netteté/alignement HiDPI, portrait/paysage, menus/poignées, resize/fullscreen,
   transitions multi-écran et Échap ;

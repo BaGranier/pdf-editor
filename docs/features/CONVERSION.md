@@ -49,7 +49,7 @@ exploitable ; `never` avertit sur les scans ; `always` force l'OCR.
 Le sidecar Windows utilise MuPDF/Tesseract et eng/fra embarqués à 200 DPI,
 sans deskew/orientation automatique des pixels. Le développement web utilise
 OCRmyPDF/Tesseract/Ghostscript système. Architecture et ressources :
-[DESKTOP.md](DESKTOP.md), prérequis : [DEVELOPMENT.md](DEVELOPMENT.md).
+[DESKTOP.md](../architecture/DESKTOP.md), prérequis : [DEVELOPMENT.md](../getting-started/DEVELOPMENT.md).
 
 | Limite | Valeur |
 | --- | --- |
@@ -122,4 +122,4 @@ Les tests backend ouvrent les DOCX/PDF/ZIP produits ; Playwright vérifie les
 téléchargements Chromium/Firefox avant et après restauration. Le contrôle visuel
 rend le DOCX avec LibreOffice, mesure pagination/images/styles et crée des vues
 comparatives locales. Commandes, fixtures et tests optionnels sur documents
-explicitement autorisés : [QA_AUTOMATION.md](QA_AUTOMATION.md).
+explicitement autorisés : [QA_AUTOMATION.md](../qa/QA_AUTOMATION.md).

@@ -9,7 +9,7 @@ une connexion Internet est alors nécessaire. Aucun runtime offline n'est embarq
 
 L'impression intégrée est expérimentale. Enregistrez/exportez le PDF puis imprimez
 depuis votre lecteur PDF. Save/Export natif est limité à **25 Mio par PDF généré**.
-Les autres limites du périmètre sont dans [MVP_STATUS.md](MVP_STATUS.md).
+Les autres limites du périmètre sont dans [MVP_STATUS.md](../product/MVP_STATUS.md).
 
 ## Reconstruction et dossier de redistribution
 
@@ -50,7 +50,7 @@ de développement ne constitue une preuve VM clean.
 MVP-004 : le CRT app-local provient exclusivement du dossier officiel VC\Redist
 x64 d?couvert dans les Build Tools. Le spec impose sa provenance avant cr?ation
 du sidecar ; le gate compare les DLL et leurs imports au payload final.
-Voir [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Voir [THIRD_PARTY_NOTICES.md](../architecture/THIRD_PARTY_NOTICES.md).
 
 Les candidates MVP-002/003 sont historiques. Utiliser uniquement le NSIS et les
 hashes du manifest courant sous `data/output/mvp-004/`. Le commit de build lie

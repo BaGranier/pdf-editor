@@ -6,7 +6,7 @@
 Aucun installateur candidat ni manifeste local de gate trouvé sous
 `data/output`. Le runner ne dispose pas de VM Windows configurée.
 
-Le [statut MVP](../../../MVP_STATUS.md) identifie le NSIS x64 0.1.0 du build
+Le [statut MVP](../../product/MVP_STATUS.md) identifie le NSIS x64 0.1.0 du build
 `ae97cb80115de78c795a9118d484d01ba3e63cd0`. SHA-256 attendu d'après ce
 document, **non mesuré pendant cette campagne** :
 `f207904fcb1521c62460c54f98bbf9169d9b245b70a8d73052a1adb28c1bb735`.
@@ -23,8 +23,8 @@ ressources OCR restent à relever. L'historique du poste dev garde sa portée.
 | Fermeture, relance, désinstallation | NOT RUN | Inventaire des processus/ports et résultats de relance |
 | Impression WebView2 vers Microsoft Print to PDF | BLOCKED | Dialogue OS et fichier imprimé vérifié. Parcours distinct du gate Preview |
 
-Sur la VM, suivre le [gate Preview existant](../../../QA_AUTOMATION.md#gate-mvp-preview-windows)
-et le [parcours Windows Preview](../../../WINDOWS_PREVIEW.md).
+Sur la VM, suivre le [gate Preview existant](../QA_AUTOMATION.md#gate-mvp-preview-windows)
+et le [parcours Windows Preview](../../getting-started/WINDOWS_PREVIEW.md).
 Relever le SHA-256 de l'installateur avant l'installation. Rejouer le parcours
 interactif avec les fixtures synthétiques et garder les preuves sous
 `data/output`. Les scripts existants complètent l'essai installé. Toute

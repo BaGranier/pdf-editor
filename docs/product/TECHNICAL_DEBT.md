@@ -12,7 +12,7 @@ exclus des tickets de stabilisation fonctionnelle.
 
 ## Suivi de la stabilisation de novembre 2026
 
-[STAB-2026-11](docs/product/STAB-2026-11.md) relie les observations initiales
+[STAB-2026-11](STAB-2026-11.md) relie les observations initiales
 aux correctifs et aux validations disponibles. La qualification du candidat,
 l'impression Windows et les mesures natives restent liées aux gates existants.
 Les limites historiques des autres fonctions restent dans leurs sections
@@ -38,7 +38,7 @@ La restauration/persistance est le prochain candidat identifié : effets de
 restauration et snapshots restent mêlés au cycle de vie des documents. Extraire
 progressivement un domaine à la fois, avec ses styles, sans changement
 fonctionnel ni visuel associé. Conserver les tests du domaine et la gate
-transverse de [QA_AUTOMATION.md](QA_AUTOMATION.md). Le découpage du bundle et
+transverse de [QA_AUTOMATION.md](../qa/QA_AUTOMATION.md). Le découpage du bundle et
 le poids du worker PDF.js demandent une mesure avant optimisation.
 
 ## SHARED-ARCH-001 — Contrats partagés
@@ -135,7 +135,7 @@ contournés par rasterisation, faux style CSS ou remplacement visuel opaque.
 ## WINDOWS-NATIVE-QUALIFICATION-002 — Release Windows encore incomplète
 
 La campagne native est détaillée dans
-[QA_AUTOMATION.md](QA_AUTOMATION.md), avec l'état actif dans [MVP_STATUS.md](MVP_STATUS.md).
+[QA_AUTOMATION.md](../qa/QA_AUTOMATION.md), avec l'état actif dans [MVP_STATUS.md](MVP_STATUS.md).
 Le crash forcé du shell termine désormais les descendants backend par Job Object,
 mais son dossier temporaire peut subsister. Le ticket 004 nettoie au démarrage
 les dossiers de plus de 24 h munis d'une lease, seulement si le PID est prouvé
@@ -186,7 +186,7 @@ HiDPI, l'impression, les gros PDF, la signature Windows, la notarisation macOS
 et la mise à jour applicative restent à traiter.
 
 Cette dette est durable car elle conditionne une diffusion desktop générale ;
-elle est détaillée dans `DESKTOP.md` ; le périmètre actif est dans `MVP_STATUS.md`.
+elle est détaillée dans le [contrat Desktop](../architecture/DESKTOP.md). Le [statut MVP](MVP_STATUS.md) porte le périmètre actif.
 
 ## Signature cryptographique après le ticket export 003
 

@@ -7,7 +7,7 @@ Validation locale du 16 novembre 2026. Aucun push.
 La barre gauche passe de 15 boutons permanents à 6 entrées : Sélection,
 Édition, Annotations, Marquage, Conversion, Pages. Documents et Fichier restent
 en place ; Ctrl+F reste accessible. Le mapping détaillé et les règles UX sont
-dans [SIDEBAR_AND_WATERMARKS.md](../SIDEBAR_AND_WATERMARKS.md).
+dans [SIDEBAR_AND_WATERMARKS.md](features/SIDEBAR_AND_WATERMARKS.md).
 
 Un état local `openNavigationGroup` pilote le menu temporaire sans toucher à
 `activeEditingTool`, au dirty state ou à l’historique PDF. Le parent et le

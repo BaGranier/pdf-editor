@@ -45,7 +45,7 @@ couleur seule. Les autres zones de l’application sont hors périmètre.
 - `apps/web/src/App.css` : dimensions et alignement des icônes, colonne de libellé et descriptions.
 - `apps/web/src/components/SidebarNavigation.test.tsx` : contrôle de toutes les icônes, thèmes, états et accessibilité.
 - `apps/web/e2e/specs/sidebar-icons.spec.ts` : scénario SVG/états/HiDPI/thèmes/navigation non dirty.
-- `MVP_STATUS.md` : journal du ticket.
+- [Statut MVP](product/MVP_STATUS.md) : journal du ticket.
 - Ce rapport.
 
 ## Vérifications

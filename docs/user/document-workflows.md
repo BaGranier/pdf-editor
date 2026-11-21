@@ -48,7 +48,7 @@ Sur Desktop, l'en-tête du document et son état signalent la destination de
 session. Le nom seul est visible et le shell natif détient le chemin. Le premier
 Save As préserve l'original. Annulation, refus de la destination et erreur du
 moteur conservent l'état modifié. Le plafond Preview s'applique au PDF généré
-et vaut 25 Mio. [Contrat desktop](../../DESKTOP.md#fichiers-et-frontière-ipc)
+et vaut 25 Mio. [Contrat desktop](../architecture/DESKTOP.md#fichiers-et-frontière-ipc)
 
 ## Biffage et impression
 
@@ -56,19 +56,19 @@ Le prévol indique les pages de sortie concernées. Le moteur supprime le conten
 visé dans les zones validées ou refuse le biffage si le document ou les zones
 sortent du périmètre vérifié. Les informations hors zones et les métadonnées
 peuvent subsister. Le masquage visuel, les tampons et les filigranes laissent
-le contenu récupérable. [Contrat de biffage](../../REDACTION_STAMPS.md)
+le contenu récupérable. [Contrat de biffage](../features/REDACTION_STAMPS.md)
 
 En Preview Windows, exportez la **copie composée** puis ouvrez-la dans un
 lecteur PDF externe pour imprimer. L'aperçu intégré est expérimental et la
-demande d'un dialogue ne confirme pas une sortie imprimée. [Gate Windows](../../NEXT_STEPS.md)
+demande d'un dialogue ne confirme pas une sortie imprimée. [Gate Windows](../product/NEXT_STEPS.md)
 
 ## Pages, OCR et conversion
 
 L'historique des objets s'applique au texte, aux formes et aux autres éditions
 prises en charge. Les opérations du plan de pages restent hors de cet
 historique. Les limites relatives aux formulaires, aux liens et aux signets
-restent documentées. [Dette technique](../../TECHNICAL_DEBT.md)
+restent documentées. [Dette technique](../product/TECHNICAL_DEBT.md)
 
 OCR et Conversion prennent le PDF source de l'onglet actif avant les
 modifications et le plan. Pour traiter la composition, exportez-la et ouvrez
-la copie avant de lancer le traitement. [Contrat de conversion](../../CONVERSION.md)
+la copie avant de lancer le traitement. [Contrat de conversion](../features/CONVERSION.md)

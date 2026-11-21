@@ -372,7 +372,7 @@ def render_report(payload: dict[str, Any], scenarios: list[Scenario]) -> str:
         "# Rapport QA navigateur automatisé",
         "",
         "> Ce rapport est généré depuis les résultats Playwright. Les procédures "
-        "et contrôles humains complémentaires sont décrits dans `QA_AUTOMATION.md`.",
+        "et contrôles humains complémentaires sont décrits dans `docs/qa/QA_AUTOMATION.md`.",
         "",
         "## Synthèse",
         "",

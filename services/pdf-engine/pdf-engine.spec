@@ -11,7 +11,11 @@ from scripts.windows_crt import normalize
 a = Analysis(
     [str(engine / "desktop_entrypoint.py")],
     pathex=[str(engine)], binaries=[],
-    datas=[(str(engine / "build/ocr"), "ocr"), (str(root / "apps/web/public/fonts"), "fonts")],
+    datas=[
+        (str(engine / "build/ocr"), "ocr"),
+        (str(root / "apps/web/public/fonts"), "fonts"),
+        (str(root / "docs/architecture/NOTICE.md"), "fonts"),
+    ],
     hiddenimports=collect_submodules("app"), hookspath=[], hooksconfig={},
     runtime_hooks=[], excludes=[], noarchive=False, optimize=0,
 )

@@ -22,7 +22,7 @@
     "Makefile": "9afa07c0d456e59bd298e05acb136aa862dd51888b9d029f0b91b520f06e98c9",
     ".gitignore": "7957da4300bf42577fa96923033288284ec9ca6cd352bf0026b43a080929d462",
     ".env.example": "35671e359f07a2c804158a9c71e8eee805995ed9489a20c31841546e27b16611",
-    "AGENTS.template.md": "94decbccd4cf5df420ee906a8c53706a7760b32e8a961f69d27522557fd322cf",
+    "docs/agents/AGENTS.template.md": "94decbccd4cf5df420ee906a8c53706a7760b32e8a961f69d27522557fd322cf",
     "CLAUDE.md": "94decbccd4cf5df420ee906a8c53706a7760b32e8a961f69d27522557fd322cf"
   },
   "audit": {
