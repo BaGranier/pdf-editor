@@ -444,7 +444,25 @@ async function putStoredDocument(snapshot: ViewerDocumentSnapshot) {
   }
 }
 
-export async function saveStoredDocument(snapshot: ViewerDocumentSnapshot) {
+// A close must run after any snapshot already in flight for the same document.
+const documentWrites = new Map<string, Promise<unknown>>();
+
+function enqueueDocumentWrite<T>(id: string, write: () => Promise<T>): Promise<T> {
+  const pending = documentWrites.get(id);
+  const result = pending ? pending.then(write, write) : write();
+  documentWrites.set(id, result);
+  const release = () => {
+    if (documentWrites.get(id) === result) documentWrites.delete(id);
+  };
+  void result.then(release, release);
+  return result;
+}
+
+export function saveStoredDocument(snapshot: ViewerDocumentSnapshot) {
+  return enqueueDocumentWrite(snapshot.id, () => saveSnapshot(snapshot));
+}
+
+async function saveSnapshot(snapshot: ViewerDocumentSnapshot) {
   const previousFallback = memoryDocuments.get(snapshot.id);
   try {
     const saved = await putStoredDocument(snapshot);
@@ -501,7 +519,11 @@ export async function loadStoredDocuments(documentIds: string[]) {
   return loadedDocuments.filter((document): document is StoredPdfDocument => document !== null);
 }
 
-export async function removeStoredDocument(documentId: string) {
+export function removeStoredDocument(documentId: string) {
+  return enqueueDocumentWrite(documentId, () => deleteDocumentRecord(documentId));
+}
+
+async function deleteDocumentRecord(documentId: string) {
   memoryDocuments.delete(documentId);
   pruneMemoryImages();
   if (!hasIndexedDb()) {

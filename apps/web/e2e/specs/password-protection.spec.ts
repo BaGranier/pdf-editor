@@ -3,10 +3,10 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { validatePdf } from "../helpers/pdf-validation";
 import { expect, test } from "../helpers/qa-test";
-import { fixtureDirectory, getLocalState, openApp } from "../helpers/app";
+import { fixtureDirectory, fixtures, getLocalState, getStoredDocuments, openApp, openPdf } from "../helpers/app";
 
 const protectedFixture = path.join(fixtureDirectory, "password-protected.pdf");
-test("protected PDF cancellation, retry, rendering, search and persistence without secret", async ({ page, qa }, testInfo) => {
+test("protected PDF cancellation, retry, search and export in a temporary session", async ({ page, qa }, testInfo) => {
   const sourceBefore = readFileSync(protectedFixture);
   qa.allowError(/console.error.*401.*\/pdf\/unlock/);
   await openApp(page);
@@ -27,24 +27,16 @@ test("protected PDF cancellation, retry, rendering, search and persistence witho
   await dialog.getByRole("button", { name: "Ouvrir", exact: true }).click();
   await expect(page.getByRole("button", { name: "password-protected.pdf, document actif" })).toBeVisible();
   await expect(page.locator(".pdf-page canvas").first()).toBeVisible();
-  await expect.poll(async () => (await getLocalState(page)).documentCount).toBe(1);
-  const state = await page.evaluate(async () => {
-    const database = await new Promise<IDBDatabase>((resolve) => {
-      const request = indexedDB.open("pdf-editor-mvp-db"); request.onsuccess = () => resolve(request.result);
-    });
-    const records = await new Promise<Array<{content: Blob}>>((resolve) => {
-      const request = database.transaction("documents").objectStore("documents").getAll();
-      request.onsuccess = () => resolve(request.result);
-    });
-    database.close();
-    return JSON.stringify({ records: records.map(({content, ...rest}) => rest), local: { ...localStorage } }) +
-      (await Promise.all(records.map((record) => record.content.text()))).join("");
-  });
-  expect(state).not.toContain("synthetic-open");
-  expect(state).not.toContain("synthetic-wrong");
-  await page.reload();
-  await expect(page.getByRole("button", { name: "password-protected.pdf, document actif" })).toBeVisible();
-  await expect(dialog).not.toBeVisible();
+  const protectedId = await page.locator(".document-select[aria-current=true]").getAttribute("data-document-id");
+  await expect(page.locator(".status-bar")).toContainText("Session temporaire");
+  const assertNoRecovery = async () => {
+    const state = await getLocalState(page);
+    expect(state.preferences).not.toContain(protectedId!);
+    expect(state.organizationPlans ?? "").not.toContain(protectedId!);
+    expect(await getStoredDocuments(page)).toEqual([]);
+    expect(JSON.stringify(state)).not.toMatch(/synthetic-(open|wrong)/);
+  };
+  await assertNoRecovery();
   await page.keyboard.press("Control+f");
   await page.getByRole("textbox", { name: "Rechercher dans le document" }).fill("PROTECTED PDF WITNESS");
   await expect(page.locator('[aria-label="Résultats de recherche"]')).toContainText("1 / 1");
@@ -76,5 +68,42 @@ test("protected PDF cancellation, retry, rendering, search and persistence witho
   expect(saved.valid).toBe(true);
   expect(saved.text.replace(/\s+/g, "")).toContain("Protectededitedwitness");
   expect(readFileSync(protectedFixture)).toEqual(sourceBefore);
-  await expect(save).toBeDisabled();
+  await expect(page.locator(".status-bar")).toContainText("Session temporaire");
+  await assertNoRecovery();
+  await page.reload();
+  await expect(page.getByRole("main")).toHaveAttribute("data-persistence-state", "idle");
+  await expect(page.locator(".document-select")).toHaveCount(0);
+});
+
+
+test("closing one legacy tab purges its ID and a protected tab leaves other recovery data intact", async ({ page }) => {
+  await openApp(page);
+  await openPdf(page, fixtures.onePage);
+  await openPdf(page, fixtures.fivePages);
+  await page.reload();
+  await expect(page.locator(".document-select")).toHaveCount(2);
+  await page.getByRole("button", { name: "Fermer pdf-small-5-pages.pdf" }).click();
+  await expect.poll(async () => (await getStoredDocuments(page)).map((doc) => doc.fileName)).toEqual(["pdf-small-1-page.pdf"]);
+  await page.locator("input[type=file][aria-label='Ouvrir un PDF']").setInputFiles(protectedFixture);
+  const dialog = page.getByRole("dialog", { name: "PDF protégé" });
+  await dialog.getByLabel("Mot de passe").fill("synthetic-open");
+  await dialog.getByRole("button", { name: "Ouvrir", exact: true }).click();
+  await expect(page.locator(".status-bar")).toContainText("Session temporaire");
+  await page.getByRole("button", { name: "Fichier", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Exporter / Finaliser…" }).click();
+  const exportDialog = page.getByRole("dialog", { name: "Exporter / Finaliser" });
+  await exportDialog.getByLabel("Mot de passe d’ouverture", { exact: true }).fill("synthetic-output");
+  await exportDialog.getByLabel("Confirmer le mot de passe d’ouverture").fill("synthetic-output");
+  const download = page.waitForEvent("download");
+  await exportDialog.getByRole("button", { name: "Exporter", exact: true }).click();
+  const path = test.info().outputPath("protected-export.pdf");
+  await (await download).saveAs(path);
+  expect(readFileSync(path).toString("latin1")).toContain("/Encrypt");
+  await expect(exportDialog).toHaveCount(0);
+  await page.getByRole("button", { name: "Fermer password-protected.pdf" }).click();
+  await expect(page.locator(".document-select")).toHaveCount(1);
+  await page.reload();
+  await expect(page.getByRole("button", { name: "pdf-small-1-page.pdf, document actif" })).toBeVisible();
+  await expect(page.locator(".document-select")).toHaveCount(1);
+  expect((await getStoredDocuments(page)).map((doc) => doc.fileName)).toEqual(["pdf-small-1-page.pdf"]);
 });

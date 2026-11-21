@@ -122,7 +122,7 @@ describe("OCR in App", () => {
     vi.unstubAllGlobals();
   });
 
-  it("keeps a protected PDF closed on cancel and wrong password, then persists only working bytes", async () => {
+  it("keeps a protected PDF closed on cancel and wrong password, then keeps working bytes outside recovery storage", async () => {
     render(<App />);
     const protectedFile = new File(["%PDF-locked"], "protected.pdf", { type: "application/pdf" });
     const input = within(screen.getByRole("complementary", { name: "Documents ouverts" })).getByLabelText("Ouvrir un PDF");
@@ -150,14 +150,10 @@ describe("OCR in App", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Ouvrir" }));
     const opened = await screen.findByRole("button", { name: "protected.pdf, document actif" });
     expect(opened).not.toHaveAttribute("aria-describedby");
-    await waitFor(() => expect(loadViewerPreferences()?.documentOrder).toHaveLength(1));
-    let stored: Awaited<ReturnType<typeof loadStoredDocument>> = null;
-    await waitFor(async () => {
-      stored = await loadStoredDocument(loadViewerPreferences()!.documentOrder[0]);
-      expect(stored).not.toBeNull();
-    });
-    expect(JSON.stringify(stored)).not.toContain("synthetic-open");
-    expect(await stored!.content.text()).not.toContain("synthetic-open");
+    await waitFor(() => expect(loadViewerPreferences()?.activeDocumentId).toBeNull());
+    expect(loadViewerPreferences()?.documentOrder).toEqual([]);
+    expect(await loadStoredDocument(opened.getAttribute("data-document-id")!)).toBeNull();
+    expect(screen.getByRole("contentinfo")).toHaveTextContent("Session temporaire");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 

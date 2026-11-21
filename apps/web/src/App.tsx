@@ -46,7 +46,6 @@ import type {
 } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import {
-  clearStoredDocuments,
   clearViewerStorage,
   loadOrganizationPlan,
   loadStoredDocuments,
@@ -2213,14 +2212,14 @@ function OrganizePages({
           <span className={hasPendingChanges ? "organize-changes is-pending" : "organize-changes"}>
             {hasPendingChanges ? "Modifié" : "Ordre d'origine"}
           </span>
-          <label className="organize-export-output-option">
+          {!document.sessionOnly ? <label className="organize-export-output-option">
             <input
               type="checkbox"
               checked={saveToOutputDir}
               onChange={(event) => onSaveToOutputDirChange(event.target.checked)}
             />
             Copier dans data/output
-          </label>
+          </label> : null}
           <button
             type="button"
             className="organize-reset-button"
@@ -2839,6 +2838,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     "stroke" | "fill" | null
   >(null);
   const clipboardEditRef = useRef<PdfEdit | null>(null);
+  const protectedClipboardOrigin = useRef<string | null>(null);
   const pasteSequenceRef = useRef(0);
   const activePageByDocumentRef = useRef<Record<string, number>>({});
   const pageNavigationRequestId = useRef(0);
@@ -3333,9 +3333,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     const preferencesSaved = saveViewerPreferences({
       theme,
       sidebarVisible: isSidebarVisible,
-      activeDocumentId,
+      activeDocumentId: documents.some((document) => document.id === activeDocumentId && !document.sessionOnly) ? activeDocumentId : null,
       documentOrder: [...new Set([...documents
-        .filter((document) => document.source.type === "web")
+        .filter((document) => document.source.type === "web" && !document.sessionOnly)
         .map((document) => document.id), ...unrestoredDocumentIds.current])],
       ...(lastCommentAuthor ? { commentAuthor: lastCommentAuthor } : {}),
       viewerMode: viewerMode === "presentation" ? "single-page" : viewerMode,
@@ -3352,9 +3352,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     }
 
     const generation = ++persistenceGeneration.current;
-    if (documents.some((document) => document.source.type === "web")) setLocalPersistenceState("saving");
+    if (documents.some((document) => document.source.type === "web" && !document.sessionOnly)) setLocalPersistenceState("saving");
     const saveTimeout = window.setTimeout(() => {
-      const restorableDocuments = documents.filter((document) => document.source.type === "web");
+      const restorableDocuments = documents.filter((document) => document.source.type === "web" && !document.sessionOnly);
       if (restorableDocuments.length === 0) {
         return;
       }
@@ -3388,7 +3388,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     }
 
     const plansSaved = Object.entries(organizationPlans).flatMap(([documentId, plan]) => {
-      if (!documents.some((document) => document.id === documentId)) {
+      if (!documents.some((document) => document.id === documentId && !document.sessionOnly) ||
+          plan.pages.some((page) => documents.some((doc) => doc.id === page.sourceDocumentId && doc.sessionOnly))) {
         return [];
       }
 
@@ -3767,7 +3768,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setSelectedEditId(edit.id);
     setPendingComment(null);
     setCommentDraft("");
-    if (commentAuthorDraft.trim()) setLastCommentAuthor(commentAuthorDraft.trim());
+    if (!activeDocument.sessionOnly && commentAuthorDraft.trim()) setLastCommentAuthor(commentAuthorDraft.trim());
     setActiveEditingTool("select");
   }, [activeDocument, commentAuthorDraft, commentDraft, pendingComment]);
 
@@ -3956,8 +3957,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       return;
     }
     clipboardEditRef.current = clonePdfEdit(selectedPdfEdit);
+    protectedClipboardOrigin.current = activeDocument?.sessionOnly ? activeDocument.id : null;
     pasteSequenceRef.current = 0;
-  }, [selectedPdfEdit]);
+  }, [activeDocument, selectedPdfEdit]);
 
   const pastePdfEdit = useCallback(async () => {
     const sourceEdit = clipboardEditRef.current;
@@ -3966,12 +3968,17 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       return;
     }
 
+    if (protectedClipboardOrigin.current && !targetDocument.sessionOnly) {
+      setExportFeedback({ kind: "warning", message: "Collez cet objet dans un autre document en session temporaire." });
+      return;
+    }
     const pageNumber = Math.min(
       targetDocument.pageCount,
       Math.max(1, activePageByDocumentRef.current[targetDocument.id] ?? 1),
     );
     const page = await targetDocument.pdfDocument.getPage(pageNumber);
-    if (documentsRef.current.every((document) => document.id !== targetDocument.id)) {
+    if (clipboardEditRef.current !== sourceEdit ||
+        documentsRef.current.every((document) => document.id !== targetDocument.id)) {
       return;
     }
 
@@ -4151,6 +4158,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       });
 
       const closingDocument = documents[closingIndex];
+      if (protectedClipboardOrigin.current === documentId) {
+        clipboardEditRef.current = null;
+        protectedClipboardOrigin.current = null;
+      }
       const nextDocuments = documents.filter((document) => document.id !== documentId);
       const fallbackIndex = Math.min(closingIndex, nextDocuments.length - 1);
       const fallbackDocument = fallbackIndex >= 0 ? nextDocuments[fallbackIndex] : null;
@@ -4210,10 +4221,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       });
       setStatus(nextDocuments.length > 0 ? "" : "Sélectionnez un PDF local.");
       releasePdfDocument(closingDocument);
-      if (nextDocuments.length === 0) {
-        void clearStoredDocuments();
-      } else {
-        void removeStoredDocument(documentId);
+      if (closingDocument.source.type === "web" && !closingDocument.sessionOnly) {
+        void removeStoredDocument(documentId).then((removed) => {
+          if (!removed) setStorageWarning("Le retrait de la copie locale n’a pas pu être confirmé. Vérifiez le stockage de ce profil.");
+        });
       }
     },
     [documents, organizationPlans],
@@ -4364,6 +4375,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const currentPlan = organizationPlans[activeDocument.id] ?? createInitialPagePlan(activeDocument.id, activeDocument.fileName, activeDocument.pageCount);
       const nextPlan = updatePlan(currentPlan);
       const sourceIds = new Set([activeDocument.id, ...nextPlan.pages.map((page) => page.sourceDocumentId)]);
+      if (!activeDocument.sessionOnly && documentsRef.current.some((doc) => doc.sessionOnly && sourceIds.has(doc.id))) {
+        setExportFeedback({ kind: "warning", message: "Les pages protégées peuvent être ajoutées à un plan ouvert en session temporaire." });
+        return;
+      }
       if (isPlanModified(nextPlan, activeDocument.pageCount) && [...sourceIds].some((id) =>
         getDocumentEditingState(pdfEditsByDocument, id).edits.some((edit) => edit.type === "form_field" || edit.type === "form_lock"))) {
         setExportFeedback({ kind: "warning", message: "Formulaires après organisation — WIP. Organisation annulée : annulez d’abord les modifications de formulaire, ou enregistrez puis rouvrez le PDF avant de réorganiser ses pages." });
@@ -4498,6 +4513,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     file: File,
     workingSaveName: string | null = null,
     source: DocumentSource = { type: "web" },
+    sessionOnly?: true,
   ): Promise<OpenPdfDocument> => {
     if (protectedOpeningRef.current) throw new PdfUnlockError("Une ouverture protégée est déjà en cours.");
     let media: OpenPdfDocument["media"] = { kind: "pdf" };
@@ -4522,6 +4538,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       if (typeof initialDocument.getPermissions === "function" && await initialDocument.getPermissions() !== null) {
         await loadingTask.destroy().catch(() => undefined);
         file = await authenticateWorkingFile(file);
+        sessionOnly = true;
         data = new Uint8Array(await file.arrayBuffer());
         loadingTask = pdfjsLib.getDocument({ data });
       }
@@ -4532,6 +4549,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         throw new PdfUnlockError("Le PDF est invalide ou son chiffrement n’est pas pris en charge.");
       }
       file = await authenticateWorkingFile(file);
+      sessionOnly = true;
       data = new Uint8Array(await file.arrayBuffer());
       loadingTask = pdfjsLib.getDocument({ data });
     }
@@ -4548,6 +4566,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         fileName: media.kind === "image" ? originalName : file.name,
         workingSaveName,
         source,
+        sessionOnly,
         file,
         pdfDocument,
         loadingTask,
@@ -4557,8 +4576,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         scrollTop: 0,
         error: null,
       };
-      // The tab/preferences/plan must never refer to a PDF that only exists in RAM.
-      if (source.type === "web" && !await saveStoredDocument(buildViewerSnapshot(openedDocument))) {
+      // Publish restorable tabs only after their initial snapshot attempt.
+      if (source.type === "web" && !sessionOnly && !await saveStoredDocument(buildViewerSnapshot(openedDocument))) {
         setStorageWarning(DOCUMENT_STORAGE_WARNING);
       }
       return openedDocument;
@@ -4573,6 +4592,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       file: File,
       workingSaveName: string | null = null,
       source: DocumentSource = { type: "web" },
+      sessionOnly?: true,
     ) => {
       const fileName = getUniqueFileName(
         file.name,
@@ -4588,6 +4608,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         uniqueFile,
         workingSaveName,
         source,
+        sessionOnly,
       );
       const usageWarnings = getDocumentUsageWarnings(
         uniqueFile,
@@ -4621,7 +4642,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   } = useDocumentProcessing({
     activeDocument,
     backendUrl,
-    openGeneratedPdfDocument,
+    openGeneratedPdfDocument: (file, sessionOnly) => openGeneratedPdfDocument(file, null, undefined, sessionOnly),
     onFeedback: setExportFeedback,
   });
 
@@ -4646,6 +4667,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setSelectedEditId(null);
     setEyedropperTarget(null);
     setActiveEditingTool("select");
+    clipboardEditRef.current = null;
+    protectedClipboardOrigin.current = null;
     setSignatureImages({});
     setPendingSignatureImageId(null);
     setIsSignatureDialogOpen(false);
@@ -4798,6 +4821,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       setExportFeedback({ kind: "error", message: imageBackgroundError ?? "Transformation du fond en cours. Attendez la fin de l’aperçu avant d’exporter." });
       return false;
     }
+    const document = documents.find((candidate) => candidate.id === documentId);
+    const sessionOnly = document?.sessionOnly;
     setIsExporting(true);
     setExportFeedback(null);
     try {
@@ -4808,7 +4833,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         exportOptions,
         activeDocumentId,
         outputName,
-        saveToOutputDir,
+        saveToOutputDir: !sessionOnly && saveToOutputDir,
         documents,
         organizationPlans,
         editsByDocument: pdfEditsByDocument,
@@ -4851,11 +4876,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const textOverflowMessage = textOverflowWarningCount
         ? ` ${textOverflowWarningCount} zone${textOverflowWarningCount > 1 ? "s" : ""} de texte dépassai${textOverflowWarningCount > 1 ? "ent" : "t"} de ${textOverflowWarningCount > 1 ? "leur" : "son"} cadre. ${textOverflowWarningCount > 1 ? "Leur export a" : "Son export a"} été réalisé en mode best effort.`
         : "";
-      const document = documents.find((candidate) => candidate.id === documentId);
       const desktopSource = document?.saveDestination ?? null;
       const nativeSave = isDesktopRuntime()
         ? hasRedactions || operation === "save_as" || operation === "export"
-          ? await saveDesktopPdfAs(exported.downloadedName, exported.pdfBlob, Boolean(hasRedactions || document?.media?.kind === "image"))
+          ? await saveDesktopPdfAs(exported.downloadedName, exported.pdfBlob, Boolean(hasRedactions || sessionOnly || document?.media?.kind === "image"))
           : desktopSource
             ? await saveDesktopPdf(desktopSource.documentId, exported.pdfBlob)
             : null
@@ -4913,6 +4937,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               isDesktopRuntime() && nativeSave
                 ? { type: "desktop", documentId: nativeSave.documentId }
                 : { type: "web" },
+              sessionOnly,
             );
         setExportFeedback({
           kind:
@@ -5851,7 +5876,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             plan={activeOrganizationPlan}
             selectedPageId={selectedOrganizedPageId}
             outputName={outputName}
-            saveToOutputDir={saveToOutputDir}
+            saveToOutputDir={!activeDocument.sessionOnly && saveToOutputDir}
             isExporting={isExporting}
             exportFeedback={exportFeedback}
             onToggleSelection={toggleOrganizedPageSelection}
@@ -6078,7 +6103,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           className="status-bar__document"
           title={activeDocument?.fileName}
         >
-          {activeDocument?.fileName ?? ""}
+          {activeDocument?.fileName ?? ""}{activeDocument?.sessionOnly ? " · Session temporaire" : ""}
         </span>
         <div className="page-controls" aria-label="Affichage et zoom">
           <label className="viewer-mode-control">

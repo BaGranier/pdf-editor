@@ -18,6 +18,8 @@ export type OpenPdfDocument = {
   fileName: string;
   workingSaveName: string | null;
   source: DocumentSource;
+  /** Protected working copies and their descendants stay outside recovery storage. */
+  sessionOnly?: true;
   /** Set only after a successful Save As; never persisted. */
   saveDestination?: { documentId: string; fileName: string };
   media?: SourceMedia;

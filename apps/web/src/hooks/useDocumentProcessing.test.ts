@@ -49,7 +49,7 @@ describe("document processing orchestration", () => {
     expect(requestOcrPdf).toHaveBeenCalledExactlyOnceWith("http://local-engine", source.file, ocrOptions);
     const output = new File(["result"], "source_OCR.pdf");
     await act(async () => { complete(output); await pending; });
-    expect(openGeneratedPdfDocument).toHaveBeenCalledExactlyOnceWith(output);
+    expect(openGeneratedPdfDocument).toHaveBeenCalledExactlyOnceWith(output, undefined);
     expect(result.current.isOcrProcessing).toBe(false);
     expect(onFeedback.mock.calls.map(([feedback]) => feedback?.kind ?? null)).toEqual([null, "success"]);
   });

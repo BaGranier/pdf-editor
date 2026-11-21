@@ -11,12 +11,12 @@ export type ProcessingFeedback = {
   message: string;
 };
 
-type ProcessingSource = { file: File; fileName: string };
+type ProcessingSource = { file: File; fileName: string; sessionOnly?: true };
 
 type DocumentProcessingOptions = {
   activeDocument: ProcessingSource | null;
   backendUrl: string;
-  openGeneratedPdfDocument: (file: File) => Promise<{ usageWarnings: string[] }>;
+  openGeneratedPdfDocument: (file: File, sessionOnly?: true) => Promise<{ usageWarnings: string[] }>;
   onFeedback: (feedback: ProcessingFeedback | null) => void;
 };
 
@@ -53,7 +53,7 @@ export function useDocumentProcessing({
         );
         let usageWarnings: string[];
         try {
-          ({ usageWarnings } = await openGeneratedPdfDocument(returnedFile));
+          ({ usageWarnings } = await openGeneratedPdfDocument(returnedFile, sourceDocument.sessionOnly));
         } catch {
           throw new Error("Le serveur n'a pas produit un PDF valide.");
         }

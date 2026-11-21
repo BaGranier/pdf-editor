@@ -13,7 +13,7 @@ export async function unlockWorkingPdf(file: File, backendUrl: string,
     password = null;
     let response: Response;
     try {
-      response = await fetch(`${backendUrl}/pdf/unlock`, { method: "POST", body: form });
+      response = await fetch(`${backendUrl}/pdf/unlock`, { method: "POST", cache: "no-store", body: form });
     } catch {
       throw new PdfUnlockError("Impossible de contacter le moteur PDF local.");
     } finally { form.delete("password"); }

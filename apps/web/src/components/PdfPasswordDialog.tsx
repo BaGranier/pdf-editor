@@ -24,7 +24,8 @@ export function PdfPasswordDialog({ error, onAnswer }: {
   }}>
     <section className="ocr-dialog" role="dialog" aria-modal="true" aria-label="PDF protégé">
       <h2>PDF protégé</h2>
-      <p>Ce document nécessite un mot de passe.</p>
+      <p>Session temporaire. La copie déchiffrée reste en mémoire et disparaît de la reprise après fermeture ou rechargement.</p>
+      <p>Pour produire une copie protégée, choisissez le chiffrement dans Fichier → Exporter / Finaliser. Les anciennes copies restaurées ne portent pas d’indicateur de chiffrement. Fermez individuellement les onglets concernés pour retirer leurs copies du stockage de reprise.</p>
       <form className="ocr-dialog__form" onSubmit={answer}>
         <label>Mot de passe<input ref={input} type="password" autoComplete="off" /></label>
         {error ? <p role="alert">{error}</p> : null}
