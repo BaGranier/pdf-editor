@@ -7,6 +7,8 @@ puis impression dans un lecteur externe. Linux/macOS restent WIP.
 
 Décision du gate 006 : **NOT READY**. Ne retirer un point qu'après preuve de
 fermeture ; un test automatique ou un poste dev ne qualifie pas une VM clean.
+La [reprise du 21 novembre 2026](docs/qa/runs/2026-11-21-windows-preview.md)
+consigne les preuves manquantes pour l'artefact exact.
 
 - **Redistribution AGPL** : voie approuvée ; préparer la livraison des sources
   correspondantes et les mentions requises, fermer les notices transitives

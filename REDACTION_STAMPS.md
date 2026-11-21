@@ -35,9 +35,10 @@ occurrence pourrait exposer les pixels originaux. Les commentaires et deltas de
 formulaires ajoutés sont refusés avec un biffage. Les erreurs sont explicites.
 Aucune promesse de conserver une signature cryptographique après modification.
 
-Ce n'est **pas une anonymisation globale** : les métadonnées et les informations
-ailleurs dans le document ne sont pas effacées. L'utilisateur doit choisir toutes
-les zones nécessaires. La sélection native multiligne reste une évolution distincte ;
+Le prévol indique les pages de sortie à contrôler. Les métadonnées, les pièces
+jointes et les informations hors zones restent hors du périmètre de suppression
+garanti et peuvent subsister dans une sortie acceptée. L'utilisateur doit choisir
+toutes les zones nécessaires. La sélection native multiligne reste une évolution distincte ;
 le MVP utilise le tracé rectangulaire. Agrandir les rectangles pour inclure les
 caractères de bordure. Le moteur retire tout caractère dont la boîte intersecte
 une zone, et non uniquement sa portion visuelle.

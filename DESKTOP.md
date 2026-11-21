@@ -92,7 +92,7 @@ lancement n’est pas routé vers la fenêtre existante.
 ## Requalification après EDITOR-FEATURES-EXPORT-PRESENTATION-003
 
 Validation WSL : logique frontend/backend et contrôles statiques portables ;
-voir [QA_EDITOR_EXPORT_PRESENTATION_003.md](QA_EDITOR_EXPORT_PRESENTATION_003.md).
+le rapport 003 n’est pas versionné dans ce checkout.
 **Validation Windows native : PARTIAL au gate 006, sur poste dev uniquement.**
 
 Le gate 006 a rejoué les sauvegardes usuelles et erreurs, l'OCR eng/fra/mixte,
@@ -124,6 +124,10 @@ Rust/Cargo, un compilateur C/C++ ou un Python de développement.
   Ghostscript et QPDF, avec les langues voulues ;
 - LibreOffice est nécessaire aux validations visuelles DOCX qui l’utilisent,
   mais pas à la conversion DOCX exécutée par l'application.
+
+Le shell de développement avec WebView et sidecar a été démarré sous Ubuntu
+22.04.5 LTS. Le bundle, les dialogues de fichiers et l'association `.pdf`
+restent à qualifier pour une diffusion Linux.
 
 Exemple Debian/Ubuntu :
 

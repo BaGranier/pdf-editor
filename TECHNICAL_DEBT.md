@@ -10,6 +10,14 @@ Deskew/orientation automatique et signature cryptographique restent hors MVP.
 Ce document recense les travaux structurels identifiés mais volontairement
 exclus des tickets de stabilisation fonctionnelle.
 
+## Suivi de la stabilisation de novembre 2026
+
+[STAB-2026-11](docs/product/STAB-2026-11.md) relie les observations initiales
+aux correctifs et aux validations disponibles. La qualification du candidat,
+l'impression Windows et les mesures natives restent liées aux gates existants.
+Les limites historiques des autres fonctions restent dans leurs sections
+canoniques ci-dessous.
+
 ## WEB-RESTORE-006 — Restauration navigateur à requalifier
 
 Corrigé par MVP-001 : le PDF est écrit avant publication de son onglet et le

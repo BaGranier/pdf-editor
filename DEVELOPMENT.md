@@ -83,6 +83,11 @@ undo/redo, signature en attente et presse-papiers. L'historique de session est b
 à 100 snapshots. Le crop normalisé `{x,y,width,height}` est non destructif.
 Les documents ouverts par identifiant natif et les destinations Tauri ne sont
 pas restaurés depuis IndexedDB.
+Les ouvertures déchiffrées portent `sessionOnly` et sont exclues des données de
+reprise, tout comme leurs copies rouvertes et leurs sorties OCR. Un plan ou un
+collage ne doit pas transférer du contenu temporaire dans un document restaurable.
+La fermeture retire le seul identifiant concerné. Les anciens enregistrements
+sans marqueur fiable restent consultables et peuvent être retirés onglet par onglet.
 
 Compatibilité à préserver lors d'une évolution :
 

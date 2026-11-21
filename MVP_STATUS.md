@@ -54,8 +54,10 @@ Signature Authenticode hors MVP. **VM clean : À VALIDER MANUELLEMENT**.
 
 ## Prochains tickets
 
-Action unique : installer **cette candidate MVP-004** sur une VM Windows clean et
-effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
+Pour qualifier la candidate MVP-004 historique, l'installer sur une VM Windows
+propre et effectuer la validation manuelle. Pour diffuser la version incluant
+STAB-2026-11, reconstruire le paquet et relever son SHA-256, puis exécuter le
+même gate sur ce nouvel artefact.
 
 ## Journal MVP
 
@@ -64,6 +66,7 @@ effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 - Artefact et VM Windows propre indisponibles dans le runner Linux.
 - Installation Preview et impression native restent à qualifier séparément.
 - Matrice de reprise et preuves attendues consignées dans le rapport de qualification.
+- Les changements d'interface et de reprise exigent une nouvelle candidate pour diffusion.
 
 ### 2026-11-21 — FEAT-PDF-UX-THEMES-NAV-AUDIT
 - Six palettes persistées dans les préférences web, avec compatibilité clair/sombre.
