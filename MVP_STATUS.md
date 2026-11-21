@@ -59,6 +59,12 @@ effectuer la validation manuelle. Aucun MVP-005 ni chantier fonctionnel.
 
 ## Journal MVP
 
+### 2026-11-21 — FEAT-PDF-UX-THEMES-NAV-AUDIT
+- Six palettes persistées dans les préférences web, avec compatibilité clair/sombre.
+- Sept catégories SVG, commandes globales dans l’en-tête et sous-outils accessibles au clavier.
+- Placement commun et scroll interne des menus, avec priorité aux fenêtres modales.
+- Cartographie, parcours QA et feuille de route produit documentés dans le dépôt.
+
 ### 2026-11-20 — FEAT-PDF-LINKS-MULTIPAGE-TOOLTIPS
 - Liens HTTP(S), renvois et signets hiérarchiques intégrés à la navigation PDF.
 - Création et édition avec historique, puis export de liens PDF natifs.

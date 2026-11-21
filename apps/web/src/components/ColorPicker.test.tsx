@@ -18,7 +18,7 @@ describe("ColorPicker", () => {
     const trigger = screen.getByRole("button", { name: "Couleur du dessin" });
     fireEvent.click(trigger);
     expect(screen.getByRole("dialog", { name: "Couleur du dessin palette" })).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Couleur du dessin palette" })).not.toBeInTheDocument();
 
     fireEvent.click(trigger);

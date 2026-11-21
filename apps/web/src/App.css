@@ -1,5 +1,6 @@
 @import "./styles/themes.css";
 @import "./styles/forms.css";
+@import "./styles/floating.css";
 
 * {
   box-sizing: border-box;
@@ -543,45 +544,33 @@ button:focus-visible {
   background: var(--accent);
 }
 
-.insert-menu {
-  position: relative;
-}
-
-.insert-menu__items {
-  position: absolute;
-  z-index: 24;
-  top: calc(100% + 0.35rem);
-  right: 0;
+.file-menu__items {
   display: grid;
-  width: 10rem;
+  width: max-content;
   padding: 0.35rem;
   border: 1px solid var(--border-strong);
   border-radius: 8px;
-  background: var(--surface-bg);
-  box-shadow: 0 12px 30px rgb(15 23 42 / 20%);
 }
 
-.insert-menu__items button {
-  justify-content: flex-start;
+.file-menu__items button {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.55rem;
   border-color: transparent;
   background: transparent;
   text-align: left;
 }
 
-.insert-menu__items button:hover,
-.insert-menu__items button:focus-visible {
+.file-menu__items button:hover:not(:disabled),
+.file-menu__items button:focus-visible {
   background: var(--button-hover);
 }
 
-.file-menu__items {
-  right: auto;
-  left: 0;
-  width: 13rem;
-}
+.file-menu__items button > span:empty { display: none; }
 
 .unsaved-dialog-backdrop {
   position: fixed;
-  z-index: 40;
+  z-index: calc(var(--layer-modal) + 1);
   inset: 0;
   display: grid;
   place-items: center;
@@ -591,6 +580,10 @@ button:focus-visible {
 
 .unsaved-dialog {
   width: min(30rem, 100%);
+  min-width: 0;
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  overflow-wrap: anywhere;
   padding: 1.25rem;
   color: var(--text-primary);
   border: 1px solid var(--border-strong);
@@ -756,7 +749,7 @@ button:focus-visible {
 
 .signature-dialog-backdrop {
   position: fixed;
-  z-index: 30;
+  z-index: var(--layer-modal);
   inset: 0;
   display: grid;
   place-items: center;
@@ -1280,7 +1273,7 @@ button:disabled {
 .ocr-dialog-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: var(--layer-modal);
   display: grid;
   place-items: center;
   padding: 1rem;
@@ -2193,17 +2186,10 @@ button:disabled {
 }
 
 .font-selector__help-popover {
-  position: fixed;
-  z-index: 100;
-  right: max(0.75rem, env(safe-area-inset-right));
-  bottom: max(0.75rem, env(safe-area-inset-bottom));
-  width: min(25rem, calc(100vw - 1.5rem));
+  width: 25rem;
   padding: 0.8rem;
-  color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  background: var(--surface-bg);
-  box-shadow: var(--card-shadow);
   font-size: 0.82rem;
   line-height: 1.4;
 }
@@ -2382,29 +2368,14 @@ button:disabled {
 }
 
 .pdf-text-edit__overflow-tooltip {
-  position: absolute;
-  z-index: 5;
-  bottom: calc(100% + 0.45rem);
-  left: 0;
-  display: none;
-  width: max-content;
-  max-width: min(22rem, 75vw);
+  width: 22rem;
   padding: 0.45rem 0.6rem;
-  color: var(--text-primary);
   border: 1px solid rgb(220 38 38 / 45%);
   border-radius: 5px;
-  background: var(--surface);
-  box-shadow: var(--card-shadow);
   font-family: system-ui, sans-serif;
   font-size: 0.78rem;
   font-weight: 400;
   line-height: 1.35;
-  pointer-events: none;
-}
-
-.pdf-text-edit.has-overflow:hover .pdf-text-edit__overflow-tooltip,
-.pdf-text-edit.is-selected.has-overflow .pdf-text-edit__overflow-tooltip {
-  display: block;
 }
 
 .pdf-text-edit__drag-handle {
@@ -2763,6 +2734,7 @@ button:disabled {
   gap: 0.2rem;
   padding: 0.35rem 0.3rem;
   overflow-y: auto;
+  scrollbar-width: thin;
   border-right: 1px solid var(--border);
   background: var(--surface);
 }
@@ -2981,7 +2953,10 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  min-width: min(31rem, calc(100% - 2rem));
+  width: min(31rem, calc(100% - 2rem));
+  max-height: calc(100% - 1.5rem);
+  flex-wrap: wrap;
+  overflow: auto;
   padding: 0.4rem;
   color: var(--text-primary);
   background: var(--surface-bg);
@@ -2991,7 +2966,7 @@ button:disabled {
 }
 
 .pdf-search-bar input {
-  flex: 1 1 12rem;
+  flex: 1 1 5rem;
   min-width: 0;
   min-height: 2rem;
 }
@@ -3014,10 +2989,9 @@ button:disabled {
 }
 
 .pdf-search-bar__error {
-  position: absolute;
-  top: calc(100% + 0.35rem);
-  right: 0;
-  max-width: 24rem;
+  flex: 1 0 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 0.45rem 0.65rem;
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 11%, var(--surface));
@@ -3262,7 +3236,7 @@ button:disabled {
 .color-picker__trigger { display: inline-flex; width: 2.2rem; min-width: 2.2rem; height: 2rem; min-height: 2rem; align-items: center; justify-content: center; gap: 0.1rem; padding: 0; border-radius: 6px; }
 .color-picker__trigger > span:first-child { width: 0.9rem; height: 0.9rem; border: 1px solid var(--border); border-radius: 50%; background: var(--swatch-color); }
 .color-picker__chevron { color: var(--text-secondary); font-size: 0.66rem; }
-.color-picker__popover { position: fixed; z-index: 70; display: grid; gap: 0.45rem; width: 11.5rem; padding: 0.55rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.color-picker__popover { display: grid; gap: 0.45rem; width: 11.5rem; padding: 0.55rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
 .pdf-freehand-edit, .pdf-freehand-preview { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .pdf-freehand-edit { pointer-events: none; }
 .pdf-freehand-edit.is-selected path { filter: drop-shadow(0 0 2px var(--accent)); }
@@ -3270,7 +3244,8 @@ button:disabled {
 .pdf-freehand-preview { z-index: 18; pointer-events: none; }
 .pdf-text-markup { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; pointer-events: none; }
 .pdf-text-markup--highlight { z-index: 1; }
-.text-markup-toolbar { position: fixed; z-index: 60; display: flex; align-items: center; gap: .2rem; padding: .3rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.text-markup-toolbar { z-index: calc(var(--layer-floating) - 1); display: flex; flex-wrap: wrap; width: max-content; align-items: center; gap: .2rem; padding: .3rem; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+.text-markup-toolbar > button .toolbar-icon { vertical-align: middle; }
 .text-markup-toolbar > button { width: 2rem; min-width: 2rem; min-height: 2rem; padding: 0; }
 
 .pdf-edit-creation-preview {
@@ -3464,13 +3439,14 @@ button:disabled {
 
 @media (max-width: 620px) {
   .toolbar {
-    grid-template-columns: 1fr auto;
-    padding: 0.55rem 0.65rem;
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 0.35rem 0.5rem;
   }
 
+  .toolbar-actions { flex-wrap: wrap; gap: 0.25rem; }
+  .toolbar-actions__spacer,
   .app-brand h1,
-  .save-as-button span,
-  .file-menu {
+  .save-as-button span {
     display: none;
   }
 
@@ -3501,7 +3477,7 @@ button:disabled {
 .image-crop-handle--s { left: 50%; bottom: 0; }
 .image-crop-handle--sw { left: 0; bottom: 0; }
 .image-crop-handle--w { left: 0; top: 50%; }
-.image-crop-actions { position: fixed; z-index: 10000; left: 50%; bottom: 16px; transform: translateX(-50%); max-width: calc(100vw - 32px); display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border-radius: 8px; background: var(--surface-bg); box-shadow: var(--card-shadow); }
+.image-crop-actions { position: fixed; z-index: var(--layer-floating); left: 50%; bottom: 8px; transform: translateX(-50%); max-width: calc(100dvw - 16px); max-height: calc(100dvh - 16px); overflow: auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border-radius: 8px; background: var(--surface-bg); box-shadow: var(--card-shadow); }
 .layer-controls { display: grid; gap: .4rem; padding: .75rem; }
 
 .advanced-export-dialog { max-height: 90vh; overflow: auto; width: min(42rem, 90vw); }
@@ -3526,22 +3502,13 @@ button:disabled {
 .pdf-watermark-edit .pdf-shape-edit__resize { pointer-events: none; display: none; }
 
 .navigation-popover {
-  position: fixed;
-  z-index: 80;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0.4rem;
   width: max-content;
-  max-width: min(27rem, calc(100dvw - 16px));
-  max-height: min(70dvh, calc(100dvh - 16px));
-  overflow: hidden auto;
   padding: 0.75rem;
-  box-sizing: border-box;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--surface);
-  color: var(--text-primary);
-  box-shadow: 0 8px 28px #0003;
 }
 .navigation-popover button { display: grid; grid-template-columns: 18px minmax(0, 1fr) 14px; column-gap: 0.5rem; row-gap: 0.25rem; align-items: center; text-align: left; min-width: 0; }
 .navigation-popover .toolbar-icon { display: block; width: 18px; height: 18px; }
@@ -3553,30 +3520,13 @@ button:disabled {
 .tool-rail > button[aria-pressed="true"] { box-shadow: inset 3px 0 var(--accent); }
 
 .tool-rail > button { position: relative; }
-.navigation-popover button > span, .navigation-popover > strong {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.navigation-popover p { overflow-wrap: anywhere; }
+.navigation-popover p { max-width: 23rem; margin: 0; }
 .tool-rail-tooltip {
-  position: fixed;
-  z-index: 81;
-  box-sizing: border-box;
   width: max-content;
-  max-width: calc(100dvw - 16px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   padding: .35rem .55rem;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--surface);
-  color: var(--text-primary);
-  box-shadow: 0 4px 14px #0003;
   font-size: .8rem;
-  pointer-events: none;
 }
 .tool-rail .tool-rail__active-marker { position: absolute; top: 0.15rem; right: 0.15rem; width: 12px; height: 12px; }
 

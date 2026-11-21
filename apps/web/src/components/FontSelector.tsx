@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { floatingPortalTarget, useFloatingPosition } from "../hooks/useFloatingPosition";
+import { usePopoverDismiss } from "../hooks/usePopoverDismiss";
 import { BUNDLED_FONTS, PDF_STANDARD_FONTS, resolveFontRef, type FontFaceDescriptor } from "../fonts/catalog";
 import { fontRegistry, type CustomFontRecord } from "../fonts/fontRegistry";
 import type { AddTextStyle } from "../editing/types";
@@ -20,19 +22,11 @@ export function FontSelector({ style, documentFontName, onChange, onLibraryChang
   const helpPopoverRef = useRef<HTMLDivElement | null>(null);
   const refresh = () => void fontRegistry.listCustom().then(setCustomFonts);
   useEffect(refresh, []);
-  useEffect(() => {
-    if (!helpOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setHelpOpen(false); };
-    const closeOnOutsidePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (target && !helpButtonRef.current?.contains(target) && !helpPopoverRef.current?.contains(target)) setHelpOpen(false);
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    window.addEventListener("pointerdown", closeOnOutsidePointerDown);
-    return () => {
-      window.removeEventListener("keydown", closeOnEscape);
-      window.removeEventListener("pointerdown", closeOnOutsidePointerDown);
-    };
+  const panelId = useId();
+  useFloatingPosition(helpOpen, helpButtonRef, helpPopoverRef, "bottom-end", setHelpOpen);
+  usePopoverDismiss(helpOpen, helpButtonRef, helpPopoverRef, setHelpOpen);
+  useLayoutEffect(() => {
+    if (helpOpen) helpPopoverRef.current?.focus({ preventScroll: true });
   }, [helpOpen]);
   const selectedRef = resolveFontRef(style);
   const documentFont: FontFaceDescriptor | null = documentFontName ? {
@@ -65,7 +59,7 @@ export function FontSelector({ style, documentFontName, onChange, onLibraryChang
       </label>
       <div className="font-selector__import-actions">
         <button type="button" onClick={() => inputRef.current?.click()}>+ Ajouter une police…</button>
-        <button ref={helpButtonRef} type="button" className="font-selector__help" aria-label="Comment ajouter une police personnalisée" aria-haspopup="dialog" aria-expanded={helpOpen} onClick={() => setHelpOpen((open) => !open)}>i</button>
+        <button ref={helpButtonRef} type="button" className="font-selector__help" aria-label="Comment ajouter une police personnalisée" aria-haspopup="dialog" aria-expanded={helpOpen} aria-controls={helpOpen ? panelId : undefined} onClick={() => setHelpOpen((open) => !open)}>i</button>
       </div>
       <input
         ref={inputRef}
@@ -106,14 +100,14 @@ export function FontSelector({ style, documentFontName, onChange, onLibraryChang
       ) : null}
       {message ? <p className="font-selector__message" role="status">{message}</p> : null}
       {helpOpen ? createPortal(
-        <section ref={helpPopoverRef} className="font-selector__help-popover" role="dialog" aria-label="Ajouter une police personnalisée" tabIndex={-1}>
+        <section ref={helpPopoverRef} id={panelId} className="floating-surface font-selector__help-popover" role="dialog" aria-label="Ajouter une police personnalisée" tabIndex={-1}>
           <strong>Ajouter une police personnalisée</strong>
           <p>Cliquez sur <b>Ajouter une police…</b>, puis sélectionnez un fichier <code>.ttf</code> ou <code>.otf</code>.</p>
           <p>La police est ajoutée à la bibliothèque locale de l’application et devient disponible pour l’aperçu et l’export PDF. Les polices installées sur votre ordinateur ne sont pas ajoutées automatiquement : importez leur fichier.</p>
           <p>Vérifiez que vous disposez des droits nécessaires pour utiliser et incorporer cette police dans un PDF.</p>
           <details><summary>Où trouver mes fichiers de police ?</summary><p>Windows : C:\\Windows\\Fonts<br />macOS : ~/Library/Fonts ou /Library/Fonts<br />Linux : ~/.local/share/fonts ou /usr/share/fonts</p></details>
         </section>,
-        document.body,
+        floatingPortalTarget(helpButtonRef.current),
       ) : null}
     </div>
   );

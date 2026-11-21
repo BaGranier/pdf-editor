@@ -56,10 +56,6 @@ test("EDIT-SAVE-001 @smoke sauvegarde texte et signature puis nettoie l'état di
   );
   const editLayer = page.getByLabel("Couche d'édition de la page 1");
   const toolbar = page.getByRole("region", { name: "Contrôles PDF" });
-  const textTool = page.getByRole("button", { name: "Ajouter du texte" });
-  const signatureTool = page.getByRole("button", {
-    name: "Ajouter une signature",
-  });
   await expect(saveButton).toBeDisabled();
   await expect(sourceDocument).not.toHaveAttribute("aria-describedby");
   await expect(toolbar.getByText("pdf-small-1-page.pdf")).toBeVisible();
@@ -73,14 +69,11 @@ test("EDIT-SAVE-001 @smoke sauvegarde texte et signature puis nettoie l'état di
     "title",
     "Enregistrer sous… (Ctrl+Shift+S)",
   );
-  await expect(textTool).toHaveAttribute("title", "Ajouter du texte");
-  await expect(signatureTool).toHaveAttribute("title", "Ajouter une signature");
-
-  await textTool.click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   await expect(editLayer).toHaveAttribute("data-active-editing-tool", "add_text");
   await page.keyboard.press("Escape");
   await expect(editLayer).toHaveAttribute("data-active-editing-tool", "select");
-  await textTool.click();
+  await chooseNavigationTool(page, "Ajouter du texte");
   await dragInEditLayer(page, editLayer, { x: 55, y: 80 }, { x: 250, y: 130 });
   await page.getByLabel("Texte ajouté page 1").fill("Cycle sauvegarde PDF");
   await expect(sourceDocument).toHaveAttribute("aria-describedby", /document-dirty-/);

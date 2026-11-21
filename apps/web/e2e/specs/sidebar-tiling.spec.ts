@@ -6,7 +6,7 @@ import { validatePdf } from "../helpers/pdf-validation";
 
 test("sidebar groups: keyboard, single disclosure, clean navigation and narrow dark viewport", async ({ page }, info) => {
   await openApp(page); await openPdf(page, fixtures.onePage);
-  await page.setViewportSize({ width: 760, height: 430 });
+  await page.setViewportSize({ width: 760, height: 275 });
   await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
   const rail = page.getByRole("navigation", { name: "Outils d'édition" });
   await expect(rail.getByRole("button")).toHaveCount(7);
@@ -33,11 +33,12 @@ test("sidebar groups: keyboard, single disclosure, clean navigation and narrow d
   await marking.click(); await page.getByRole("button", { name: "Formes et images", exact: true }).click();
   await expect(marking).toHaveAttribute("aria-expanded", "false");
   const menu = page.getByRole("region", { name: "Outils Formes et images" });
-  const box = await menu.boundingBox(); expect(box && box.y >= 0 && box.y + box.height <= 430).toBeTruthy();
+  const box = await menu.boundingBox(); expect(box && box.y >= 0 && box.y + box.height <= 275).toBeTruthy();
   expect(await menu.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
   await page.keyboard.press("End"); await expect(page.getByRole("button", { name: "Flèche", exact: true })).toBeFocused();
   await page.screenshot({ path: info.outputPath("compact-menu-dark-narrow.png") });
   await page.mouse.click(740, 10); await expect(menu).toBeHidden();
+  await page.setViewportSize({ width: 760, height: 600 });
   await chooseNavigationTool(page, "Filigrane"); await expect(marking).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByLabel("Créer un filigrane")).toBeVisible();
   await page.getByLabel("Texte du filigrane", { exact: true }).fill("BROUILLON");

@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import { floatingPortalTarget, useFloatingPosition } from "../hooks/useFloatingPosition";
+import { usePopoverDismiss } from "../hooks/usePopoverDismiss";
 import { ANNOTATION_COLORS } from "../editing/types";
 
 type ColorPickerProps = {
@@ -16,38 +18,17 @@ export function ColorPicker({ label, value, onChange, onPickColor, eyedropperAct
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
-  const [position, setPosition] = useState({ top: 8, left: 8 });
 
+  const panelId = useId();
+  const expanded = isOpen && !disabled && compact;
   useEffect(() => {
-    if (!isOpen) return;
-    const anchor = triggerRef.current?.getBoundingClientRect();
-    if (!anchor) return;
-    const width = 190;
-    const height = 178;
-    setPosition({
-      top: Math.min(window.innerHeight - height - 8, Math.max(8, anchor.bottom + 6)),
-      left: Math.min(window.innerWidth - width - 8, Math.max(8, anchor.right - width)),
-    });
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        setIsOpen(false);
-        triggerRef.current?.focus();
-      }
-    };
-    const closeOnOutsidePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node | null;
-      if (target && !triggerRef.current?.contains(target) && !popoverRef.current?.contains(target)) setIsOpen(false);
-    };
-    popoverRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
-    window.addEventListener("keydown", closeOnEscape, true);
-    window.addEventListener("pointerdown", closeOnOutsidePointerDown);
-    return () => {
-      window.removeEventListener("keydown", closeOnEscape, true);
-      window.removeEventListener("pointerdown", closeOnOutsidePointerDown);
-    };
-  }, [isOpen]);
+    if (isOpen && !expanded) setIsOpen(false);
+  }, [expanded, isOpen]);
+  useFloatingPosition(expanded, triggerRef, popoverRef, "bottom-end", setIsOpen);
+  usePopoverDismiss(expanded, triggerRef, popoverRef, setIsOpen);
+  useLayoutEffect(() => {
+    if (expanded) popoverRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
+  }, [expanded]);
 
   const controls = (
     <>
@@ -69,10 +50,10 @@ export function ColorPicker({ label, value, onChange, onPickColor, eyedropperAct
 
   return (
     <div className="color-picker color-picker--compact">
-      <button ref={triggerRef} type="button" className="color-picker__trigger" aria-label={label} aria-haspopup="dialog" aria-expanded={isOpen} title={label} disabled={disabled} onClick={() => setIsOpen((current) => !current)} style={{ "--swatch-color": value } as CSSProperties}><span aria-hidden="true" /><span className="color-picker__chevron" aria-hidden="true">▾</span></button>
-      {isOpen ? createPortal(
-        <div ref={popoverRef} className="color-picker__popover" role="dialog" aria-label={`${label} palette`} style={position}>{controls}</div>,
-        document.body,
+      <button ref={triggerRef} type="button" className="color-picker__trigger" aria-label={label} aria-haspopup="dialog" aria-expanded={expanded} aria-controls={expanded ? panelId : undefined} title={label} disabled={disabled} onClick={() => setIsOpen((current) => !current)} style={{ "--swatch-color": value } as CSSProperties}><span aria-hidden="true" /><span className="color-picker__chevron" aria-hidden="true">▾</span></button>
+      {expanded ? createPortal(
+        <div ref={popoverRef} id={panelId} className="floating-surface color-picker__popover" role="dialog" aria-label={`${label} palette`}>{controls}</div>,
+        floatingPortalTarget(triggerRef.current),
       ) : null}
     </div>
   );

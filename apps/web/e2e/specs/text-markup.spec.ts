@@ -30,8 +30,17 @@ test("EDIT-TEXT-MARKUP-001 sélectionne du texte natif, annote et exporte", asyn
   await expect(page.getByRole("toolbar", { name: "Annotations du texte" })).toBeHidden();
 
   await selectPdfText(page, 0, 1);
+  const color = page.getByRole("button", { name: "Couleur de l'annotation", exact: true });
+  await color.click();
+  const palette = page.getByRole("dialog", { name: "Couleur de l'annotation palette" });
+  await expect(palette).toBeVisible();
+  await palette.getByRole("button", { name: "Couleur #dc2626" }).click();
+  await expect(palette).toHaveCount(0);
+  await expect(color).toBeFocused();
   await page.getByRole("button", { name: "Surligner" }).click();
-  expect(await page.locator(".pdf-text-markup--highlight rect").count()).toBeGreaterThan(1);
+  const highlights = page.locator(".pdf-text-markup--highlight rect");
+  expect(await highlights.count()).toBeGreaterThan(1);
+  await expect(highlights.first()).toHaveAttribute("fill", "#dc2626");
 
   await selectPdfText(page, 0, 1);
   await page.getByRole("button", { name: "Souligner" }).click();
@@ -47,7 +56,7 @@ test("EDIT-TEXT-MARKUP-001 sélectionne du texte natif, annote et exporte", asyn
   await page.mouse.click(highlightBox.x + highlightBox.width / 2, highlightBox.y + highlightBox.height / 2);
   await expect(page.getByRole("region", { name: "Propriétés de l'annotation texte" })).toBeVisible();
   await page.getByRole("region", { name: "Propriétés de l'annotation texte" }).getByRole("button", { name: "Couleur de l'annotation", exact: true }).click();
-  await page.getByRole("button", { name: "Couleur #dc2626" }).click();
+  await page.getByRole("button", { name: "Couleur #2563eb" }).click();
 
   await enterOrganizeMode(page);
   await page.getByLabel("Nom du PDF exporté").fill("markups-texte.pdf");

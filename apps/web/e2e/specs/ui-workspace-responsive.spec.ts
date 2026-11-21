@@ -35,8 +35,9 @@ test("UI-WORKSPACE-RESPONSIVE-001 garde le workspace et son footer accessibles a
     await page.setViewportSize(viewport);
     await expect(viewer).toBeVisible();
     await expect(footer).toBeVisible();
-    await page.getByRole("button", { name: "Convertir" }).scrollIntoViewIfNeeded();
-    await expect(page.getByRole("button", { name: "Convertir" })).toBeVisible();
+    await toolRail.getByRole("button", { name: "Conversion", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Convertir", exact: true })).toBeInViewport();
+    await page.keyboard.press("Escape");
 
     const [footerBox, viewerBox, railBox, hasGlobalOverflow] = await Promise.all([
       footer.boundingBox(),
@@ -53,9 +54,11 @@ test("UI-WORKSPACE-RESPONSIVE-001 garde le workspace et son footer accessibles a
     expect(hasGlobalOverflow).toBe(false);
   }
 
-  const commentTool = page.getByRole("button", { name: "Commentaire" });
-  await expect(commentTool).toHaveAttribute("title", "Commentaire");
-  await expect(commentTool).toHaveText("Comment.");
+  const annotations = toolRail.getByRole("button", { name: "Annotations", exact: true });
+  await annotations.hover();
+  await expect(page.getByRole("tooltip")).toHaveText("Annotations");
+  await annotations.click();
+  await expect(page.getByRole("button", { name: "Commentaire", exact: true })).toHaveText("Commentaire");
 });
 
 test("UI-WORKSPACE-RESPONSIVE-001 garde les overlays d'édition alignés après resize et navigation", async ({ page }) => {

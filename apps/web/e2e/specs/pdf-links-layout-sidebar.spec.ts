@@ -199,7 +199,6 @@ test("infobulles et sous-menus contenus, SVG et navigation clavier", async ({ pa
     await marking.hover();
     await expectContained(tooltip);
     await expect(tooltip).toHaveText("Biffage et tampons");
-    await expect(tooltip).toHaveCSS("white-space", "nowrap");
     await page.keyboard.press("Escape");
     await expect(tooltip).toHaveCount(0);
     await page.mouse.move(width - 4, 4);
@@ -213,8 +212,12 @@ test("infobulles et sous-menus contenus, SVG et navigation clavier", async ({ pa
     await expect(editing).toHaveAttribute("aria-expanded", "true");
     await expectContained(panel);
     const long = panel.getByRole("button", { name: "Modifier le texte existant", exact: true });
-    await expect(long.locator("span")).toHaveCSS("white-space", "nowrap");
-    await expect(long.locator("span")).toHaveCSS("text-overflow", "ellipsis");
+    const lines = await long.locator("span").evaluate((label) => {
+      const range = document.createRange();
+      range.selectNodeContents(label);
+      return range.getClientRects().length;
+    });
+    expect(lines).toBe(1);
     await expect(long.locator("svg")).toHaveAttribute("aria-hidden", "true");
     await expect(panel.locator("button > svg:not([data-icon=check])")).toHaveCount(await panel.getByRole("button").count());
     await page.keyboard.press("End");
@@ -229,10 +232,13 @@ test("infobulles et sous-menus contenus, SVG et navigation clavier", async ({ pa
   await editing.press("Space");
   const smallPanel = page.getByRole("region", { name: "Outils Texte" });
   await expectContained(smallPanel);
-  const clipped = smallPanel.getByRole("button", { name: "Modifier le texte existant", exact: true });
-  await expect.poll(() => clipped.locator("span").evaluate((label) => label.scrollWidth > label.clientWidth)).toBe(true);
-  await clipped.hover();
-  await expect(tooltip).toHaveText("Modifier le texte existant");
+  const wrapped = smallPanel.getByRole("button", { name: "Modifier le texte existant", exact: true });
+  await expect(wrapped).toBeVisible();
+  await expect.poll(() => wrapped.locator("span").evaluate((label) => {
+    const range = document.createRange();
+    range.selectNodeContents(label);
+    return range.getClientRects().length;
+  })).toBeGreaterThan(1);
   await expect(page.evaluate(() => document.documentElement.scrollWidth)).resolves.toBe(scrollWidth);
   await page.keyboard.press("Escape");
   await expect(smallPanel).toHaveCount(0);

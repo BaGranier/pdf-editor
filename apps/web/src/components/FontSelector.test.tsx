@@ -18,7 +18,7 @@ describe("FontSelector", () => {
     expect(screen.getByRole("dialog")).toHaveTextContent(".otf");
     expect(screen.getByRole("dialog")).toHaveTextContent("bibliothèque locale");
     expect(screen.getByRole("dialog")).toHaveTextContent("droits nécessaires");
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Ajouter une police personnalisée" })).toBeNull();
     expect(onChange).not.toHaveBeenCalled();
     expect(onLibraryChange).not.toHaveBeenCalled();

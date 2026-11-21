@@ -1,42 +1,10 @@
 import { ToolbarIcon } from "./ToolbarIcon";
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { EditingTool } from "../editing/types";
-import { sidePanelPosition } from "../viewer/floatingPosition";
+import { floatingPortalTarget, useFloatingPosition } from "../hooks/useFloatingPosition";
+import { moveMenuFocus } from "../hooks/usePopoverDismiss";
 import { NAVIGATION_GROUPS, PAGE_TOOLS, type NavigationAction } from "../viewer/navigationGroups";
-
-function useFloatingPosition(
-  enabled: boolean,
-  anchor: RefObject<HTMLElement | null>,
-  panel: RefObject<HTMLElement | null>,
-  centered = false,
-) {
-  const [position, setPosition] = useState({ top: 8, left: 8 });
-  const trigger = anchor.current;
-  useLayoutEffect(() => {
-    const content = panel.current;
-    if (!enabled || !trigger || !content) return;
-    const place = () => {
-      const next = sidePanelPosition(trigger.getBoundingClientRect(), content.getBoundingClientRect(), {
-        width: document.documentElement.clientWidth || window.innerWidth,
-        height: document.documentElement.clientHeight || window.innerHeight,
-      }, centered);
-      setPosition((previous) => previous.top === next.top && previous.left === next.left ? previous : next);
-    };
-    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(place) : null;
-    observer?.observe(content);
-    observer?.observe(trigger);
-    place();
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
-    };
-  }, [centered, enabled, panel, trigger]);
-  return position;
-}
 
 export function SidebarNavigation({ rasterSource = false, activeTool, organizing, disabled, processingDisabled, imageDisabled, onSelect }: {
   rasterSource?: boolean; activeTool: EditingTool; organizing: boolean; disabled: boolean; processingDisabled: boolean; imageDisabled: boolean;
@@ -46,27 +14,25 @@ export function SidebarNavigation({ rasterSource = false, activeTool, organizing
   const [hovered, setHovered] = useState<HTMLButtonElement | null>(null);
   const [focused, setFocused] = useState<HTMLButtonElement | null>(null);
   const [dismissedTooltip, setDismissedTooltip] = useState<HTMLButtonElement | null>(null);
+  const tooltipId = useId();
   const rail = useRef<HTMLElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const tooltip = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement | null>(null);
-  const tooltipTrigger = useRef<HTMLButtonElement | null>(null);
   const group = NAVIGATION_GROUPS.find((item) => item.id === openNavigationGroup);
   const candidate = hovered ?? focused;
-  const label = candidate?.querySelector<HTMLElement>("span");
-  const tooltipVisible = Boolean(candidate?.isConnected && candidate !== dismissedTooltip &&
-    (group ? panel.current?.contains(candidate) && label && label.scrollWidth > label.clientWidth : rail.current?.contains(candidate)));
-  tooltipTrigger.current = tooltipVisible ? candidate : null;
-  const position = useFloatingPosition(Boolean(group), trigger, panel);
-  const tooltipPosition = useFloatingPosition(tooltipVisible, tooltipTrigger, tooltip, true);
-  const close = (restore = false) => {
+  const tooltipVisible = Boolean(candidate?.isConnected && candidate !== dismissedTooltip && rail.current?.contains(candidate));
+  const close = useCallback((restore = false) => {
     setOpenNavigationGroup(null);
     setHovered(null);
     if (restore) {
       setDismissedTooltip(trigger.current);
-      trigger.current?.focus();
+      trigger.current?.focus({ preventScroll: true });
     }
-  };
+  }, []);
+  useFloatingPosition(Boolean(group), trigger.current, panel, "right-start", close);
+  const dismissTooltip = useCallback(() => setDismissedTooltip(candidate), [candidate]);
+  useFloatingPosition(tooltipVisible, candidate, tooltip, "right-center", dismissTooltip);
   const tooltipEvents = {
     onMouseEnter: (event: React.MouseEvent<HTMLButtonElement>) => {
       setDismissedTooltip(null);
@@ -102,12 +68,12 @@ export function SidebarNavigation({ rasterSource = false, activeTool, organizing
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        setDismissedTooltip(tooltipTrigger.current);
+        dismissTooltip();
       }
     };
     window.addEventListener("keydown", escape, true);
     return () => window.removeEventListener("keydown", escape, true);
-  }, [group, tooltipVisible]);
+  }, [dismissTooltip, group, tooltipVisible]);
 
   return <nav ref={rail} className="tool-rail" aria-label="Outils d'édition"
     onKeyDown={(event) => {
@@ -121,7 +87,7 @@ export function SidebarNavigation({ rasterSource = false, activeTool, organizing
     }}>
     {NAVIGATION_GROUPS.map((item) => {
       const active = organizing ? item.id === "pages" : item.tools.some((tool) => tool.id === activeTool);
-      return <button {...tooltipEvents} key={item.id} type="button" aria-label={item.label} aria-expanded={openNavigationGroup === item.id} aria-controls={openNavigationGroup === item.id ? `navigation-${item.id}` : undefined} aria-pressed={active}
+      return <button {...tooltipEvents} key={item.id} type="button" aria-label={item.label} aria-describedby={tooltipVisible && candidate?.getAttribute("aria-label") === item.label ? tooltipId : undefined} aria-expanded={openNavigationGroup === item.id} aria-controls={openNavigationGroup === item.id ? `navigation-${item.id}` : undefined} aria-pressed={active}
         onClick={(event) => {
           trigger.current = event.currentTarget;
           setHovered(null);
@@ -131,15 +97,10 @@ export function SidebarNavigation({ rasterSource = false, activeTool, organizing
         <ToolbarIcon name={item.icon} />{active ? <ToolbarIcon name="check" className="tool-rail__active-marker" /> : null}
       </button>;
     })}
-    {group ? createPortal(<div ref={panel} id={`navigation-${group.id}`} className="navigation-popover" role="region" aria-label={`Outils ${group.label}`} style={position}
+    {group ? createPortal(<div ref={panel} id={`navigation-${group.id}`} className="floating-surface navigation-popover" role="region" aria-label={`Outils ${group.label}`}
       onKeyDown={(event) => {
         if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(true); }
-        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-          event.preventDefault();
-          const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
-          const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-          buttons[event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length]?.focus();
-        }
+        moveMenuFocus(event);
       }}>
       <strong>{group.label}</strong>
       {group.tools.map((entry) => {
@@ -152,7 +113,7 @@ export function SidebarNavigation({ rasterSource = false, activeTool, organizing
             : tool.id === "image"
               ? imageDisabled
               : disabled || (rasterSource && (tool.id === "redaction" || tool.id === "edit_text"));
-        return <button {...tooltipEvents} key={tool.id} type="button" aria-label={tool.label} aria-pressed={active}
+        return <button key={tool.id} type="button" aria-label={tool.label} aria-pressed={active}
           aria-description={"description" in tool ? tool.description : undefined}
           disabled={unavailable} onClick={() => { const changed = onSelect(tool.id); close(changed !== false); }}>
           <ToolbarIcon name={tool.icon} /><span>{tool.label}</span>
@@ -161,9 +122,9 @@ export function SidebarNavigation({ rasterSource = false, activeTool, organizing
         </button>;
       })}
       {group.id === "annotations" ? <p>Sélectionnez du texte dans la page pour surligner, souligner ou barrer.</p> : null}
-    </div>, document.body) : null}
-    {tooltipVisible ? createPortal(<div className="tool-rail-tooltip" ref={tooltip} role="tooltip" style={tooltipPosition}>
+    </div>, floatingPortalTarget(trigger.current)) : null}
+    {tooltipVisible ? createPortal(<div id={tooltipId} className="floating-surface tool-rail-tooltip" ref={tooltip} role="tooltip">
       {candidate?.getAttribute("aria-label")}
-    </div>, document.body) : null}
+    </div>, floatingPortalTarget(candidate)) : null}
   </nav>;
 }

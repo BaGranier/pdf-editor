@@ -757,7 +757,7 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(within(fileMenu).getByRole("menuitem", { name: /Imprimer/ })).toBeInTheDocument();
     expect(screen.queryByText("Sauvegarder")).not.toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     expect(screen.queryByRole("menu", { name: "Fichier" })).not.toBeInTheDocument();
   });
 

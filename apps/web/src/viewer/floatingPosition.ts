@@ -1,19 +1,40 @@
-const EDGE_MARGIN = 8;
+export type FloatingPlacement = "right-start" | "right-center" | "bottom-end" | "top-center";
+export type FloatingAnchor = Pick<DOMRect, "top" | "left" | "right" | "height" | "width">;
+export type FloatingViewport = { width: number; height: number; left?: number; top?: number };
 
-export function sidePanelPosition(
-  anchor: Pick<DOMRect, "top" | "left" | "right" | "height">,
+export const FLOATING_MARGIN = 8;
+
+export function floatingPosition(
+  anchor: FloatingAnchor,
   panel: { width: number; height: number },
-  viewport: { width: number; height: number },
-  centerVertically: boolean,
+  viewport: FloatingViewport,
+  placement: FloatingPlacement,
 ) {
-  const right = anchor.right + EDGE_MARGIN;
-  const left = anchor.left - EDGE_MARGIN - panel.width;
-  const maxLeft = viewport.width - panel.width - EDGE_MARGIN;
-  const maxTop = viewport.height - panel.height - EDGE_MARGIN;
-  const preferredLeft = right <= maxLeft || left < EDGE_MARGIN ? right : left;
-  const preferredTop = anchor.top + (centerVertically ? (anchor.height - panel.height) / 2 : 0);
+  const margin = FLOATING_MARGIN;
+  const minLeft = (viewport.left ?? 0) + margin;
+  const minTop = (viewport.top ?? 0) + margin;
+  const maxLeft = minLeft + viewport.width - 2 * margin - panel.width;
+  const maxTop = minTop + viewport.height - 2 * margin - panel.height;
+  const bottom = anchor.top + anchor.height;
+  let left: number;
+  let top: number;
+  if (placement === "right-start" || placement === "right-center") {
+    const right = anchor.right + margin;
+    const leftSide = anchor.left - margin - panel.width;
+    left = right <= maxLeft || leftSide < minLeft ? right : leftSide;
+    top = anchor.top + (placement === "right-center" ? (anchor.height - panel.height) / 2 : 0);
+  } else {
+    const below = bottom + margin;
+    const above = anchor.top - margin - panel.height;
+    const preferTop = placement === "top-center";
+    const first = preferTop ? above : below;
+    const second = preferTop ? below : above;
+    const fits = (y: number) => y >= minTop && y <= maxTop;
+    top = fits(first) || !fits(second) ? first : second;
+    left = preferTop ? anchor.left + (anchor.width - panel.width) / 2 : anchor.right - panel.width;
+  }
   return {
-    left: Math.max(EDGE_MARGIN, Math.min(preferredLeft, maxLeft)),
-    top: Math.max(EDGE_MARGIN, Math.min(preferredTop, maxTop)),
+    left: Math.max(minLeft, Math.min(left, maxLeft)),
+    top: Math.max(minTop, Math.min(top, maxTop)),
   };
 }

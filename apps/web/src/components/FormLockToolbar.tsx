@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { floatingPortalTarget, useFloatingPosition } from "../hooks/useFloatingPosition";
+import { usePopoverDismiss } from "../hooks/usePopoverDismiss";
 
 function LockIcon({ locked }: { locked: boolean }) {
   return (
@@ -24,7 +27,8 @@ export function FormLockToolbar({
   onUnlockPdf: () => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const rootRef = useRef<HTMLElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const effectiveLocked = uiLocked || pdfLocked;
   const stateLabel = pdfLocked
     ? "Formulaire verrouillé dans le PDF"
@@ -32,48 +36,39 @@ export function FormLockToolbar({
       ? "Formulaire verrouillé"
       : "Formulaire modifiable";
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) setIsOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
+  const panelId = useId();
+  useFloatingPosition(isOpen, triggerRef, popoverRef, "bottom-end", setIsOpen);
+  usePopoverDismiss(isOpen, triggerRef, popoverRef, setIsOpen);
+  useLayoutEffect(() => {
+    if (isOpen) popoverRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
   }, [isOpen]);
 
   const selectUiMode = (locked: boolean) => {
     if (pdfLocked) return;
     onSetUiLocked(locked);
     setIsOpen(false);
+    triggerRef.current?.focus({ preventScroll: true });
   };
 
   return (
-    <section ref={rootRef} className="pdf-form-lock-toolbar" aria-label="Contrôle du formulaire">
+    <section className="pdf-form-lock-toolbar" aria-label="Contrôle du formulaire">
       <button
         type="button"
+        ref={triggerRef}
         className="pdf-form-lock-control"
         data-lock-icon={effectiveLocked ? "closed" : "open"}
         aria-label={stateLabel}
         aria-pressed={effectiveLocked}
         aria-haspopup="dialog"
         aria-expanded={isOpen}
+        aria-controls={isOpen ? panelId : undefined}
         title={stateLabel}
         onClick={() => setIsOpen((current) => !current)}
       >
         <LockIcon locked={effectiveLocked} />
       </button>
-      {isOpen ? (
-        <div className="pdf-form-lock-popover" role="dialog" aria-label="Mode d’édition du formulaire">
+      {isOpen ? createPortal(
+        <div ref={popoverRef} id={panelId} className="floating-surface pdf-form-lock-popover" role="dialog" aria-label="Mode d’édition du formulaire">
           <strong>Formulaire</strong>
           <p>{stateLabel}.</p>
           <div role="radiogroup" aria-label="État de l’édition">
@@ -93,7 +88,8 @@ export function FormLockToolbar({
               <button type="button" onClick={() => { onRequestPdfLock(); setIsOpen(false); }}>Verrouiller le PDF pour l'export</button>
             )}
           </div>
-        </div>
+        </div>,
+        floatingPortalTarget(triggerRef.current),
       ) : null}
     </section>
   );

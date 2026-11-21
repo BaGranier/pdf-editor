@@ -23,6 +23,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useId,
   useMemo,
   useReducer,
   useRef,
@@ -35,6 +36,8 @@ import {
   type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
+import { floatingPortalTarget, useFloatingPosition } from "./hooks/useFloatingPosition";
+import { moveMenuFocus, usePopoverDismiss } from "./hooks/usePopoverDismiss";
 import * as pdfjsLib from "pdfjs-dist";
 import type {
   PDFDocumentProxy,
@@ -255,6 +258,7 @@ function CommentInspector({ edit, onUpdate, onDelete }: { edit: PdfCommentEdit; 
 type SidebarKeyTarget = "file-input" | string | null;
 type ViewerFocusTarget = "viewer" | null;
 type FocusTarget = SidebarKeyTarget | ViewerFocusTarget;
+type TextMarkupSelection = { page: number; rects: PdfRect[]; anchor: Range };
 
 function clampZoom(value: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.round(value * 100) / 100));
@@ -908,7 +912,7 @@ function PdfPageCanvas({
               const rects = selectionClientRectsToPdfRects(pageRects, surfaceBounds, viewport);
               const anchor = range.getBoundingClientRect();
               if (rects.length === 0 || anchor.width < 1) return;
-              window.dispatchEvent(new CustomEvent("pdf-text-markup-selection", { detail: { page: sourcePageNumber, rects, top: anchor.top, left: anchor.left + anchor.width / 2 } }));
+              window.dispatchEvent(new CustomEvent("pdf-text-markup-selection", { detail: { page: sourcePageNumber, rects, anchor: range.cloneRange() } }));
             }, 0);
           }}
         /> : null}
@@ -2790,7 +2794,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [pageView, setPageView] = useState<"list" | "grid">("list");
   const [isPropertiesPanelVisible, setIsPropertiesPanelVisible] = useState(true);
   const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(272);
-  const [textMarkupSelection, setTextMarkupSelection] = useState<{ page: number; rects: PdfRect[]; top: number; left: number } | null>(null);
+  const [textMarkupSelection, setTextMarkupSelection] = useState<TextMarkupSelection | null>(null);
   const [textMarkupColor, setTextMarkupColor] = useState("#eab308");
   const [pendingComment, setPendingComment] = useState<{ page: number; point: import("./editing/types").PdfPoint } | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
@@ -2851,6 +2855,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [isSignatureDialogOpen, setIsSignatureDialogOpen] = useState(false);
   const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
   const fileMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const fileMenuRef = useRef<HTMLDivElement>(null);
+  const fileMenuId = useId();
+  useFloatingPosition(isFileMenuOpen, fileMenuTriggerRef, fileMenuRef, "bottom-end", setIsFileMenuOpen);
+  usePopoverDismiss(isFileMenuOpen, fileMenuTriggerRef, fileMenuRef, setIsFileMenuOpen);
+  useLayoutEffect(() => {
+    if (isFileMenuOpen) fileMenuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
+  }, [isFileMenuOpen]);
   const [isAdvancedExportOpen, setIsAdvancedExportOpen] = useState(false);
   const [saveAsDocumentId, setSaveAsDocumentId] = useState<string | null>(null);
   const [pendingCloseDocumentId, setPendingCloseDocumentId] = useState<
@@ -3761,32 +3772,41 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, [activeDocument, commentAuthorDraft, commentDraft, pendingComment]);
 
   useEffect(() => {
-    const handleSelection = (event: Event) => setTextMarkupSelection((event as CustomEvent<{ page: number; rects: PdfRect[]; top: number; left: number }>).detail);
-    const close = () => setTextMarkupSelection(null);
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") close();
-    };
+    const handleSelection = (event: Event) => setTextMarkupSelection((event as CustomEvent<TextMarkupSelection>).detail);
     window.addEventListener("pdf-text-markup-selection", handleSelection);
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("pdf-text-markup-selection", handleSelection);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
+    return () => window.removeEventListener("pdf-text-markup-selection", handleSelection);
   }, []);
 
   useEffect(() => {
     setTextMarkupSelection(null);
-  }, [activeDocumentId, activeEditingTool]);
+  }, [activeDocumentId, activeEditingTool, viewerMode]);
 
+  const closeMarkupToolbar = useCallback(() => setTextMarkupSelection(null), []);
+  useFloatingPosition(Boolean(textMarkupSelection), textMarkupSelection?.anchor ?? null, textMarkupToolbarRef, "top-center", closeMarkupToolbar);
   useEffect(() => {
     if (!textMarkupSelection) return;
-    const closeOnOutsidePointerDown = (event: globalThis.PointerEvent) => {
-      if (event.target instanceof Node && textMarkupToolbarRef.current?.contains(event.target)) return;
-      setTextMarkupSelection(null);
+    const palette = () => {
+      const id = textMarkupToolbarRef.current?.querySelector('[aria-expanded="true"]')?.getAttribute("aria-controls");
+      return id ? document.getElementById(id) : null;
     };
-    document.addEventListener("pointerdown", closeOnOutsidePointerDown);
-    return () => document.removeEventListener("pointerdown", closeOnOutsidePointerDown);
-  }, [textMarkupSelection]);
+    const outside = (event: globalThis.PointerEvent) => {
+      if (event.target instanceof Node &&
+          !textMarkupToolbarRef.current?.contains(event.target) && !palette()?.contains(event.target)) closeMarkupToolbar();
+    };
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || palette()) return;
+      event.preventDefault();
+      event.stopPropagation();
+      closeMarkupToolbar();
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [closeMarkupToolbar, textMarkupSelection]);
+
 
   const updatePdfEdit = useCallback(
     (edit: PdfEdit, coalesceKey?: string) => {
@@ -5141,11 +5161,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           ? closePdfSearch
           : saveAsDocumentId
           ? cancelSaveAsDialog
-          : isFileMenuOpen || isSignatureDialogOpen || eyedropperTarget !== null || activeEditingTool !== "select" || pendingSignatureImageId !== null || selectedEditId !== null
+          : isSignatureDialogOpen || eyedropperTarget !== null || activeEditingTool !== "select" || pendingSignatureImageId !== null || selectedEditId !== null
             ? () => {
                 if (!requestToolChange()) return;
-                if (isFileMenuOpen) fileMenuTriggerRef.current?.focus();
-                setIsFileMenuOpen(false);
                 setIsSignatureDialogOpen(false);
                 setActiveEditingTool("select");
                 setEyedropperTarget(null);
@@ -5171,7 +5189,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     closePdfSearch,
     copySelectedPdfEdit,
     documents.length,
-    isFileMenuOpen,
     isSignatureDialogOpen,
     isAdvancedExportOpen,
     isActiveDocumentDirty,
@@ -5337,6 +5354,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     if (tool === "signature") setIsSignatureDialogOpen(true);
   };
 
+  const runFileAction = (action: () => void) => {
+    setIsFileMenuOpen(false);
+    fileMenuTriggerRef.current?.focus({ preventScroll: true });
+    action();
+  };
+
   if (isRestoringDocuments) {
     return (
       <AppStateScreen
@@ -5417,25 +5440,35 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             </select>
           </div>
           <div className="toolbar-action-group" aria-label="Fichier">
-            <div className="insert-menu file-menu">
+            <div className="file-menu">
               <button
                 type="button"
                 ref={fileMenuTriggerRef}
                 onClick={() => setIsFileMenuOpen((isOpen) => !isOpen)}
                 aria-haspopup="menu"
                 aria-expanded={isFileMenuOpen}
+                aria-controls={isFileMenuOpen ? fileMenuId : undefined}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown") { event.preventDefault(); setIsFileMenuOpen(true); }
+                }}
               >
                 Fichier <span aria-hidden="true">▾</span>
               </button>
-              {isFileMenuOpen ? (
-                <div className="insert-menu__items file-menu__items" role="menu" aria-label="Fichier">
-                  <button type="button" role="menuitem" onClick={() => { setIsFileMenuOpen(false); setIsImagesPdfOpen(true); }}>Nouveau PDF à partir d’images</button>
-                  {activeDocument?.media?.kind === "image" ? <button type="button" role="menuitem" disabled={activeImagePending && !imageBackgroundError} onClick={() => { setIsFileMenuOpen(false); setIsImageDocumentOpen(true); }}>Éditer le fond image…</button> : null}
+              {isFileMenuOpen ? createPortal(
+                <div ref={fileMenuRef} id={fileMenuId} className="floating-surface file-menu__items" role="menu" aria-label="Fichier"
+                  onKeyDown={(event) => {
+                    if (event.key === "Tab") {
+                      setIsFileMenuOpen(false);
+                      fileMenuTriggerRef.current?.focus({ preventScroll: true });
+                    } else moveMenuFocus(event);
+                  }}>
+                  <button type="button" role="menuitem" onClick={() => runFileAction(() => setIsImagesPdfOpen(true))}>Nouveau PDF à partir d’images</button>
+                  {activeDocument?.media?.kind === "image" ? <button type="button" role="menuitem" disabled={activeImagePending && !imageBackgroundError} onClick={() => runFileAction(() => setIsImageDocumentOpen(true))}>Éditer le fond image…</button> : null}
                   {isDesktopRuntime() ? (
                     <button
                       type="button"
                       role="menuitem"
-                      onClick={saveActiveDocument}
+                      onClick={() => runFileAction(saveActiveDocument)}
                       disabled={!isActiveDocumentDirty || isExporting}
                     >
                       Enregistrer <span aria-hidden="true">{getAppCommandShortcutLabel("file.save")}</span>
@@ -5444,21 +5477,21 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={openActiveSaveAsDialog}
+                    onClick={() => runFileAction(openActiveSaveAsDialog)}
                     disabled={!activeDocument || isExporting}
                   >
                     {activeDocument?.media?.kind === "image" ? "Exporter en PDF…" : "Enregistrer sous…"} <span aria-hidden="true">{getAppCommandShortcutLabel("file.saveAs")}</span>
                   </button>
-                  <button type="button" role="menuitem" disabled={!activeDocument || isExporting} onClick={() => { setIsFileMenuOpen(false); setIsAdvancedExportOpen(true); }}>Exporter / Finaliser…</button>
+                  <button type="button" role="menuitem" disabled={!activeDocument || isExporting} onClick={() => runFileAction(() => setIsAdvancedExportOpen(true))}>Exporter / Finaliser…</button>
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={printActiveDocument}
+                    onClick={() => runFileAction(printActiveDocument)}
                     disabled={!activeDocument || isExporting}
                   >
                     Imprimer (expérimental) <span aria-hidden="true">{isDesktopRuntime() ? getAppCommandShortcutLabel("print.document") : ""}</span>
                   </button>
-                </div>
+                </div>, floatingPortalTarget(fileMenuTriggerRef.current),
               ) : null}
             </div>
           </div>
@@ -6011,11 +6044,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         </aside> : <button type="button" className="properties-panel-toggle" aria-label="Afficher les propriétés" title="Afficher les propriétés" onClick={() => setIsPropertiesPanelVisible(true)}>❮</button>}
       </section>
 
-      {textMarkupSelection ? createPortal(
-        <div ref={textMarkupToolbarRef} className="text-markup-toolbar" role="toolbar" aria-label="Annotations du texte" style={{ top: Math.max(8, textMarkupSelection.top - 46), left: Math.min(window.innerWidth - 230, Math.max(8, textMarkupSelection.left - 100)) }}>
-          <button type="button" title="Surligner" aria-label="Surligner" onClick={() => addTextMarkupEdit("highlight", textMarkupColor)}>🖍</button>
-          <button type="button" title="Souligner" aria-label="Souligner" onClick={() => addTextMarkupEdit("underline", textMarkupColor)}>U̲</button>
-          <button type="button" title="Barrer" aria-label="Barrer" onClick={() => addTextMarkupEdit("strikeout", textMarkupColor)}>S̶</button>
+      {textMarkupSelection && viewerMode !== "presentation" ? createPortal(
+        <div ref={textMarkupToolbarRef} className="floating-surface text-markup-toolbar" role="toolbar" aria-label="Annotations du texte">
+          <button type="button" title="Surligner" aria-label="Surligner" onClick={() => addTextMarkupEdit("highlight", textMarkupColor)}><ToolbarIcon name="highlight" /></button>
+          <button type="button" title="Souligner" aria-label="Souligner" onClick={() => addTextMarkupEdit("underline", textMarkupColor)}><ToolbarIcon name="underline" /></button>
+          <button type="button" title="Barrer" aria-label="Barrer" onClick={() => addTextMarkupEdit("strikeout", textMarkupColor)}><ToolbarIcon name="strikeout" /></button>
           <button type="button" title="Ajouter un lien à la sélection" aria-label="Ajouter un lien à la sélection"
             disabled={textMarkupSelection.rects.length > 256}
             onClick={() => {

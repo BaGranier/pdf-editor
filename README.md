@@ -37,7 +37,7 @@ supporté en production.
   propose Continu, Page unique, Présentation, Double page et Multipage automatique.
 - Liens PDF web et internes, sommaires imprimés contenant de vrais liens et
   signets hiérarchiques. Création, édition et suppression de liens dans
-  **Annotations → Lien**, avec historique et export PDF natif.
+  **Texte → Lien**, avec historique et export PDF natif.
 - Texte ajouté et édition limitée du texte natif, polices locales, signatures
   graphiques, images PNG/JPEG avec crop non destructif, formes et dessin libre.
 - Plans/transparence des objets ajoutés, commentaires, markup et undo/redo.
@@ -63,7 +63,7 @@ l’indique, la position. Les URL HTTP et HTTPS s’ouvrent dans un nouvel ongle
 ou dans le navigateur système sur desktop. Les autres protocoles et les actions
 PDF de lancement ou de script sont ignorés.
 
-Dans **Annotations → Lien**, tracez une zone ou cliquez sur un lien à modifier.
+Dans **Texte → Lien**, tracez une zone ou cliquez sur un lien à modifier.
 Le menu de sélection de texte permet aussi de créer un lien sur plusieurs lignes.
 L’inspecteur enregistre une URL ou un renvoi vers une page source. Les destinations
 nommées et certains types de liens restent consultables en lecture seule. Si une
@@ -76,9 +76,36 @@ le permettent la largeur disponible, leurs dimensions et le zoom PDF. Les deux
 vues utilisent les mêmes miniatures, outils et coordonnées PDF. Le zoom peut
 descendre à 25 %.
 
-La barre d’outils affiche les infobulles au survol et au focus. Les menus restent
-dans la fenêtre et défilent verticalement sur petit écran. Un libellé tronqué
-visuellement conserve son nom accessible complet.
+## Interface et navigation
+
+Le sélecteur **Thème de l’interface** propose Clair, Sombre, Océan, Forêt,
+Prune et Sable. Les pastilles montrent la palette en cours. Le choix s’applique
+immédiatement et est mémorisé localement. Les couleurs du document et de ses
+annotations restent celles du PDF et des réglages d’édition.
+
+Les sept icônes de la barre gauche ouvrent chacune un panneau temporaire.
+Survolez une icône ou atteignez-la avec Tab pour afficher son nom. Ouvrez-la
+avec Entrée ou Espace, naviguez dans les sous-outils avec Tab ou les flèches,
+puis utilisez Échap pour revenir à l’icône. En fenêtre basse, faites défiler le
+rail et le panneau. Si la largeur est très réduite, les libellés passent à la
+ligne. Ouvrir un panneau conserve l’outil en cours.
+
+| Catégorie | Sous-outils |
+| --- | --- |
+| Texte | Ajouter du texte, modifier le texte existant, lien |
+| Formes et images | Image, dessin libre, rectangle, carré, ellipse, cercle, ligne, flèche |
+| Biffage et tampons | Biffer, rechercher et biffer via l’inspecteur, masquage visuel, filigrane unique ou répété, tampon |
+| Signature | Ajouter une signature dessinée ou importée, puis la placer et l’ajuster sur la page |
+| Pages | Miniatures, Organiser ou Revenir à la lecture. L’organiseur expose les opérations sur les pages et la composition |
+| Conversion | OCR, convertir vers les formats pris en charge, nouveau PDF à partir d’images |
+| Annotations | Ajouter et lister les commentaires. Sélectionnez du texte dans la page pour le surligner, le souligner ou le barrer |
+
+La sélection, l’ouverture, l’enregistrement et l’historique restent dans
+l’en-tête. **Fichier** donne accès à l’export et à l’impression expérimentale.
+Les onglets changent de document. Le mode de lecture et le zoom restent
+disponibles en bas de la fenêtre. Ctrl+F ouvre la recherche.
+La [cartographie des anciens accès et l’inventaire des menus](docs/QA_THEMES_NAV_OVERLAYS.md)
+détaillent les points de contrôle de cette évolution.
 
 ## PDF protégés
 

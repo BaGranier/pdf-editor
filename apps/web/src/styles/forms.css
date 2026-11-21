@@ -60,10 +60,7 @@
 .pdf-form-lock-control svg { display: block; width: 1.1rem; height: 1.1rem; }
 .pdf-form-lock-control:focus-visible { outline: 2px solid var(--selection); outline-offset: 2px; }
 .pdf-form-lock-popover {
-  position: absolute;
-  top: calc(100% + .35rem);
-  right: 0;
-  width: min(18rem, calc(100vw - 2rem));
+  width: 18rem;
   padding: .65rem;
   border: 1px solid var(--border);
   border-radius: .5rem;

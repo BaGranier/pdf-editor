@@ -16,6 +16,7 @@ export type ToolbarIconName =
   | "pencil" | "shield" | "image" | "edit-text"
   | "redaction" | "visual-mask" | "watermark" | "stamp"
   | "rectangle" | "square" | "ellipse" | "circle" | "line" | "arrow"
+  | "highlight" | "underline" | "strikeout"
   | "read" | "check" | "list" | "chevron-left" | "chevron-right";
 
 export function ToolbarIcon({ name, className = "" }: { name: ToolbarIconName; className?: string }) {
@@ -48,6 +49,9 @@ export function ToolbarIcon({ name, className = "" }: { name: ToolbarIconName; c
       {name === "line" ? <path d="m3 17 14-14" /> : null}
       {name === "arrow" ? <path d="m3 17 14-14M8 3h9v9" /> : null}
       {name === "read" ? <><path d="M4 2h9l3 3v13H4zM12 2v4h4M7 10h6M7 14h6" /></> : null}
+      {name === "highlight" ? <path d="m5 11 7-7 4 4-7 7H5v-4Zm0 4-2 2h5m2-11 4 4" /> : null}
+      {name === "underline" ? <path d="M5 3v7a5 5 0 0 0 10 0V3M4 18h12" /> : null}
+      {name === "strikeout" ? <path d="M15 5c-1-1-3-2-5-2-3 0-5 1.5-5 3.5 0 4 10 2 10 7 0 2-2 3.5-5 3.5-2 0-4-1-5-2M3 10h14" /> : null}
       {name === "list" ? <path d="M3 4h14M3 10h14M3 16h14" /> : null}
       {name === "chevron-left" ? <path d="m12 4-6 6 6 6" /> : null}
       {name === "chevron-right" ? <path d="m8 4 6 6-6 6" /> : null}

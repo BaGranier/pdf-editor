@@ -1,0 +1,27 @@
+:root {
+  --layer-floating: 50;
+  --layer-tooltip: 51;
+  --layer-modal: 80;
+}
+
+.floating-surface {
+  position: fixed;
+  z-index: var(--layer-floating);
+  box-sizing: border-box;
+  max-width: var(--floating-width, calc(100dvw - 16px));
+  max-height: var(--floating-height, calc(100dvh - 16px));
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+  color: var(--text-primary);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.floating-surface[role="tooltip"] {
+  z-index: var(--layer-tooltip);
+  pointer-events: none;
+}

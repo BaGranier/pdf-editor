@@ -7,6 +7,8 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { createPortal } from "react-dom";
+import { floatingPortalTarget, useFloatingPosition } from "../hooks/useFloatingPosition";
 import type { PageViewport } from "pdfjs-dist";
 import {
   getMinimumTextRectSize,
@@ -49,6 +51,10 @@ export function TextEditBlock({
 }: TextEditBlockProps) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const overflowTooltipId = useId();
+  const blockRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLSpanElement>(null);
+  const [hovered, setHovered] = useState(false);
+  const [tooltipOffscreen, setTooltipOffscreen] = useState(false);
   const [draftText, setDraftText] = useState(edit.text);
   const [draftRect, setDraftRect] = useState(edit.rect);
   const [hasOverflow, setHasOverflow] = useState(false);
@@ -67,6 +73,16 @@ export function TextEditBlock({
   const interactionRectRef = useRef(edit.rect);
   const style = pdfRectToViewportStyle(viewport, draftRect);
   const minimumSize = getMinimumTextRectSize(edit.style.fontSize);
+  const showTooltip = hasOverflow && (selected || hovered);
+  useEffect(() => { if (!showTooltip) setTooltipOffscreen(false); }, [showTooltip]);
+  useFloatingPosition(showTooltip, blockRef, tooltipRef, "top-center");
+  useEffect(() => {
+    const block = blockRef.current;
+    if (!showTooltip || !block || typeof IntersectionObserver !== "function") return;
+    const observation = new IntersectionObserver(([entry]) => setTooltipOffscreen(!entry.isIntersecting));
+    observation.observe(block);
+    return () => observation.disconnect();
+  }, [showTooltip]);
 
   onChangeTextRef.current = onChangeText;
 
@@ -227,15 +243,13 @@ export function TextEditBlock({
 
   return (
     <div
+      ref={blockRef}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       className={`${selected ? "pdf-text-edit is-selected" : "pdf-text-edit"}${hasOverflow ? " has-overflow" : ""}`}
       data-text-edit-id={edit.id}
       data-text-overflow={hasOverflow ? "true" : "false"}
-      aria-describedby={hasOverflow ? overflowTooltipId : undefined}
-      title={
-        hasOverflow
-          ? "Le texte dépasse de cette zone. Agrandissez la zone ou réduisez la taille du texte."
-          : undefined
-      }
+      aria-describedby={showTooltip ? overflowTooltipId : undefined}
       style={{
         left: style.left,
         top: style.top,
@@ -289,15 +303,17 @@ export function TextEditBlock({
         }}
         onMouseDown={(event) => event.stopPropagation()}
       />
-      {hasOverflow ? (
+      {showTooltip ? createPortal(
         <span
+          ref={tooltipRef}
           id={overflowTooltipId}
-          className="pdf-text-edit__overflow-tooltip"
+          style={{ visibility: tooltipOffscreen ? "hidden" : undefined }}
+          className="floating-surface pdf-text-edit__overflow-tooltip"
           role="tooltip"
         >
           Le texte dépasse de cette zone. Agrandissez la zone ou réduisez la
           taille du texte.
-        </span>
+        </span>, floatingPortalTarget(blockRef.current),
       ) : null}
       {selected
         ? RESIZE_HANDLES.map((handle) => (

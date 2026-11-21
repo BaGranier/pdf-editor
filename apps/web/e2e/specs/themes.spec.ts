@@ -4,12 +4,17 @@ import { chooseNavigationTool, fixtures, getLocalState, openApp, openPdf } from 
 test("six palettes préservent la page, l’outil, les couleurs PDF et les préférences", async ({ page }, info) => {
   await page.emulateMedia({ colorScheme: "light" });
   await openApp(page);
-  await openPdf(page, fixtures.onePage);
+  await openPdf(page, fixtures.conversionText);
   const selector = page.getByRole("combobox", { name: "Thème de l’interface" });
   await expect(selector.locator("option")).toHaveText(["Clair", "Sombre", "Océan", "Forêt", "Prune", "Sable"]);
+  await expect(page.locator(".viewer .pdf-page").first()).toHaveAttribute("data-render-state", "ready");
   const canvas = page.locator(".viewer canvas").first();
   await expect(canvas).toBeVisible();
-  const image = await canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL());
+  const image = await canvas.evaluate((node: HTMLCanvasElement) => {
+    const pixels = node.getContext("2d")!.getImageData(0, 0, node.width, node.height).data;
+    if (!pixels.some((channel, index) => index % 4 === 0 && channel < 100)) throw new Error("PDF de test sans texte rendu.");
+    return node.toDataURL();
+  });
   await expect(page.locator("main")).toHaveAttribute("data-persistence-state", "saved");
   await chooseNavigationTool(page, "Ajouter du texte");
   const layer = page.getByLabel("Couche d'édition de la page 1");
@@ -19,6 +24,7 @@ test("six palettes préservent la page, l’outil, les couleurs PDF et les préf
   const panel = page.getByRole("region", { name: "Outils Texte" });
 
   for (const theme of ["light", "dark", "ocean", "forest", "plum", "sand"]) {
+    if (theme !== "light") await text.click();
     await selector.selectOption(theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     await expect(layer).toHaveAttribute("data-active-editing-tool", "add_text");
@@ -61,16 +67,21 @@ test("six palettes préservent la page, l’outil, les couleurs PDF et les préf
     expect(await canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL())).toBe(image);
     if (["light", "dark", "ocean", "sand"].includes(theme)) await page.screenshot({ path: info.outputPath(`theme-${theme}.png`) });
     await expect(page.getByRole("button", { name: "Annuler", exact: true })).toBeDisabled();
+    await page.getByRole("button", { name: "Fichier", exact: true }).click();
+    await expect(panel).toHaveCount(0);
+    await page.getByRole("menuitem", { name: "Exporter / Finaliser…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Exporter / Finaliser" });
+    await expect(dialog).toHaveCSS("background-color", colors.background);
+    await dialog.getByRole("button", { name: "Annuler", exact: true }).click();
   }
   expect(backgrounds.size).toBe(6);
-  await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
   await expect(page.getByTitle("Modifications non sauvegardées")).toHaveCount(0);
   await expect.poll(async () => JSON.parse((await getLocalState(page)).preferences ?? "{}").theme).toBe("sand");
   await page.reload();
   await expect(selector).toHaveValue("sand");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "sand");
-  await expect(page.locator(".document-select[aria-current=true]")).toHaveText("pdf-small-1-page.pdf");
+  await expect(page.locator(".document-select[aria-current=true]")).toHaveText("conversion-simple-text.pdf");
   await expect.poll(() => canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL())).toBe(image);
   await openPdf(page, fixtures.fivePages);
   await expect(selector).toHaveValue("sand");
