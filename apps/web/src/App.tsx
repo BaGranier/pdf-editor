@@ -607,26 +607,26 @@ function PdfPageCanvas({
       return;
     }
     const controller = new AbortController();
-    let cancelled = false;
     setNativeTextIndexed(false);
     setNativeTextSpans([]);
     setNativeTextError(null);
-    void loadNativeTextPage(backendUrl, sourceFile, sourcePageNumber, controller.signal)
-      .then((spans) => {
-        if (!cancelled) {
+    // A page can be unmounted during the effect setup cycle. Skip requests
+    // whose cleanup already ran, including React's Strict Mode effect replay.
+    queueMicrotask(() => {
+      if (controller.signal.aborted) return;
+      void loadNativeTextPage(backendUrl, sourceFile, sourcePageNumber, controller.signal)
+        .then((spans) => {
+          if (controller.signal.aborted) return;
           setNativeTextSpans(spans);
           setNativeTextIndexed(true);
-        }
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        if (!cancelled) {
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
           setNativeTextError(error instanceof Error ? error.message : "Analyse du texte impossible.");
           setNativeTextIndexed(true);
-        }
-      });
+        });
+    });
     return () => {
-      cancelled = true;
       controller.abort();
       clearNativeTextCache(sourceFile);
       setNativeTextSpans([]);
