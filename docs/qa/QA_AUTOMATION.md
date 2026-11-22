@@ -486,10 +486,12 @@ node scripts/windows-qa-cdp.cjs integration-004
 ./scripts/windows-clean-qa.ps1 -Action Close
 ```
 
-`windows-clean-qa.ps1` cible le NSIS **0.1.0 x64** au chemin de build actuel,
-installe dans `data/output/windows-qa-004/installation été QA` et lance avec
-PATH Windows seul, profil WebView2/temp QA et CDP loopback 9222. Adapter ce chemin
-si la version de build change ; le JSON d'installation est marqué poste dev.
+`windows-clean-qa.ps1` cible le NSIS x64 correspondant à la version Tauri.
+Depuis la racine, passer `-Installer` pour tester la copie exacte d'un kit.
+Le helper relève le SHA-256 du fichier lancé, installe dans
+`data/output/windows-qa-004/installation été QA` et lance avec PATH Windows
+seul, profil WebView2/temp QA et CDP loopback 9222. Le JSON d'installation
+identifie la portée poste dev.
 `files` utilise les vrais dialogues, annulation, destination Unicode et overwrite.
 `integration-004` couvre crop/resize, assets partagés, profils et mémoire.
 

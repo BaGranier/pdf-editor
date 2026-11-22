@@ -1,9 +1,18 @@
 # PDF Editor — MVP Status
 
-Dernière mise à jour : 2026-11-02
+Dernière mise à jour : 2026-11-23
 Version cible : MVP Preview Windows x64 / Tauri
 
-## État
+## WIN-RELEASE-002 — 23 novembre 2026
+
+**0.2.0 x64, candidate de diagnostic installée sur VM de développement.**
+La diffusion reste bloquée par Save As volumineux et la qualification sur
+machine vierge. L'impression intégrée reste ouverte pour la diffusion
+générale. Le plafond Preview de 25 Mio s'applique toujours au PDF généré
+pour Save.
+Voir le [rapport de qualification](../qa/runs/2026-11-23-windows-release-qualification.md) pour l'identité du paquet et les preuves.
+
+## État historique de MVP-004
 
 MVP : RELEASE CANDIDATE — **PRÊTE POUR VALIDATION VM CLEAN**.
 
@@ -43,7 +52,7 @@ SHA-256 : `f207904fcb1521c62460c54f98bbf9169d9b245b70a8d73052a1adb28c1bb735`.
 
 ## Blockers restants
 
-Aucun blocker de préparation MVP. Trois CRT x64 officiels VC\Redist, version
+La préparation du paquet historique MVP-004 avait franchi ses gates automatisés. Trois CRT x64 officiels VC\Redist, version
 homogène 14.44.35211.0, imports/exports et chargement réel vérifiés. Aucun
 NEEDS_REVIEW dans l'inventaire courant. Voir les [preuves de redistribution](../architecture/THIRD_PARTY_NOTICES.md).
 
@@ -54,12 +63,19 @@ Signature Authenticode hors MVP. **VM clean : À VALIDER MANUELLEMENT**.
 
 ## Prochains tickets
 
-Pour qualifier la candidate MVP-004 historique, l'installer sur une VM Windows
-propre et effectuer la validation manuelle. Pour diffuser la version incluant
-STAB-2026-11, reconstruire le paquet et relever son SHA-256, puis exécuter le
-même gate sur ce nouvel artefact.
+Pour la candidate 0.2.0, exécuter le gate sur le SHA-256 exact dans une VM
+Windows propre. Terminer les parcours P0 partiels du rapport. Le paquet
+MVP-004 reste une référence historique.
 
 ## Journal MVP
+
+### 2026-11-23 — WIN-RELEASE-002
+
+- NSIS 0.2.0 x64 construit avec le sidecar Windows sur le commit de build identifié.
+- Installateur exact testé sur la VM de développement avec SHA-256 mesuré.
+- Requêtes redondantes de texte natif et encodage de la fixture filigrane corrigés.
+- Save natif nominal et OCR embarqué vérifiés. Save As volumineux échoue dans WebView2, VM propre et impression intégrée ouvertes.
+- Matrice, preuves et limites dans le [rapport](../qa/runs/2026-11-23-windows-release-qualification.md).
 
 ### 2026-11-21 — STAB-2026-11
 - Candidat historique identifié par son commit de build et son hash attendu.

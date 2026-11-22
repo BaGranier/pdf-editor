@@ -10,11 +10,16 @@ fermeture ; un test automatique ou un poste dev ne qualifie pas une VM clean.
 La [reprise du 21 novembre 2026](../qa/runs/2026-11-21-windows-preview.md)
 consigne les preuves manquantes pour l'artefact exact.
 
+La [campagne WIN-RELEASE-002](../qa/runs/2026-11-23-windows-release-qualification.md) a produit et testé un NSIS
+0.2.0 sur VM de développement. La décision de diffusion générale reste
+**NOT READY**. La sortie d'impression intégrée et les P0 sur machine propre
+restent à qualifier sur ce paquet exact.
+
 - **Redistribution AGPL** : voie approuvée ; préparer la livraison des sources
   correspondantes et les mentions requises, fermer les notices transitives
   MuPDF/codecs, Rust et npm, et vérifier les droits MSVC CRT. Voir la politique
   dans le [contrat Desktop](../architecture/DESKTOP.md).
-- **VM clean** (`ENV`, aucune VM accessible) : NSIS interactif, raccourcis/menu,
+- **VM clean** (`ENV`, aucune VM vierge accessible) : NSIS interactif, raccourcis/menu,
   absence d'outils dev, OCR eng/fra/mixte réseau coupé, WebView2 absent online
   et échec offline lisible, upgrade et désinstallation sans descendants/ports.
 - **Fichiers et OS sur l'artefact final** : fermer Save As sur chemin >260 et

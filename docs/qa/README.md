@@ -5,6 +5,7 @@ commandes et les critères de réussite. Le [statut Preview](../product/MVP_STAT
 porte le verdict du candidat exact. Le [gate de diffusion](../product/NEXT_STEPS.md)
 porte les obligations supplémentaires.
 
+- [23 novembre 2026 — Qualification Windows 0.2.0](runs/2026-11-23-windows-release-qualification.md)
 - [21 novembre 2026 — Gate Windows STAB-2026-11](runs/2026-11-21-windows-preview.md)
 - [Thèmes et menus](../QA_THEMES_NAV_OVERLAYS.md)
 - [Images](../QA_IMAGE_DOCUMENTS.md)

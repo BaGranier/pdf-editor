@@ -28,6 +28,16 @@ preuves courantes de [MVP_STATUS.md](../product/MVP_STATUS.md).
 Build MSVC, bundles MSI/NSIS et parcours depuis une installation NSIS ont été
 exécutés ; la qualification des autres DPI et du multi-écran reste ouverte.
 
+Sur Windows x64, exécuter le packaging sous PowerShell natif avec Visual Studio
+Build Tools (MSVC x64 et Windows SDK), Rust x64 MSVC, Python 3.11 et les
+dépendances npm/uv verrouillées. WSL sert au développement Web/Python. Depuis
+la racine, `npm --prefix apps/desktop run desktop:build -- --bundles nsis -- --locked`
+reconstruit le sidecar et le NSIS. Après `release:sources`, le kit et le
+manifeste sont dans `data/output/releases/windows/<version>/`.
+WebView2 Evergreen est vérifié au démarrage installé. Son bootstrapper a besoin
+du réseau si le runtime est absent. Les langues OCR embarquées sont vérifiées
+séparément avec des PDF synthétiques.
+
 ## Architecture retenue
 
 L’intégration native vit dans `apps/desktop`, tandis que `apps/web` reste le
