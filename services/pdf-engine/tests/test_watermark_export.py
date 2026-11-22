@@ -273,7 +273,7 @@ def test_tiled_geometry_matches_browser_contract():
         (
             Path(__file__).resolve().parents[3]
             / "apps/web/src/editing/watermarkTiling.cases.json"
-        ).read_text()
+        ).read_text(encoding="utf-8")
     )
     font = fitz.Font(
         fontfile=str(
