@@ -21,7 +21,10 @@ import tomllib
 import shutil
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "data/output/release-006"
+PRODUCT_VERSION = json.loads(
+    (ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text("utf-8")
+)["version"]
+OUT = ROOT / "data/output/releases/windows" / PRODUCT_VERSION
 NOTICES = ROOT / "services/pdf-engine/build/redistribution"
 FONT_NOTICE = "docs/architecture/NOTICE.md"
 RELEASE_DOCUMENTS = (
@@ -98,7 +101,7 @@ def prepare(*, final: bool = False) -> dict:
         rows.append(dict(name=name, version=version, role=role, license=license, upstream=upstream,
                          form=form, notices=notice, correspondingSource=source, status=status))
 
-    add("PDF Studio Local", "0.1.0", "application", "AGPL-3.0", "source commit in RELEASE_MANIFEST.json", "Tauri frontend and shell + FastAPI sidecar", "licenses/application-AGPL-3.0.txt", "complete tracked application tree in sources ZIP")
+    add("PDF Studio Local", PRODUCT_VERSION, "application", "AGPL-3.0", "source commit in RELEASE_MANIFEST.json", "Tauri frontend and shell + FastAPI sidecar", "licenses/application-AGPL-3.0.txt", "complete tracked application tree in sources ZIP")
 
     evidence = json.loads((ROOT / "apps/web/build/frontend-modules.json").read_text("utf-8"))
     names = set()
@@ -220,7 +223,7 @@ def kit() -> dict:
         raise ValueError("Release requires committed tracked sources")
     provenance = json.loads((NOTICES / "build-provenance.json").read_text("utf-8"))
     commit = build_identity(provenance)
-    version = json.loads((ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text("utf-8"))["version"]
+    version = PRODUCT_VERSION
     inventory = json.loads((NOTICES / "inventory.json").read_text("utf-8"))
     target = OUT / f"PDF-Studio-Local_{version}_{commit[:12]}_sources.zip"
     application = subprocess.check_output(["git", "archive", "--format=zip", commit], cwd=ROOT)
@@ -300,7 +303,7 @@ def verify() -> bool:
             with zipfile.ZipFile(path) as archive:
                 if archive.read("SOURCE_COMMIT.txt").decode().strip() != manifest["commit"]:
                     return False
-    if OUT.name in {"mvp-004", "release-006"}:
+    if OUT.name == PRODUCT_VERSION:
         from scripts.windows_crt import verify_payload, sha as byte_sha, require
         native_file = NOTICES / "native-evidence.json"
         require(sha(native_file) == manifest["nativeEvidenceSha256"], "Native evidence changed")
@@ -322,7 +325,7 @@ if __name__ == "__main__":
             valid = verify()
         except (OSError, ValueError, KeyError):
             valid = False
-        print("PASS" if valid else "NEEDS_REVIEW: release/native provenance verification failed; see data/output/release-006")
+        print("PASS" if valid else f"NEEDS_REVIEW: release/native provenance verification failed; see {OUT.relative_to(ROOT)}")
         raise SystemExit(0 if valid else 2)
     result = prepare(final=action == "prepare-final") if action.startswith("prepare") else kit()
     print("Prepared redistribution evidence" if action.startswith("prepare") else json.dumps(result, indent=2))

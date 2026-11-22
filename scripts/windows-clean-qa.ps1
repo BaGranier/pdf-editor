@@ -1,6 +1,7 @@
 param(
     [ValidateSet('Install','Launch','Inspect','Close','Crash','Uninstall')][string]$Action = 'Inspect',
-    [string]$Pdf = 'apps/web/e2e/fixtures/conversion-simple-text.pdf'
+    [string]$Pdf = 'apps/web/e2e/fixtures/conversion-simple-text.pdf',
+    [string]$Installer
 )
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -53,12 +54,18 @@ function App-Processes {
 }
 if ($Action -eq 'Install') {
     if ((App-Processes).Count) { throw 'Close the QA installation first.' }
-    $bundle = Join-Path $repository 'apps/desktop/src-tauri/target/release/bundle/nsis/PDF Studio Local_0.1.0_x64-setup.exe'
+    $config = Get-Content -Raw -LiteralPath (Join-Path $repository 'apps/desktop/src-tauri/tauri.conf.json') | ConvertFrom-Json
+    if (!$Installer) {
+        $Installer = "apps/desktop/src-tauri/target/release/bundle/nsis/PDF Studio Local_$($config.version)_x64-setup.exe"
+    }
+    $bundle = (Resolve-Path -LiteralPath $Installer).ProviderPath
+    if (!$bundle.StartsWith($repository + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'The installer must be inside the repository.' }
+    $installerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $bundle).Hash
     # Silent installation on the development host; never label this clean-VM QA.
     $process = Start-Process -FilePath $bundle -ArgumentList @('/S', ('/D=' + $installation)) -PassThru -WindowStyle Hidden
     $process.WaitForExit()
     if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath $executable)) { throw 'NSIS installation failed.' }
-    [pscustomobject]@{ environment='development host'; scope='silent NSIS'; exitCode=$process.ExitCode; installerBytes=(Get-Item -LiteralPath $bundle).Length; installedBytes=(Get-ChildItem -LiteralPath $installation -Recurse -File | Measure-Object Length -Sum).Sum; files=@(Get-ChildItem -LiteralPath $installation -Recurse -File | ForEach-Object { $_.FullName.Substring($installation.Length + 1) }) } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 -LiteralPath (Join-Path $output 'installation.json')
+    [pscustomobject]@{ environment='development host'; scope='silent NSIS'; installer=$bundle; installerSha256=$installerHash; exitCode=$process.ExitCode; installerBytes=(Get-Item -LiteralPath $bundle).Length; installedBytes=(Get-ChildItem -LiteralPath $installation -Recurse -File | Measure-Object Length -Sum).Sum; files=@(Get-ChildItem -LiteralPath $installation -Recurse -File | ForEach-Object { $_.FullName.Substring($installation.Length + 1) }) } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 -LiteralPath (Join-Path $output 'installation.json')
 } elseif ($Action -eq 'Launch') {
     if ((App-Processes).Count) { throw 'QA installation already running.' }
     $arguments = @()
