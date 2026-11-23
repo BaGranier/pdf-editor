@@ -324,14 +324,17 @@ def inventory(output: Path, installed: Path | None) -> dict:
 
 
 def main() -> None:
-    from scripts.redistribution import OUT
+    version = json.loads(
+        (ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8")
+    )["version"]
+    release_output = ROOT / "data/output/releases/windows" / version
 
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--collect-notices", action="store_true")
     parser.add_argument(
         "--output",
         type=Path,
-        default=OUT / "component-inventory.json",
+        default=release_output / "component-inventory.json",
     )
     parser.add_argument("--installed", type=Path)
     args = parser.parse_args()
