@@ -81,8 +81,8 @@ import {
 } from "./pdf/textLayer";
 import { getWebBackendBaseUrl, isDesktopRuntime } from "./api/backend";
 import {
-  getDesktopStartupPdfs,
   findDesktopDocument,
+  getDesktopStartupPdfs,
   type DesktopPdfFile,
   openDesktopPdf,
   saveDesktopPdf,
@@ -2815,8 +2815,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [lastCommentAuthor, setLastCommentAuthor] = useState(() => storedPreferences?.commentAuthor ?? "");
   const [isCommentsView, setIsCommentsView] = useState(false);
   const [documents, setDocuments] = useState<OpenPdfDocument[]>([]);
-  const desktopOpenChainRef = useRef<Promise<void>>(Promise.resolve());
   const desktopQueueBusyRef = useRef(false);
+  const desktopOpenChainRef = useRef<Promise<void>>(Promise.resolve());
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("read");
   const [viewerMode, setViewerMode] = useState<ViewerMode>(
@@ -4748,6 +4748,43 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const openDesktopFileRef = useRef(openDesktopFile);
   openDesktopFileRef.current = openDesktopFile;
 
+  const openDesktopFile = useCallback((selected: DesktopPdfFile): Promise<void> => {
+    const operation = desktopOpenChainRef.current.then(async () => {
+      const existing = findDesktopDocument(documentsRef.current, selected.documentId);
+      if (existing) {
+        setActiveDocumentId(existing.id);
+        pendingFocusTargetRef.current = "viewer";
+        return;
+      }
+
+      setStatus("Ouverture du PDF...");
+      const document = await loadOpenPdfDocument(
+        selected.file,
+        null,
+        { type: "desktop", documentId: selected.documentId },
+      );
+      const usageWarnings = getDocumentUsageWarnings(
+        document.file,
+        document.pageCount,
+        documentsRef.current.length + 1,
+      );
+      // Publish the identity before the next queued open can run.
+      documentsRef.current = [...documentsRef.current, document];
+      setDocuments((current) => [...current, document]);
+      setActiveDocumentId(document.id);
+      pendingFocusTargetRef.current = "viewer";
+      setWorkspaceMode("read");
+      setStatus(usageWarnings.map((warning) => `Avertissement: ${warning}`).join(" "));
+      if (!import.meta.env.MODE.startsWith("test")) void loadPdfComments(backendUrl, document.file).then((comments) => {
+        if (comments.length) dispatchPdfEdits({ type: "hydrate", documentId: document.id, edits: comments });
+      });
+    });
+    desktopOpenChainRef.current = operation.catch(() => undefined);
+    return operation;
+  }, [backendUrl, loadOpenPdfDocument]);
+  const openDesktopFileRef = useRef(openDesktopFile);
+  openDesktopFileRef.current = openDesktopFile;
+
   const openPdfFromUser = useCallback(async () => {
     if (!isDesktopRuntime()) {
       openFileInputRef.current?.click();
@@ -4760,8 +4797,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setExportFeedback(null);
     try {
       const selected = await openDesktopPdf();
-      if (!selected) return;
-      await openDesktopFile(selected);
+      if (selected) await openDesktopFile(selected);
     } catch (error) {
       if (error instanceof PdfOpenCancelled) { setStatus("Ouverture annulée."); return; }
       setExportFeedback({
@@ -4770,14 +4806,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       });
     }
   }, [isRestoringDocuments, openDesktopFile]);
+  }, [isRestoringDocuments, openDesktopFile]);
 
   useEffect(() => {
     if (!isDesktopRuntime() || isRestoringDocuments) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
     const reportError = (message: string) => setExportFeedback({ kind: "error", message });
-    // Poll only the retained native queue, never files on disk. This also works
-    // before WebView readiness and does not depend on delivery of a JS event.
+    // Only drain paths supplied by native Open With or application launch.
     const drain = async () => {
       if (!desktopQueueBusyRef.current) {
         desktopQueueBusyRef.current = true;
@@ -4789,8 +4825,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               if (!(error instanceof PdfOpenCancelled)) reportError(error instanceof Error ? error.message : String(error));
             }
           }
-        } catch (error) { reportError(error instanceof Error ? error.message : String(error)); }
-        finally { desktopQueueBusyRef.current = false; }
+        } catch (error) {
+          reportError(error instanceof Error ? error.message : String(error));
+        } finally {
+          desktopQueueBusyRef.current = false;
+        }
       }
       if (!stopped) timer = setTimeout(() => void drain(), 500);
     };
