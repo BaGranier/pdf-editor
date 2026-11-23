@@ -3,6 +3,14 @@
 Dernière mise à jour : 2026-11-23
 Version cible : MVP Preview Windows x64 / Tauri
 
+## WIN-FINAL-020 — 23 novembre 2026
+
+- NSIS Windows x64 **0.2.0**, reconstruit depuis la branche consolidée et installé sur la VM de développement.
+- SAVE-01 fermé pour le défaut WebView2 reproduit sur ce paquet. Le plafond de 25 Mio est vérifié.
+- PRINT-01 reste ouvert pour l’impression intégrée. Le parcours Preview passe par l’export puis un lecteur externe.
+- VM vierge, bootstrap WebView2 sans runtime et OCR réseau hôte coupé restent à qualifier. Diffusion **NOT READY**.
+- [Rapport WIN-FINAL-020](../qa/runs/2026-11-23-win-final-020.md) avec SHA-256, périmètre natif et résultats des suites.
+
 ## WIN-RELEASE-003 — 23 novembre 2026
 
 Le NSIS **0.2.1 Windows x64** a été construit et testé sur la VM de développement.

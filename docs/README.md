@@ -13,7 +13,8 @@ QA datés et les audits documentent les résultats et limites de leur campagne.
 | Statut Windows et suite de la release | [Statut canonique Preview](product/MVP_STATUS.md), [Gate et prochaines étapes de diffusion générale](product/NEXT_STEPS.md) |
 | Dette et décisions différées | [Dette canonique](product/TECHNICAL_DEBT.md), [Signature par certificat](product/SIGNATURE_NUMERIQUE_004.md) |
 | Audit et résultats de la stabilisation | [Audit historique du 21 novembre](audits/2026-11-21-functional-audit.md), [Suivi STAB-2026-11](product/STAB-2026-11.md) |
-| Candidate Windows 0.2.1 | [Qualification](qa/runs/2026-11-23-win-release-003.md) et [notes de version](releases/0.2.1-windows.md) |
+| Windows 0.2.0 reconstruit | [Rapport WIN-FINAL-020](qa/runs/2026-11-23-win-final-020.md) et [notes de version](releases/0.2.0-windows.md) |
+| Candidat technique historique Windows 0.2.1 | [Qualification](qa/runs/2026-11-23-win-release-003.md) et [notes de version](releases/0.2.1-windows.md) |
 | Candidate historique Windows 0.2.0 | [Qualification](qa/runs/2026-11-23-windows-release-qualification.md) et [notes de version](releases/0.2.0-windows.md) |
 | Campagnes et preuves | [Index QA](qa/README.md) |
 | Organisation du dépôt et consignes agents | [Inventaire et migration](documentation-map.md), [Codex](../AGENTS.md), [Claude Code](../CLAUDE.md), [Outillage agents](agent.md), [Sécurité agent](agent-security.md), [Podman](podman.md) |

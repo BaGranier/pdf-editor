@@ -20,6 +20,12 @@ de lecture WebView2 de SAVE-01 sur la candidate 0.2.1 en VM de développement.
 **NOT READY** pour la diffusion générale. L'impression intégrée, le bootstrap
 et les vérifications sur VM vierge restent ouverts.
 
+Sur le [NSIS 0.2.0 reconstruit](../qa/runs/2026-11-23-win-final-020.md), le défaut
+SAVE-01 sous WebView2 est fermé sur la VM de développement. **NOT READY** pour la
+diffusion générale. Le gate VM vierge, le bootstrap WebView2 et l’OCR réseau coupé
+restent à exécuter sur le paquet exact. PRINT-01 reste ouvert. L’impression intégrée
+reste expérimentale pour la Preview et requise pour fermer le gate général.
+
 - **Redistribution AGPL** : voie approuvée ; préparer la livraison des sources
   correspondantes et les mentions requises, fermer les notices transitives
   MuPDF/codecs, Rust et npm, et vérifier les droits MSVC CRT. Voir la politique
