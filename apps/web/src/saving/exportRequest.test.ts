@@ -41,6 +41,45 @@ describe("executePdfExport", () => {
     })).toEqual({ ok: false, kind: "backend", message: "Le moteur n’a pas renvoyé de fichier PDF." });
   });
 
+  it("reads desktop response bytes without calling Response.blob", async () => {
+    const bytes = new TextEncoder().encode("%PDF-1.7");
+    const blob = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    const read = vi.fn().mockResolvedValue(bytes.buffer);
+    const result = await executePdfExport({
+      backendUrl: "http://backend.test",
+      formData: new FormData(),
+      fallbackFileName: "fallback.pdf",
+      readBodyAsArrayBuffer: true,
+      fetchImpl: vi.fn<typeof fetch>().mockResolvedValue({
+        ok: true,
+        headers: new Headers({ "content-type": "application/pdf" }),
+        blob,
+        arrayBuffer: read,
+      } as unknown as Response),
+    });
+
+    if (!result.ok) throw new Error(result.message);
+    expect(result.pdfBlob.size).toBe(bytes.byteLength);
+    expect(result.pdfBlob.type).toBe("application/pdf");
+    expect(read).toHaveBeenCalledOnce();
+    expect(blob).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed desktop body read after HTTP success", async () => {
+    const result = await executePdfExport({
+      backendUrl: "http://backend.test",
+      formData: new FormData(),
+      fallbackFileName: "fallback.pdf",
+      readBodyAsArrayBuffer: true,
+      fetchImpl: vi.fn<typeof fetch>().mockResolvedValue({
+        ok: true,
+        arrayBuffer: vi.fn().mockRejectedValue(new TypeError("Incomplete response")),
+      } as unknown as Response),
+    });
+
+    expect(result).toMatchObject({ ok: false, kind: "network" });
+  });
+
   it("preserves a backend error detail", async () => {
     const result = await executePdfExport({
       backendUrl: "http://backend.test",

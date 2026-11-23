@@ -4932,6 +4932,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         backendUrl,
         formData: payload.formData,
         fallbackFileName: payload.outputName,
+        readBodyAsArrayBuffer: isDesktopRuntime(),
       });
       if (!exported.ok) {
         setExportFeedback({

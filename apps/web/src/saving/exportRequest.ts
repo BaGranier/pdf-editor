@@ -12,6 +12,7 @@ export type ExecutePdfExportInput = {
   formData: FormData;
   fallbackFileName: string;
   fetchImpl?: typeof fetch;
+  readBodyAsArrayBuffer?: boolean;
 };
 
 export type ExecutePdfExportResult =
@@ -71,7 +72,13 @@ export async function executePdfExport(
       return { ok: false, kind: "backend", message: detail };
     }
 
-    const pdfBlob = await response.blob();
+    // WebView2 can fail while materializing a successful PDF response as a
+    // Blob. Reading its bytes first avoids that response body path.
+    const pdfBlob = input.readBodyAsArrayBuffer
+      ? new Blob([await response.arrayBuffer()], {
+          type: response.headers.get("content-type") ?? "application/pdf",
+        })
+      : await response.blob();
     if (await pdfBlob.slice(0, 5).text() !== "%PDF-") {
       return { ok: false, kind: "backend", message: "Le moteur n’a pas renvoyé de fichier PDF." };
     }
