@@ -324,28 +324,27 @@ def inventory(output: Path, installed: Path | None) -> dict:
 
 
 def main() -> None:
-    version = json.loads(
-        (ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8")
-    )["version"]
-    release_output = ROOT / "data/output/releases/windows" / version
-
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--collect-notices", action="store_true")
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=release_output / "component-inventory.json",
-    )
+    parser.add_argument("--output", type=Path)
     parser.add_argument("--installed", type=Path)
     args = parser.parse_args()
-    args.output.resolve().relative_to(ROOT / "data/output")
+    output_root = ROOT / "data/output"
+    if args.output is not None:
+        args.output.resolve().relative_to(output_root)
     if args.collect_notices:
         packages = collect_notices()
         print(f"Collected notices for {len(packages)} frozen Python packages")
     else:
-        result = inventory(args.output, args.installed)
+        output = args.output
+        if output is None:
+            version = json.loads(
+                (ROOT / "apps/desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8")
+            )["version"]
+            output = output_root / "releases/windows" / version / "component-inventory.json"
+        result = inventory(output, args.installed)
         print(
-            f"Inventory: {len(result['archive']['entries'])} archive entries, {len(result['archive']['pythonModules'])} modules; {args.output}"
+            f"Inventory: {len(result['archive']['entries'])} archive entries, {len(result['archive']['pythonModules'])} modules; {output}"
         )
 
 
