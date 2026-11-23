@@ -3,6 +3,14 @@
 Dernière mise à jour : 2026-11-23
 Version cible : MVP Preview Windows x64 / Tauri
 
+## WIN-RELEASE-003 — 23 novembre 2026
+
+Le NSIS **0.2.1 Windows x64** a été construit et testé sur la VM de développement.
+Save As relit les réponses PDF de WebView2 avec le nouveau transport et respecte
+le plafond de 25 Mio par PDF généré. La diffusion reste bloquée par les parcours
+sur machine vierge, dont l'OCR réseau coupé. L'impression intégrée reste
+expérimentale. Voir le [rapport](../qa/runs/2026-11-23-win-release-003.md).
+
 ## WIN-RELEASE-002 — 23 novembre 2026
 
 **0.2.0 x64, candidate de diagnostic installée sur VM de développement.**
@@ -68,6 +76,14 @@ Windows propre. Terminer les parcours P0 partiels du rapport. Le paquet
 MVP-004 reste une référence historique.
 
 ## Journal MVP
+
+### 2026-11-23 — WIN-RELEASE-003
+
+- Sept Save As installés relus avec texte et rendu identiques. Refus explicite au-delà de 25 Mio.
+- Ouvertures natives concurrentes et réactivation du même onglet contrôlées.
+- NSIS 0.2.1, provenance et SHA-256 figés sur le commit construit.
+- Sortie de l'imprimante PDF vérifiée via un parcours externe scripté. Impression intégrée ouverte.
+- VM vierge, bootstrap WebView2 et OCR avec réseau hôte coupé restent à vérifier.
 
 ### 2026-11-23 — WIN-RELEASE-002
 

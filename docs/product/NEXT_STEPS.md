@@ -15,6 +15,11 @@ La [campagne WIN-RELEASE-002](../qa/runs/2026-11-23-windows-release-qualificatio
 **NOT READY**. La sortie d'impression intégrée et les P0 sur machine propre
 restent à qualifier sur ce paquet exact.
 
+La [campagne WIN-RELEASE-003](../qa/runs/2026-11-23-win-release-003.md) a fermé l'échec
+de lecture WebView2 de SAVE-01 sur la candidate 0.2.1 en VM de développement.
+**NOT READY** pour la diffusion générale. L'impression intégrée, le bootstrap
+et les vérifications sur VM vierge restent ouverts.
+
 - **Redistribution AGPL** : voie approuvée ; préparer la livraison des sources
   correspondantes et les mentions requises, fermer les notices transitives
   MuPDF/codecs, Rust et npm, et vérifier les droits MSVC CRT. Voir la politique

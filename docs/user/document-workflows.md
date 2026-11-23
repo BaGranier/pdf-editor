@@ -46,9 +46,10 @@ perdue et les documents restaurables conservent leur état modifié.
 
 Sur Desktop, l'en-tête du document et son état signalent la destination de
 session. Le nom seul est visible et le shell natif détient le chemin. Le premier
-Save As préserve l'original. Annulation, refus de la destination et erreur du
-moteur conservent l'état modifié. Le plafond Preview s'applique au PDF généré
-et vaut 25 Mio. [Contrat desktop](../architecture/DESKTOP.md#fichiers-et-frontière-ipc)
+Save As préserve l'original. Annulation, refus de la destination et erreur de
+lecture ou d'écriture conservent l'état modifié. Le plafond Preview de 25 Mio
+porte sur le PDF généré. Au-delà, l'application affiche le refus et conserve
+la source et les modifications. [Contrat desktop](../architecture/DESKTOP.md#fichiers-et-frontière-ipc)
 
 ## Biffage et impression
 
