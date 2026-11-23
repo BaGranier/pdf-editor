@@ -19,6 +19,8 @@ import urllib.request
 import datetime as dt
 import tomllib
 import shutil
+import sys
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCT_VERSION = json.loads(
@@ -214,7 +216,33 @@ def prepare(*, final: bool = False) -> dict:
         lines.append("| " + " | ".join(str(row[key]).replace("|", "/").replace("\n", " ") for key in ["name", "version", "role", "license", "form", "correspondingSource", "status"]) + " |")
     lines += ["", "Full upstream URLs and notice paths: inventory.json. Rust coverage includes generated-code candidates; dead-code removal is not inferred from Cargo.lock.", "", "Native provenance verified against the locked wheel, corresponding sources, Microsoft SDK and official VC/Redist CRT; native-evidence.json retains the checks. This is not legal certification."]
     (NOTICES / "THIRD_PARTY_NOTICES.md").write_text("\n".join(lines), "utf-8")
-    (NOTICES / "build-provenance.json").write_text(json.dumps({"commit": git("rev-parse", "HEAD"), "trackedChanges": git("diff", "HEAD", "--name-only"), "date": dt.datetime.now(dt.timezone.utc).isoformat(), "sources": {name: record(OUT / name) for name in SOURCES}}, indent=2), "utf-8")
+    lockfiles = (
+        "apps/desktop/src-tauri/Cargo.lock",
+        "apps/desktop/package-lock.json",
+        "apps/web/package-lock.json",
+        "services/pdf-engine/uv.lock",
+    )
+    cargo = tomllib.loads((ROOT / "apps/desktop/src-tauri/Cargo.toml").read_text("utf-8"))
+    npm = shutil.which("npm.cmd") or shutil.which("npm") or "npm"
+    provenance = {
+        "commit": git("rev-parse", "HEAD"),
+        "branch": git("branch", "--show-current"),
+        "trackedChanges": git("diff", "HEAD", "--name-only"),
+        "submodules": git("submodule", "status", "--recursive"),
+        "date": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "toolchain": {
+            "node": subprocess.check_output(["node", "--version"], text=True).strip(),
+            "npm": subprocess.check_output([npm, "--version"], text=True).strip(),
+            "python": sys.version.split()[0],
+            "uv": subprocess.check_output(["uv", "--version"], text=True).strip(),
+            "rust": subprocess.check_output(["rustc", "--version"], text=True).strip(),
+            "cargo": subprocess.check_output(["cargo", "--version"], text=True).strip(),
+            "rustMinimum": cargo["package"]["rust-version"],
+        },
+        "lockfiles": {path: sha(ROOT / path) for path in lockfiles},
+        "sources": {name: record(OUT / name) for name in SOURCES},
+    }
+    (NOTICES / "build-provenance.json").write_text(json.dumps(provenance, indent=2), "utf-8")
     return result
 
 

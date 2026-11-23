@@ -324,12 +324,14 @@ def inventory(output: Path, installed: Path | None) -> dict:
 
 
 def main() -> None:
+    from scripts.redistribution import OUT
+
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument("--collect-notices", action="store_true")
     parser.add_argument(
         "--output",
         type=Path,
-        default=ROOT / "data/output/release-006/component-inventory.json",
+        default=OUT / "component-inventory.json",
     )
     parser.add_argument("--installed", type=Path)
     args = parser.parse_args()
