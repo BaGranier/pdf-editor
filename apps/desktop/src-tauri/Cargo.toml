@@ -1,6 +1,6 @@
 [package]
 name = "pdf-studio-local"
-version = "0.2.1"
+version = "0.2.0"
 description = "Native shell for the local-first PDF editor"
 authors = ["PDF Studio Local contributors"]
 edition = "2021"
