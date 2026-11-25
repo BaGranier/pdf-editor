@@ -30,7 +30,7 @@ test("A11Y-008 sombre : contraste ciblé toolbar/menu/palette/inspector/dialogue
   await changeInterfaceTheme(page, "dark");
   await selectObject(page,"alpha",fixture.edits);
   const measurements: unknown[]=[];
-  for(const control of [page.getByRole("button",{name:"Fichier",exact:true}),page.getByRole("button",{name:"Ajouter du texte",exact:true}),page.getByRole("region",{name:"Ordre des plans"}).getByRole("button").first()]) {
+  for(const control of [page.getByRole("button",{name:"Fichier",exact:true}),page.getByRole("button",{name:"Sélection",exact:true}),page.getByRole("region",{name:"Ordre des plans"}).getByRole("button").first()]) {
     const result=await contrast(control); measurements.push(result); expect(result.ratio).toBeGreaterThanOrEqual(4.5);
   }
   const fill=page.getByRole("button",{name:"Remplissage",exact:true});
@@ -83,7 +83,6 @@ test("A11Y-008 modale Save As : Tab circulaire et retour au déclencheur",async(
 test("A11Y-008 menu clavier et présentation : Escape restitue le focus",async({page})=>{
   const fixture=scene();await seed(page,[{id:"global",edits:fixture.edits}],fixture.assets);
   const trigger=page.getByRole("button",{name:"Fichier",exact:true});await trigger.focus();await page.keyboard.press("Enter");
-  await page.keyboard.press("Tab");
   await expect(page.getByRole("menu",{name:"Fichier",exact:true}).getByRole("menuitem").first()).toBeFocused();
   await page.keyboard.press("Escape");await expect(trigger).toBeFocused();
   await page.getByLabel("Mode d'affichage").selectOption("presentation");

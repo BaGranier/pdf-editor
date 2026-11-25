@@ -3501,7 +3501,7 @@ button:disabled {
 .indexed-search-highlight { z-index: 3; background: rgb(251 146 60 / 45%); }
 .indexed-text-selection__actions { position: absolute; z-index: 1; display: flex; gap: .25rem; white-space: nowrap; }
 .tool-rail > .tool-rail__settings { position: sticky; bottom: 0; margin-block-start: auto; background: var(--surface); }
-.settings-panel { position: fixed; left: calc(var(--tool-rail-width, 3.5rem) + .5rem); bottom: 3rem; z-index: 120; display: grid; gap: .65rem; width: min(25rem, calc(100vw - 5rem)); max-height: calc(100dvh - 4rem); overflow: auto; padding: 1rem; border: 1px solid var(--border); border-radius: .6rem; }
+.settings-panel { position: fixed; z-index: 120; display: grid; gap: .65rem; box-sizing: border-box; width: min(25rem, var(--floating-width, calc(100vw - 1rem))); max-height: var(--floating-height, calc(100dvh - 1rem)); overflow: auto; padding: 1rem; border: 1px solid var(--border); border-radius: .6rem; }
 .settings-panel header { display: flex; justify-content: space-between; align-items: center; }
 .settings-panel h2 { margin: 0; font-size: 1.05rem; }
 .settings-panel fieldset { display: grid; gap: .6rem; min-inline-size: 0; padding: .65rem; border: 1px solid var(--border); border-radius: .4rem; }

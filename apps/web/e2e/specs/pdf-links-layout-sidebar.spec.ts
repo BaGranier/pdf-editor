@@ -1,3 +1,4 @@
+import { changeInterfaceTheme } from "../helpers/app";
 import path from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { chooseNavigationTool, fixtureDirectory, fixtures, openApp, openPdf } from "../helpers/app";
@@ -193,8 +194,7 @@ test("infobulles et sous-menus contenus, SVG et navigation clavier", async ({ pa
   const tooltip = page.getByRole("tooltip");
   for (const [width, height, theme] of [[1440, 900, "light"], [550, 430, "dark"], [345, 350, "light"]] as const) {
     await page.setViewportSize({ width, height });
-    const themeToggle = page.getByRole("combobox", { name: "Thème de l’interface" });
-    await themeToggle.selectOption(theme);
+    await changeInterfaceTheme(page, theme);
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     await marking.hover();
     await expectContained(tooltip);
