@@ -230,7 +230,7 @@ export function ConversionDialog({
               className="ocr-dialog__warning"
               role="alert"
             >
-              {filenameError}
+              {localize(filenameError)}
             </p>
           ) : null}
 

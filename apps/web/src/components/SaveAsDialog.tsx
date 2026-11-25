@@ -87,7 +87,7 @@ export function SaveAsDialog({
         />
         {displayedError ? (
           <p id={errorId} className="save-as-dialog__error" role="alert">
-            {displayedError}
+            {localize(displayedError)}
           </p>
         ) : null}
         <div className="unsaved-dialog__actions">

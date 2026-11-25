@@ -851,4 +851,9 @@ export const englishMessages: Readonly<Record<string, string>> = {
   "Nom PDF absent.": "The PDF name is missing.",
   "Nom PDF invalide.": "The PDF name is invalid.",
   "Le nom proposé est invalide.": "The suggested name is invalid.",
+  "Le nom du fichier est requis.": "A file name is required.",
+  "Le nom ne peut pas contenir /, \\, :, *, ?, \", <, > ou |.": "The name cannot contain /, \\, :, *, ?, \", <, > or |.",
+  "Le nom du fichier ne peut pas dépasser 160 caractères.": "The file name cannot exceed 160 characters.",
+  "Saisissez un nom de fichier avant d'enregistrer.": "Enter a file name before saving.",
+  "Le document source est vide ou indisponible.": "The source document is empty or unavailable.",
 };
