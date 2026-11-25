@@ -84,7 +84,7 @@ test("parcourt les sept catégories et leurs sous-outils sans édition implicite
   await expect(rail.getByRole("button")).toHaveText([...categories, "select", "settings"].map(() => ""));
   await expect(rail.locator("button")).toHaveCount(categories.length + 2);
   for (const [index, [label, tools]] of categories.entries()) {
-    const category = rail.locator("button").nth(index);
+    const category = rail.locator("button").nth(index + 1);
     await expect(category).toHaveAccessibleName(label);
     await category.press("Space");
     const menu = page.getByRole("region", { name: `Outils ${label}`, exact: true });
