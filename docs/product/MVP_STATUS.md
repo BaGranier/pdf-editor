@@ -209,3 +209,12 @@ MVP-004 reste une référence historique.
 - Géométrie native vérifiée contre l'empreinte des caractères, jamais dérivée du DOM.
 - Refus des correspondances ambiguës ; réutilisation du biffage réel final.
 - Tests ciblés : 32 backend et 22 frontend réussis, dont OCR/pixels et pages pivotées.
+
+
+### 2026-11-25 — Filigrane, biffage, commentaires et thèmes
+
+- Aperçu automatique du filigrane unique et répété sur toutes les pages.
+- Recherche et sélection de biffage indexées avec OCR local et progression par page.
+- Suppression PDF après composition, contrôle des zones et conservation des annotations compatibles hors zone.
+- Commentaire ancré au texte sélectionné et palettes personnalisées persistantes.
+- Candidate Windows 0.3.0. Recette sur VM propre à consigner séparément.
