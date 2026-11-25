@@ -5,7 +5,7 @@ export type PdfExportWarning = {
   editId: string;
   page: number;
   rendering: "expanded" | "partial";
-};
+} | { type: "redaction_rasterized"; page: number };
 
 export type ExecutePdfExportInput = {
   backendUrl: string;
@@ -38,12 +38,10 @@ export function parsePdfExportWarnings(value: string | null): PdfExportWarning[]
           (warning): warning is PdfExportWarning =>
             typeof warning === "object" &&
             warning !== null &&
-            (warning as Partial<PdfExportWarning>).type === "text_overflow" &&
-            typeof (warning as Partial<PdfExportWarning>).editId === "string" &&
-            typeof (warning as Partial<PdfExportWarning>).page === "number" &&
-            ["expanded", "partial"].includes(
-              String((warning as Partial<PdfExportWarning>).rendering),
-            ),
+            Number.isInteger(warning.page) && warning.page > 0 &&
+            (warning.type === "redaction_rasterized" ||
+              (warning.type === "text_overflow" && typeof warning.editId === "string" &&
+                ["expanded", "partial"].includes(warning.rendering))),
         )
       : [];
   } catch {

@@ -1,3 +1,4 @@
+import { changeInterfaceTheme } from "../helpers/app";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { expect, test } from "../helpers/qa-test";
@@ -7,9 +8,9 @@ import { validatePdf } from "../helpers/pdf-validation";
 test("sidebar groups: keyboard, single disclosure, clean navigation and narrow dark viewport", async ({ page }, info) => {
   await openApp(page); await openPdf(page, fixtures.onePage);
   await page.setViewportSize({ width: 760, height: 275 });
-  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
+  await changeInterfaceTheme(page, "dark");
   const rail = page.getByRole("navigation", { name: "Outils d'édition" });
-  await expect(rail.getByRole("button")).toHaveCount(7);
+  await expect(rail.getByRole("button")).toHaveCount(9);
   // Opening a PDF writes the initial file and then its hydrated editing state.
   // Start observing the sidebar after both initial writes have settled.
   await expect(page.locator("main")).toHaveAttribute("data-persistence-state", "saved");
@@ -101,7 +102,7 @@ test("tiled watermark: mixed pages, live preview, history, persistence, zoom and
   }
   await page.reload(); await expect(mark).toBeVisible();
   expect(await mark.locator("text").count()).toBeGreaterThan(20);
-  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
+  await changeInterfaceTheme(page, "dark");
   await page.screenshot({ path: info.outputPath("tiled-preview-dark.png") });
   await chooseNavigationTool(page, "Biffer");
   const layer = await page.getByLabel("Couche d'édition de la page 1", { exact: true }).boundingBox();

@@ -5,6 +5,7 @@ type AnnotationPayload = {
   pageIndex: number;
   type: PdfCommentType;
   rect: PdfRect;
+  rects?: PdfRect[] | null;
   content: string;
   appearanceHidden?: boolean;
   author?: string;
@@ -28,6 +29,7 @@ export async function loadPdfComments(backendUrl: string, file: File): Promise<P
       commentType: annotation.type,
       page: annotation.pageIndex + 1,
       rect: annotation.rect,
+      ...(annotation.rects?.length ? { rects: annotation.rects } : {}),
       content: annotation.content,
       author: annotation.author,
       createdAt: annotation.createdAt,

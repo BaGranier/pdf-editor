@@ -1,3 +1,4 @@
+import { changeInterfaceTheme } from "../helpers/app";
 import { chooseNavigationTool } from "../helpers/app";
 import path from "node:path";
 import { readFileSync } from "node:fs";
@@ -62,9 +63,9 @@ test("redaction stamp: two pages, history, persistence and secure copy", async (
     const pageBox = await page.getByLabel("Couche d'édition de la page 1", { exact: true }).boundingBox();
     expect(zoneBox && pageBox && zoneBox.width / pageBox.width).toBeCloseTo(190 / 400, 2);
   }
-  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
+  await changeInterfaceTheme(page, "dark");
   await page.screenshot({ path: testInfo.outputPath("pending-dark.png") });
-  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("light");
+  await changeInterfaceTheme(page, "light");
   await page.getByLabel("Tampon page 2", { exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("stamp-pending.png") });
   await enterOrganizeMode(page);

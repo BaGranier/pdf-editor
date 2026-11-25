@@ -1,3 +1,5 @@
+import { TextSelectionActions } from "./TextSelectionActions";
+import { useLocale } from "../viewer/locale";
 import { useMemo, useRef, useState } from "react";
 import type { PageViewport } from "pdfjs-dist";
 import type { PdfRect, RedactionEdit } from "../editing/types";
@@ -11,6 +13,7 @@ export function IndexedTextSelection({ page, zones, viewport, onRedact, onCommen
   onRedact: (rects: PdfRect[]) => void;
   onComment: (rects: PdfRect[]) => void;
 }) {
+  const { t } = useLocale();
   const layer = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
   const dragStart = useRef<number | null>(null);
@@ -47,7 +50,7 @@ export function IndexedTextSelection({ page, zones, viewport, onRedact, onCommen
   }, [data, selection]);
   const anchor = rects.length ? pdfRectToViewportStyle(viewport, coveringRect(rects)) : null;
 
-  return <div ref={layer} className="indexed-text-selection" aria-label="Sélection du texte à biffer"
+  return <div ref={layer} className="indexed-text-selection" aria-label={t("Sélection du texte à biffer")}
     onPointerDown={(event) => {
       if (event.button !== 0 || (event.target instanceof Element && event.target.closest("button"))) return;
       event.stopPropagation();
@@ -75,10 +78,11 @@ export function IndexedTextSelection({ page, zones, viewport, onRedact, onCommen
       setSelection({ start, end });
     }}>
     {rects.map((rect, index) => <span key={index} style={pdfRectToViewportStyle(viewport, rect)} />)}
-    {anchor ? <div className="indexed-text-selection__actions"
-      style={{ left: Math.max(0, Math.min(anchor.left, viewport.width - 220)), top: Math.max(0, anchor.top - 32) }}>
-      <button type="button" onClick={(event) => { event.stopPropagation(); onRedact(rects); setSelection(null); }}>Biffer la sélection</button>
-      <button type="button" disabled={rects.length > 500} onClick={(event) => { event.stopPropagation(); onComment(rects); setSelection(null); }}>Commenter</button>
+    {anchor ? <div className="indexed-text-selection__actions" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setSelection(null); } }}
+      style={{ left: Math.max(0, Math.min(anchor.left, viewport.width - 78)), top: Math.max(0, anchor.top - 32) }}>
+      <TextSelectionActions canComment={rects.length <= 500}
+        onRedact={() => { onRedact(rects); setSelection(null); }}
+        onComment={() => { onComment(rects); setSelection(null); }} />
     </div> : null}
   </div>;
 }

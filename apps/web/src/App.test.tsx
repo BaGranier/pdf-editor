@@ -87,6 +87,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Augmenter le zoom" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Masquer la barre latérale" })).toBeInTheDocument();
     expect(sidebar).toBeInTheDocument();
+    if (!screen.queryByRole("dialog", { name: "Paramètres" })) fireEvent.click(screen.getByRole("button", { name: "Paramètres" }));
     expect(screen.getByRole("combobox", { name: "Thème de l’interface" })).toHaveValue("light");
     expect(within(sidebar).getByLabelText("Ouvrir un PDF")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Réinitialiser les données locales" })).toBeInTheDocument();
@@ -417,6 +418,7 @@ describe("App", () => {
       expect(screen.getByRole("alert")).toHaveTextContent("Les PDF ne peuvent pas être conservés durablement");
     });
 
+    if (!screen.queryByRole("dialog", { name: "Paramètres" })) fireEvent.click(screen.getByRole("button", { name: "Paramètres" }));
     fireEvent.click(screen.getByRole("button", { name: "Réinitialiser les données locales" }));
 
     await waitFor(() => {
@@ -499,6 +501,7 @@ describe("App", () => {
       expect(screen.getByRole("button", { name: "gamma.pdf, document actif" })).toBeInTheDocument();
     });
 
+    if (!screen.queryByRole("dialog", { name: "Paramètres" })) fireEvent.click(screen.getByRole("button", { name: "Paramètres" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Thème de l’interface" }), { target: { value: "dark" } });
 
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
@@ -2263,6 +2266,7 @@ describe("App", () => {
       expect(screen.getByRole("button", { name: "persist-b.pdf, document actif" })).toBeInTheDocument();
     });
 
+    if (!screen.queryByRole("dialog", { name: "Paramètres" })) fireEvent.click(screen.getByRole("button", { name: "Paramètres" }));
     fireEvent.change(screen.getByRole("combobox", { name: "Thème de l’interface" }), { target: { value: "dark" } });
     fireEvent.click(screen.getByRole("button", { name: "Masquer la barre latérale" }));
 
@@ -2408,12 +2412,14 @@ describe("App", () => {
       expect(screen.getByRole("button", { name: "clear-b.pdf, document actif" })).toBeInTheDocument();
     });
 
+    if (!screen.queryByRole("dialog", { name: "Paramètres" })) fireEvent.click(screen.getByRole("button", { name: "Paramètres" }));
     fireEvent.click(screen.getByRole("button", { name: "Réinitialiser les données locales" }));
 
     expect(confirmSpy).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "clear-b.pdf, document actif" })).toBeInTheDocument();
 
     confirmSpy.mockReturnValue(true);
+    if (!screen.queryByRole("dialog", { name: "Paramètres" })) fireEvent.click(screen.getByRole("button", { name: "Paramètres" }));
     fireEvent.click(screen.getByRole("button", { name: "Réinitialiser les données locales" }));
 
     await waitFor(() => {

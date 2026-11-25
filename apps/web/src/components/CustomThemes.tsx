@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { useLayoutEffect, useState } from "react";
 import { isThemeId, THEMES, type ThemeId } from "../viewer/themes";
 
@@ -96,6 +97,7 @@ export function CustomThemeEditor({ active, base, onPreview, onSave, onDelete, o
   onDelete: (theme: CustomTheme) => void;
   onClose: () => void;
 }) {
+  const { t } = useLocale();
   const [draft, setDraft] = useState(() => active ?? nativeDraft(base));
   const update = (next: CustomTheme) => {
     setDraft(next);
@@ -105,26 +107,26 @@ export function CustomThemeEditor({ active, base, onPreview, onSave, onDelete, o
   const lowContrast = (["--app-bg", "--surface", "--surface-secondary"] as const)
     .some((background) => contrast(palette["--text-primary"], palette[background]) < 4.5);
   return (
-    <section className="floating-surface custom-theme-editor" aria-label="Personnaliser le thème" onKeyDown={(event) => {
+    <section className="custom-theme-editor" aria-label={t("Personnaliser le thème")} onKeyDown={(event) => {
       if (event.key === "Escape") { event.stopPropagation(); onClose(); }
     }}>
-      <h2>Personnaliser le thème</h2>
-      {active ? <button type="button" onClick={() => update(nativeDraft(draft.base))}>Nouveau thème</button> : null}
-      <label>Nom<input value={draft.label} maxLength={60} onChange={(event) => update({ ...draft, label: event.target.value })} /></label>
-      <label>Thème de base<select value={draft.base} onChange={(event) => {
+      <h2>{t("Personnaliser le thème")}</h2>
+      {active ? <button type="button" onClick={() => update(nativeDraft(draft.base))}>{t("Nouveau thème")}</button> : null}
+      <label>{t("Nom")}<input value={draft.label} maxLength={60} onChange={(event) => update({ ...draft, label: event.target.value })} /></label>
+      <label>{t("Thème de base")}<select value={draft.base} onChange={(event) => {
         const value = event.target.value;
         if (isThemeId(value)) update({ ...nativeDraft(value, draft.label), id: draft.id });
-      }}>{THEMES.map((theme) => <option key={theme.id} value={theme.id}>{theme.label}</option>)}</select></label>
-      {colorKeys.map((key) => <label key={key}>{colors[key]}<input type="color" value={palette[key]} onChange={(event) =>
+      }}>{THEMES.map((theme) => <option key={theme.id} value={theme.id}>{t(theme.label)}</option>)}</select></label>
+      {colorKeys.map((key) => <label key={key}>{t(colors[key])}<input type="color" value={palette[key]} onChange={(event) =>
         update({ ...draft, palette: { ...palette, [key]: event.target.value } })} /></label>)}
-      {lowContrast ? <p role="status">Contraste du texte inférieur à 4,5:1 sur au moins un fond.</p> : null}
+      {lowContrast ? <p role="status">{t("Contraste du texte inférieur à 4,5:1 sur au moins un fond.")}</p> : null}
       <div className="custom-theme-editor__actions">
-        <button type="button" disabled={!draft.label.trim()} onClick={() => onSave({ ...draft, label: draft.label.trim() })}>Enregistrer le thème</button>
+        <button type="button" disabled={!draft.label.trim()} onClick={() => onSave({ ...draft, label: draft.label.trim() })}>{t("Enregistrer le thème")}</button>
         {active ? <>
-          <button type="button" onClick={() => update({ ...draft, id: crypto.randomUUID(), label: `${draft.label} (copie)`.slice(0, 60) })}>Dupliquer</button>
-          {draft.id === active.id ? <button type="button" onClick={() => onDelete(active)}>Supprimer le thème</button> : null}
+          <button type="button" onClick={() => update({ ...draft, id: crypto.randomUUID(), label: `${draft.label} (copie)`.slice(0, 60) })}>{t("Dupliquer")}</button>
+          {draft.id === active.id ? <button type="button" onClick={() => onDelete(active)}>{t("Supprimer le thème")}</button> : null}
         </> : null}
-        <button type="button" onClick={onClose}>Annuler</button>
+        <button type="button" onClick={onClose}>{t("Annuler")}</button>
       </div>
     </section>
   );

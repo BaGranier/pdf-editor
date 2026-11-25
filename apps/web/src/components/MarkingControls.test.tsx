@@ -27,10 +27,14 @@ describe("distinct marking controls", () => {
     const index = { pages: new Map([[1, { page: 1, native, ocr: [], issue: null }]]), scanned: 1, complete: true, error: null };
     render(<RedactionSearchPanel index={index} total={1} sourcePages={[1]} zones={[]} currentPage={1} onNavigate={vi.fn()} onCreate={onCreate} onClose={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Terme à biffer"), { target: { value: "SECRET" } });
+    const summary = await screen.findByText("Occurrences détectées (1)");
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByRole("button", { name: "Appliquer le biffage" })).toBeDisabled();
+    fireEvent.click(summary);
     fireEvent.click(await screen.findByLabelText("Sélectionner l’occurrence 1 page 1"));
     expect(onCreate).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Compteur des occurrences")).toHaveTextContent("1 occurrences · 1 sélectionnées");
-    fireEvent.click(screen.getByRole("button", { name: "Biffer toutes les occurrences sélectionnées" }));
+    fireEvent.click(screen.getByRole("button", { name: "Appliquer le biffage" }));
     expect(onCreate).toHaveBeenCalledOnce();
     await screen.findByText("1 nouvelles zones de biffage créées.");
   });

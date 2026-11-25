@@ -1,3 +1,4 @@
+import { changeInterfaceTheme } from "../helpers/app";
 import { chooseNavigationTool } from "../helpers/app";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -35,7 +36,7 @@ test("search redaction watermark: auto-fit stamp, verified search, linked pages 
   await expect(page.getByLabel("Biffage page 1", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Sélectionner toutes les occurrences", exact: true }).click();
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Biffer toutes les occurrences sélectionnées", exact: true }).click();
+  await page.getByRole("button", { name: "Appliquer le biffage", exact: true }).click();
   await expect(page.getByText("2 nouvelles zones de biffage créées.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Annuler", exact: true }).click();
   await expect(page.getByLabel("Biffage page 1", { exact: true })).toHaveCount(0);
@@ -74,9 +75,9 @@ test("search redaction watermark: auto-fit stamp, verified search, linked pages 
   await page.keyboard.press("Escape");
   await expect(page.locator(".app-shell")).not.toHaveClass(/app-shell--presentation/);
   await page.getByLabel("Mode d'affichage").selectOption("continuous");
-  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
+  await changeInterfaceTheme(page, "dark");
   await page.screenshot({ path: testInfo.outputPath("pending-watermark-dark.png") });
-  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("light");
+  await changeInterfaceTheme(page, "light");
   await page.screenshot({ path: testInfo.outputPath("pending-watermark.png") });
   await enterOrganizeMode(page);
   await page.getByLabel("Nom du PDF exporté").fill("searched-watermark.pdf");
@@ -188,10 +189,11 @@ test("sélection directe et commentaire ancré, puis biffage du texte ajouté sa
     selection.addRange(range);
     span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
   });
-  await page.getByRole("button", { name: "Commenter", exact: true }).click();
+  await page.getByRole("button", { name: "Commentaire", exact: true }).click();
   await page.getByLabel("Texte du commentaire").fill("Note ancrée au texte public");
   await page.getByRole("button", { name: "Ajouter", exact: true }).click();
-  await expect(page.locator(".pdf-comment-anchor")).toBeVisible();
+  await expect(page.locator(".pdf-comment-marker--anchored")).toHaveCount(1);
+  await expect(page.locator(".properties-panel").getByRole("region", {name: "Propriétés du commentaire"})).toBeVisible();
 
   await chooseNavigationTool(page, "Biffer");
   await page.getByRole("button", { name: "Sélectionner le texte à biffer" }).click();
@@ -204,7 +206,7 @@ test("sélection directe et commentaire ancré, puis biffage du texte ajouté sa
   await page.mouse.down();
   await page.mouse.move(bounds.x + 154 * scale, bounds.y + 107 * scale, { steps: 6 });
   await page.mouse.up();
-  await page.getByRole("button", { name: "Biffer la sélection" }).click();
+  await page.getByRole("button", { name: "Biffage", exact: true }).click();
   await expect(page.getByLabel("Biffage page 1", { exact: true })).toHaveCount(1);
   await expect(page.getByLabel("Biffage page 2", { exact: true })).toHaveCount(0);
 
@@ -223,6 +225,7 @@ test("sélection directe et commentaire ancré, puis biffage du texte ajouté sa
   await page.getByRole("button", { name: "Rechercher et biffer…" }).click();
   await page.getByLabel("Terme à biffer").fill("PRIVÉ");
   await expect(page.getByLabel("Compteur des occurrences")).toHaveText("1 occurrences · 0 sélectionnées");
+  await page.getByText("Occurrences détectées (1)").click();
   await page.getByRole("button", { name: "Biffer cette occurrence 1" }).click();
   await expect(page.getByLabel("Biffage page 1", { exact: true })).toHaveCount(2);
 

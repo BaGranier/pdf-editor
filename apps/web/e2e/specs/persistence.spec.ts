@@ -1,3 +1,4 @@
+import { changeInterfaceTheme } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import {
   clearLocalData,
@@ -16,7 +17,7 @@ test("QA-E2E-008 @smoke restaure IndexedDB, préférences, scroll et plan sans d
   await openApp(page);
   await openPdf(page, fixtures.onePage);
   await openPdf(page, fixtures.fivePages);
-  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
+  await changeInterfaceTheme(page, "dark");
 
   const viewer = page.getByTestId("pdf-viewer");
   await viewer.evaluate((element) => {
@@ -71,7 +72,7 @@ test("QA-E2E-009 @smoke efface les données locales et conserve un état initial
     .first()
     .getByRole("button", { name: "Dupliquer la page 1" })
     .click();
-  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
+  await changeInterfaceTheme(page, "dark");
 
   await clearLocalData(page);
   await expect
@@ -109,7 +110,7 @@ test("QA-E2E-017 @regression persiste les thèmes clair et sombre", async ({ pag
   await expect
     .poll(() => page.evaluate(() => document.documentElement.dataset.theme))
     .toBe(toggledTheme);
-  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption(initialTheme!);
+  await changeInterfaceTheme(page, initialTheme!);
   await expect
     .poll(() => page.evaluate(() => document.documentElement.dataset.theme))
     .toBe(initialTheme);
