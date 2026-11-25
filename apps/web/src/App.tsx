@@ -1199,7 +1199,7 @@ function PdfViewer({
   }, [document.id]);
 
   const [pageTransitionError, setPageTransitionError] = useState<string | null>(null);
-  const reportRenderError = useCallback((pageNumber: number) => setPageTransitionError(localize("La page {0} n’a pas pu être rendue. La slide courante est conservée.", pageNumber)), []);
+  const reportRenderError = useCallback((pageNumber: number) => setPageTransitionError(localize("La page {0} n’a pas pu être rendue. La slide courante est conservée.", pageNumber)), [localize]);
   const requestedPageRef = useRef(activePageNumber);
   requestedPageRef.current = activePageNumber;
   const commitVisiblePage = useCallback((pageNumber: number) => {
@@ -3843,7 +3843,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setSelectedEditId(edit.id);
     setActiveEditingTool("select");
     setExportFeedback(null);
-  }, [activeDocument, stampLabel, stampWithDate]);
+  }, [activeDocument, locale, stampLabel, stampWithDate, t]);
 
   const addRedactionEdit = useCallback((page: number, rect: PdfRect) => {
     if (!activeDocument || activeDocument.media?.kind === "image" || !Object.values(rect).every(Number.isFinite) || rect.x1 <= rect.x0 || rect.y1 <= rect.y0) return;
@@ -4441,7 +4441,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         });
       }
     },
-    [documents, organizationPlans],
+    [documents, organizationPlans, t],
   );
 
   const closeDocument = useCallback(
@@ -4800,7 +4800,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       void loadingTask.destroy().catch(() => undefined);
       throw new PdfUnlockError("La copie de travail PDF n’a pas pu être ouverte.");
     }
-  }, [authenticateWorkingFile, backendUrl]);
+  }, [authenticateWorkingFile, backendUrl, t]);
 
   const openGeneratedPdfDocument = useCallback(
     async (
@@ -4912,7 +4912,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         setStorageWarning("Certaines données locales n'ont pas pu être effacées. Fermez puis rouvrez l'application avant de réessayer.");
       }
     });
-  }, [resetDocumentProcessing]);
+  }, [resetDocumentProcessing, t]);
 
   const openDesktopFile = useCallback((selected: DesktopPdfFile): Promise<void> => {
     const operation = desktopOpenChainRef.current.then(async () => {
@@ -4947,7 +4947,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     });
     desktopOpenChainRef.current = operation.catch(() => undefined);
     return operation;
-  }, [backendUrl, loadOpenPdfDocument]);
+  }, [backendUrl, loadOpenPdfDocument, t]);
   const openDesktopFileRef = useRef(openDesktopFile);
   openDesktopFileRef.current = openDesktopFile;
 
@@ -4971,7 +4971,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         message: error instanceof Error ? error.message : "Impossible d'ouvrir le PDF sélectionné.",
       });
     }
-  }, [isRestoringDocuments, openDesktopFile]);
+  }, [isRestoringDocuments, locale, openDesktopFile]);
 
   useEffect(() => {
     if (!isDesktopRuntime() || isRestoringDocuments) return;
@@ -5237,7 +5237,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       exportInProgress.current = false;
       setExportPhase(null);
     }
-  }, [imageJobsKey, imageBackgroundError, activeDocumentId, backendUrl, documents, locale, openGeneratedPdfDocument, organizationPlans, outputName, pdfEditsByDocument, saveToOutputDir, signatureImages]);
+  }, [imageJobsKey, imageBackgroundError, activeDocumentId, backendUrl, documents, locale, openGeneratedPdfDocument, organizationPlans, outputName, pdfEditsByDocument, saveToOutputDir, signatureImages, t]);
 
   const confirmBrowserSave = (documentId: string) => {
     const pending = pendingBrowserSaves[documentId];
