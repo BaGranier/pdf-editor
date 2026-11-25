@@ -76,7 +76,14 @@ export function useLocale() {
 export function localizePdfError(locale: Locale, detail: string): string {
   if (locale === "fr") return detail;
   const prefix = "Biffage sécurisé refusé : ";
-  if (!detail.startsWith(prefix)) return translator(locale)(detail);
+  if (!detail.startsWith(prefix)) {
+    const t = translator(locale);
+    const translated = t(detail);
+    if (translated !== detail) return translated;
+    const diagnostic = detail.indexOf(": ");
+    if (diagnostic < 0) return detail;
+    return t(detail.slice(0, diagnostic)) + detail.slice(diagnostic);
+  }
   const reason = detail.slice(prefix.length);
   if (reason.includes("volumineuses")) return "Secure redaction refused. The pages containing shared or nested PDF objects exceed the reconstruction limit. Export fewer pages and retry.";
   if (reason.includes("zone hors page")) return "Secure redaction refused. At least one area is outside the page or has invalid coordinates.";

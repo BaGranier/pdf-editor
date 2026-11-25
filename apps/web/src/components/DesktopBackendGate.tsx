@@ -1,4 +1,4 @@
-import { useLocale } from "../viewer/locale";
+import { localizePdfError, useLocale } from "../viewer/locale";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   getDesktopBackendStatus,
@@ -47,7 +47,7 @@ export function DesktopBackendGate({
   resolveStatus = getDesktopBackendStatus,
   restart = restartDesktopBackend,
 }: DesktopBackendGateProps) {
-  const { t: localize } = useLocale();
+  const { locale, t: localize } = useLocale();
   const [state, setState] = useState<GateState>({ kind: "starting" });
   const [sessionBackendUrl, setSessionBackendUrl] = useState<string | null>(null);
 
@@ -118,7 +118,7 @@ export function DesktopBackendGate({
       <AppStateScreen
         state="error"
         title={localize("Impossible de démarrer")}
-        description={state.status.message ?? "Impossible de démarrer le moteur PDF local."}
+        description={localizePdfError(locale, state.status.message ?? "Impossible de démarrer le moteur PDF local.")}
         action={<button type="button" onClick={() => void retry()}>{localize("Réessayer")}</button>}
         details={state.status.logPath ? <>{localize("Journal : ")}<code>{state.status.logPath}</code></> : undefined}
       />

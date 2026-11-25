@@ -6089,7 +6089,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             role={exportFeedback?.kind === "error" ? "alert" : "status"}
           >
             <div>
-              {workspaceMode === "read" && exportFeedback ? <span>{t(exportFeedback.message)}</span> : null}
+              {workspaceMode === "read" && exportFeedback ? <span>{localizePdfError(locale, exportFeedback.message)}</span> : null}
               {pendingBrowserSave ? <span>{t("Vérifiez la copie « ")}{pendingBrowserSave.outputName}{t(" » de « ")}{pendingBrowserSave.sourceName}{t(" » dans vos téléchargements.")}</span> : null}
             </div>
             {pendingBrowserDocumentId ? <button type="button" disabled={isExporting} onClick={() => confirmBrowserSave(pendingBrowserDocumentId)}>{t("J’ai enregistré cette copie")}</button> : null}

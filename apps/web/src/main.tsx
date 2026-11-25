@@ -8,6 +8,8 @@ import {
   logDesktopStartupError,
 } from "./desktop/startupDiagnostics";
 import { isDesktopRuntime } from "./api/backend";
+import { loadViewerPreferences } from "./storage/viewerStorage";
+import { translator } from "./viewer/locale";
 
 if (isDesktopRuntime()) {
   installDesktopStartupDiagnostics();
@@ -29,6 +31,6 @@ try {
   );
 } catch (error) {
   logDesktopStartupError("bootstrap", error);
-  document.body.textContent =
-    "PDF Studio Local — l’interface desktop n’a pas pu démarrer. Consultez la console de développement.";
+  const t = translator(loadViewerPreferences()?.locale ?? "fr");
+  document.body.textContent = t("PDF Studio Local — l’interface desktop n’a pas pu démarrer. Consultez la console de développement.");
 }
