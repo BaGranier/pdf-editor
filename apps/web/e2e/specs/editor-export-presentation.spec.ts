@@ -1,4 +1,4 @@
-import { changeInterfaceTheme } from "../helpers/app";
+import { changeInterfaceTheme, chooseNavigationTool } from "../helpers/app";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { expect, test } from "../helpers/qa-test";
@@ -6,8 +6,7 @@ import { fixtureDirectory, fixtures, openApp, openPdf } from "../helpers/app";
 import { validatePdf } from "../helpers/pdf-validation";
 
 async function shape(page: import("@playwright/test").Page, label: string, start = { x: 40, y: 50 }, end = { x: 180, y: 150 }) {
-  await page.getByRole("button", { name: "Texte", exact: true }).click();
-  await page.getByRole("button", { name: label, exact: true }).click();
+  await chooseNavigationTool(page, label);
   const box = await page.getByLabel("Couche d'édition de la page 1").boundingBox();
   if (!box) throw new Error("No edit layer");
   await page.mouse.move(box.x + start.x, box.y + start.y); await page.mouse.down();

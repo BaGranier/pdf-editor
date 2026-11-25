@@ -1,3 +1,4 @@
+import { changeInterfaceTheme } from "../helpers/app";
 import type { Locator } from "@playwright/test";
 import { chooseNavigationTool, drawTextBox, fixtures, openApp, openPdf } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
@@ -27,7 +28,6 @@ test("Fichier et export restent accessibles près des bords, après resize et zo
   await openPdf(page, fixtures.onePage);
   await chooseNavigationTool(page, "Ajouter du texte");
   const file = page.getByRole("button", { name: "Fichier", exact: true });
-  const selector = page.getByRole("combobox", { name: "Thème de l’interface" });
   const menu = page.getByRole("menu", { name: "Fichier", exact: true });
   const layer = page.getByLabel("Couche d'édition de la page 1");
   const printing = menu.getByRole("menuitem", { name: /Imprimer/ });
@@ -39,7 +39,7 @@ test("Fichier et export restent accessibles près des bords, après resize et zo
   ] as const) {
     await page.setViewportSize({ width, height });
     await viewport.evaluate((root, value) => { root.style.zoom = String(value); }, zoom);
-    await selector.selectOption(theme);
+    await changeInterfaceTheme(page, theme);
     await file.press("ArrowDown");
     await withinViewport(menu);
     await page.keyboard.press("End");
@@ -67,7 +67,7 @@ test("Fichier et export restent accessibles près des bords, après resize et zo
   await expect(dialog.getByRole("combobox", { name: "Profil de compression" })).toBeVisible();
   await dialog.getByRole("button", { name: "Annuler", exact: true }).click();
   await file.click();
-  await page.getByRole("button", { name: "Réinitialiser les données locales" }).focus();
+  await page.getByRole("button", { name: "Paramètres", exact: true }).focus();
   await expect(menu).toHaveCount(0);
   await expect(page.getByTitle("Modifications non sauvegardées")).toHaveCount(0);
 });

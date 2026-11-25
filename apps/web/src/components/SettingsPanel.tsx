@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useFloatingPosition } from "../hooks/useFloatingPosition";
 import { useLocale, type Locale } from "../viewer/locale";
 
 export function SettingsPanel({ children, onClose, onLocale, author, onAuthor, onReset, resetDisabled }: {
@@ -12,9 +13,12 @@ export function SettingsPanel({ children, onClose, onLocale, author, onAuthor, o
   resetDisabled: boolean;
 }) {
   const { locale, t } = useLocale();
+  const panel = useRef<HTMLElement>(null);
+  const trigger = document.querySelector<HTMLElement>(".tool-rail__settings");
+  useFloatingPosition(true, trigger, panel, "right-start");
   const close = useRef<HTMLButtonElement>(null);
   useEffect(() => { close.current?.focus(); }, []);
-  return createPortal(<section className="floating-surface settings-panel" role="dialog" aria-label={t("Paramètres")}
+  return createPortal(<section ref={panel} className="floating-surface settings-panel" role="dialog" aria-label={t("Paramètres")}
     onKeyDown={(event) => {
       if (event.key === "Escape" && !event.defaultPrevented) { event.stopPropagation(); onClose(); }
     }}>

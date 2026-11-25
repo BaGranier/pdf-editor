@@ -50,7 +50,7 @@ test("QA-E2E-008 @smoke restaure IndexedDB, préférences, scroll et plan sans d
   await expect(
     page.getByRole("button", { name: "pdf-small-5-pages.pdf, document actif" }),
   ).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Thème de l’interface" })).toHaveValue("dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page.getByTestId("zoom-level")).toHaveText("110%");
   await expect
     .poll(() => page.getByTestId("pdf-viewer").evaluate((element) => element.scrollTop))
@@ -97,10 +97,9 @@ test("QA-E2E-009 @smoke efface les données locales et conserve un état initial
 
 test("QA-E2E-017 @regression persiste les thèmes clair et sombre", async ({ page }) => {
   await openApp(page);
-  const themeSwitch = page.getByRole("combobox", { name: "Thème de l’interface" });
   const initialTheme = await page.evaluate(() => document.documentElement.dataset.theme);
   const toggledTheme = initialTheme === "dark" ? "light" : "dark";
-  await themeSwitch.selectOption(toggledTheme);
+  await changeInterfaceTheme(page, toggledTheme);
   await expect
     .poll(() => page.evaluate(() => document.documentElement.dataset.theme))
     .toBe(toggledTheme);

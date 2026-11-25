@@ -1,3 +1,4 @@
+import { changeInterfaceTheme } from "../helpers/app";
 import { chooseNavigationTool } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import { readFileSync } from "node:fs";
@@ -112,9 +113,8 @@ test("MVP-SAVE-LIMIT refuse un export trop gros avant IPC et garde l'interface u
   }));
   await page.keyboard.press("Control+Shift+s");
   await expect(page.getByText(/dépasse la taille validée.*25 Mio/)).toBeVisible();
-  const theme = page.getByRole("combobox", { name: "Thème de l’interface" });
-  await theme.selectOption("ocean");
-  await expect(theme).toHaveValue("ocean");
+  await changeInterfaceTheme(page, "ocean");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "ocean");
   expect(nativeSaves).toBe(0);
   expect(readFileSync(fixtures.onePage)).toEqual(source);
 });

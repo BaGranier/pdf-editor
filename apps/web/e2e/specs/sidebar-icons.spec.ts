@@ -7,7 +7,7 @@ test.use({ deviceScaleFactor: 2 });
 test("sidebar SVG icons: marking, state, keyboard, themes and narrow HiDPI viewport", async ({ page }, info) => {
   await openApp(page); await openPdf(page, fixtures.onePage);
   const rail = page.getByRole("navigation", { name: "Outils d'édition" });
-  await expect(rail.locator('button > svg:not([data-icon="check"])')).toHaveCount(7);
+  await expect(rail.locator('button > svg:not([data-icon="check"])')).toHaveCount(9);
   const documentEdits = async () => {
     const documents = await getStoredDocuments(page) as Array<{ fileName: string; edits?: unknown[]; editsDirty?: boolean }>;
     return documents.map(({ fileName, edits, editsDirty }) => ({ fileName, edits: edits ?? [], dirty: editsDirty ?? false }));
@@ -81,8 +81,8 @@ test("parcourt les sept catégories et leurs sous-outils sans édition implicite
     ["Annotations", ["Commentaire", "Afficher les commentaires"]],
   ];
   const rail = page.getByRole("navigation", { name: "Outils d'édition" });
-  await expect(rail.getByRole("button")).toHaveText(categories.map(() => ""));
-  await expect(rail.locator("button")).toHaveCount(categories.length);
+  await expect(rail.getByRole("button")).toHaveText([...categories, "select", "settings"].map(() => ""));
+  await expect(rail.locator("button")).toHaveCount(categories.length + 2);
   for (const [index, [label, tools]] of categories.entries()) {
     const category = rail.locator("button").nth(index);
     await expect(category).toHaveAccessibleName(label);
