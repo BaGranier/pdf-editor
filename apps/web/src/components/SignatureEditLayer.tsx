@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import {
   useEffect,
   useRef,
@@ -42,6 +43,7 @@ export function SignatureEditBlock({
   onDelete,
   onCrop,
 }: SignatureEditBlockProps) {
+  const { t: localize } = useLocale();
   const [cropping, setCropping] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const crop = edit.type === "image" ? edit.crop ?? FULL_IMAGE_CROP : FULL_IMAGE_CROP;
@@ -168,7 +170,7 @@ export function SignatureEditBlock({
       <div className="pdf-image-clip">
       <img
         src={image.dataUrl}
-        alt={`${edit.type === "image" ? "Image" : "Signature visuelle"} page ${edit.page}`}
+        alt={localize("{0} page {1}", edit.type === "image" ? "Image" : localize("Signature visuelle"), edit.page)}
         draggable={false}
         style={edit.type === "image" && !cropping ? { position: "absolute", width: `${100 / crop.width}%`, height: `${100 / crop.height}%`, left: `${-100 * crop.x / crop.width}%`, top: `${-100 * crop.y / crop.height}%`, objectFit: "fill" } : undefined}
       />
@@ -179,7 +181,7 @@ export function SignatureEditBlock({
           <button
             type="button"
             className="pdf-signature-edit__delete"
-            aria-label={`Supprimer ${edit.type === "image" ? "l’image" : "la signature"} page ${edit.page}`}
+            aria-label={localize("Supprimer {0} page {1}", edit.type === "image" ? localize("l’image") : localize("la signature"), edit.page)}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
@@ -191,15 +193,15 @@ export function SignatureEditBlock({
           <button
             type="button"
             className="pdf-signature-edit__resize"
-            aria-label={`Redimensionner ${edit.type === "image" ? "l’image" : "la signature"} page ${edit.page}`}
+            aria-label={localize("Redimensionner {0} page {1}", edit.type === "image" ? localize("l’image") : localize("la signature"), edit.page)}
             onMouseDown={(event) => startInteraction("resize", event)}
           />
           {edit.type === "image" ? <>
-            <button type="button" className="pdf-image-resize-width" aria-label="Redimensionner la largeur de l’image" onMouseDown={(event) => startInteraction("width", event)} />
-            <button type="button" className="pdf-image-resize-height" aria-label="Redimensionner la hauteur de l’image" onMouseDown={(event) => startInteraction("height", event)} />
+            <button type="button" className="pdf-image-resize-width" aria-label={localize("Redimensionner la largeur de l’image")} onMouseDown={(event) => startInteraction("width", event)} />
+            <button type="button" className="pdf-image-resize-height" aria-label={localize("Redimensionner la hauteur de l’image")} onMouseDown={(event) => startInteraction("height", event)} />
             <div className="pdf-image-actions" onMouseDown={(event) => event.stopPropagation()}>
-              <button type="button" onClick={(event) => { event.stopPropagation(); setCropping(true); }}>Rogner l’image</button>
-              {edit.crop ? <button type="button" onClick={(event) => { event.stopPropagation(); onCrop?.(undefined, fullRect); }}>Rétablir l’image entière</button> : null}
+              <button type="button" onClick={(event) => { event.stopPropagation(); setCropping(true); }}>{localize("Rogner l’image")}</button>
+              {edit.crop ? <button type="button" onClick={(event) => { event.stopPropagation(); onCrop?.(undefined, fullRect); }}>{localize("Rétablir l’image entière")}</button> : null}
             </div>
           </> : null}
         </>

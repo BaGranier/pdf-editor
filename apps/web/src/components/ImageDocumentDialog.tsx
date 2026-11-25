@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import { ImageCropEditor } from "./ImageCropEditor";
@@ -7,6 +8,7 @@ export function ImageDocumentDialog({ pdf, onTransform, onReset, onCancel }: {
   pdf: PDFDocumentProxy; onTransform: (transform: ImageTransform) => void;
   onReset: () => void; onCancel: () => void;
 }) {
+  const { t: localize } = useLocale();
   const canvas = useRef<HTMLCanvasElement>(null);
   const [ratio, setRatio] = useState("free"), [size, setSize] = useState({ width: 400, height: 300 });
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +33,7 @@ export function ImageDocumentDialog({ pdf, onTransform, onReset, onCancel }: {
   const targetRatio = ratio === "square" ? 1 : ratio === "photo" ? 4 / 3 : size.width / size.height;
   const width = Math.min(1, targetRatio / (size.width / size.height));
   const height = Math.min(1, (size.width / size.height) / targetRatio);
-  return <div className="unsaved-dialog-backdrop" role="presentation"><section className="unsaved-dialog images-pdf-dialog" role="dialog" aria-modal="true" aria-label="Éditer le fond image"
+  return <div className="unsaved-dialog-backdrop" role="presentation"><section className="unsaved-dialog images-pdf-dialog" role="dialog" aria-modal="true" aria-label={localize("Éditer le fond image")}
     onKeyDown={(event) => {
       event.stopPropagation();
       if (event.key === "Escape") { event.preventDefault(); onCancel(); }
@@ -46,19 +48,19 @@ export function ImageDocumentDialog({ pdf, onTransform, onReset, onCancel }: {
         }
       }
     }}>
-    <h2>Éditer le fond image</h2>
-    <p>Transformations non destructives du fond, ajusté dans la page d’origine. Les annotations gardent leur position sur la page. Le rognage est visuel et ne supprime pas les données cachées.</p>
+    <h2>{localize("Éditer le fond image")}</h2>
+    <p>{localize("Transformations non destructives du fond, ajusté dans la page d’origine. Les annotations gardent leur position sur la page. Le rognage est visuel et ne supprime pas les données cachées.")}</p>
     <div className="image-document-preview" style={{ width: size.width }}>
-      <canvas ref={canvas} style={{ width: "100%", aspectRatio: size.width / size.height }} aria-label="Aperçu du fond image" />
+      <canvas ref={canvas} style={{ width: "100%", aspectRatio: size.width / size.height }} aria-label={localize("Aperçu du fond image")} />
       {ready ? <ImageCropEditor inlineActions key={ratio} initial={{ x: (1 - width) / 2, y: (1 - height) / 2, width, height }} onApply={(crop) => onTransform({ type: "crop", ...crop })} onCancel={onCancel} /> : null}
     </div>
-    <label>Ratio du cadre initial<select value={ratio} onChange={(event) => setRatio(event.currentTarget.value)}><option value="free">Libre</option><option value="square">Carré (1:1)</option><option value="photo">Photo (4:3)</option></select></label>
-    {error ? <p role="alert">{error}</p> : null}
+    <label>{localize("Ratio du cadre initial")}<select value={ratio} onChange={(event) => setRatio(event.currentTarget.value)}><option value="free">{localize("Libre")}</option><option value="square">{localize("Carré (1:1)")}</option><option value="photo">Photo (4:3)</option></select></label>
+    {error ? <p role="alert">{localize(error)}</p> : null}
     <div className="unsaved-dialog__actions">
-      <button type="button" onClick={() => onTransform({ type: "rotate" })} disabled={!ready}>Pivoter le fond de 90°</button>
-      <button type="button" onClick={() => onTransform({ type: "mirror_horizontal" })} disabled={!ready}>Retourner horizontalement</button>
-      <button type="button" onClick={() => onTransform({ type: "mirror_vertical" })} disabled={!ready}>Retourner verticalement</button>
-      <button type="button" onClick={onReset}>Réinitialiser le fond</button><button type="button" onClick={onCancel}>Fermer</button>
+      <button type="button" onClick={() => onTransform({ type: "rotate" })} disabled={!ready}>{localize("Pivoter le fond de 90°")}</button>
+      <button type="button" onClick={() => onTransform({ type: "mirror_horizontal" })} disabled={!ready}>{localize("Retourner horizontalement")}</button>
+      <button type="button" onClick={() => onTransform({ type: "mirror_vertical" })} disabled={!ready}>{localize("Retourner verticalement")}</button>
+      <button type="button" onClick={onReset}>{localize("Réinitialiser le fond")}</button><button type="button" onClick={onCancel}>{localize("Fermer")}</button>
     </div>
   </section></div>;
 }

@@ -1,7 +1,10 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useMemo } from "react";
+
+import { loadViewerPreferences } from "../storage/viewerStorage";
+import { englishMessages } from "./englishMessages";
 
 export type Locale = "fr" | "en";
-export const LocaleContext = createContext<Locale>("fr");
+export const LocaleContext = createContext<Locale | null>(null);
 
 const english: Record<string, string> = {
   "Outils": "Tools", "Paramètres": "Settings", "Général": "General", "Apparence": "Appearance", "Langue de l’interface": "Interface language",
@@ -55,12 +58,19 @@ const english: Record<string, string> = {
 };
 
 export function translator(locale: Locale) {
-  return (message: string): string => locale === "en" ? english[message] ?? message : message;
+  return (message: string, ...values: readonly (string | number)[]): string => {
+    const translated = locale === "en"
+      ? Object.prototype.hasOwnProperty.call(englishMessages, message) ? englishMessages[message] : message
+      : message;
+    return values.length === 0 ? translated : translated.replace(/\{(\d+)\}/g, (placeholder, index: string) =>
+      values[Number(index)] === undefined ? placeholder : String(values[Number(index)]));
+  };
 }
 
 export function useLocale() {
-  const locale = useContext(LocaleContext);
-  return { locale, t: translator(locale) };
+  const locale = useContext(LocaleContext) ?? loadViewerPreferences()?.locale ?? "fr";
+  const t = useMemo(() => translator(locale), [locale]);
+  return { locale, t };
 }
 
 export function localizePdfError(locale: Locale, detail: string): string {

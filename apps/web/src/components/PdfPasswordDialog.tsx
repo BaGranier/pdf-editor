@@ -1,9 +1,11 @@
+import { useLocale } from "../viewer/locale";
 import { useEffect, useRef, type FormEvent } from "react";
 
 export function PdfPasswordDialog({ error, onAnswer }: {
   error: string;
   onAnswer: (password: string | null) => void;
 }) {
+  const { t: localize } = useLocale();
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { input.current?.focus(); }, [error]);
   function answer(event: FormEvent) {
@@ -22,16 +24,16 @@ export function PdfPasswordDialog({ error, onAnswer }: {
       if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     }
   }}>
-    <section className="ocr-dialog" role="dialog" aria-modal="true" aria-label="PDF protégé">
-      <h2>PDF protégé</h2>
-      <p>Session temporaire. La copie déchiffrée reste en mémoire et disparaît de la reprise après fermeture ou rechargement.</p>
-      <p>Pour produire une copie protégée, choisissez le chiffrement dans Fichier → Exporter / Finaliser. Les anciennes copies restaurées ne portent pas d’indicateur de chiffrement. Fermez individuellement les onglets concernés pour retirer leurs copies du stockage de reprise.</p>
+    <section className="ocr-dialog" role="dialog" aria-modal="true" aria-label={localize("PDF protégé")}>
+      <h2>{localize("PDF protégé")}</h2>
+      <p>{localize("Session temporaire. La copie déchiffrée reste en mémoire et disparaît de la reprise après fermeture ou rechargement.")}</p>
+      <p>{localize("Pour produire une copie protégée, choisissez le chiffrement dans Fichier → Exporter / Finaliser. Les anciennes copies restaurées ne portent pas d’indicateur de chiffrement. Fermez individuellement les onglets concernés pour retirer leurs copies du stockage de reprise.")}</p>
       <form className="ocr-dialog__form" onSubmit={answer}>
-        <label>Mot de passe<input ref={input} type="password" autoComplete="off" /></label>
-        {error ? <p role="alert">{error}</p> : null}
+        <label>{localize("Mot de passe")}<input ref={input} type="password" autoComplete="off" /></label>
+        {error ? <p role="alert">{localize(error)}</p> : null}
         <div className="ocr-dialog__actions">
-          <button type="button" onClick={() => onAnswer(null)}>Annuler</button>
-          <button type="submit">Ouvrir</button>
+          <button type="button" onClick={() => onAnswer(null)}>{localize("Annuler")}</button>
+          <button type="submit">{localize("Ouvrir")}</button>
         </div>
       </form>
     </section>

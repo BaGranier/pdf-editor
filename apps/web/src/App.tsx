@@ -476,6 +476,7 @@ function PdfPageCanvas({
   onRenderError,
   presentation = false,
 }: PdfPageCanvasProps) {
+  const { t: localize } = useLocale();
   const pageRef = useRef<HTMLElement | null>(null);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -603,7 +604,7 @@ function PdfPageCanvas({
       const fontRef = edit.style.fontRef ?? edit.style.fontFamily;
       const customFont = fontRef.startsWith("custom:") ? await getCustomFont(fontRef) : null;
       if (fontRef.startsWith("custom:") && !customFont) {
-        return [edit.id, { status: "missing", fontRef, message: `Police manquante : « ${edit.style.fontFamily} ». Importez le fichier .ttf ou .otf correspondant pour l’utiliser dans le PDF.` } satisfies NativeTextFontValidation] as const;
+        return [edit.id, { status: "missing", fontRef, message: localize("Police manquante : « {0} ». Importez le fichier .ttf ou .otf correspondant pour l’utiliser dans le PDF.", edit.style.fontFamily) } satisfies NativeTextFontValidation] as const;
       }
       const resources = customFont ? [{ id: customFont.id, sha256: customFont.sha256, format: customFont.format, fileName: customFont.originalFileName, dataUrl: await blobToDataUrl(customFont.binary) }] : [];
       return [edit.id, await validateNativeTextFont(backendUrl, sourceFile, sourcePageNumber, edit, resources)] as const;
@@ -856,7 +857,7 @@ function PdfPageCanvas({
       data-rendered={shouldRender ? "true" : "false"}
       data-render-state={renderState}
       data-annotation-mode={canvasAnnotationMode === PDFJS_DISPLAY_ANNOTATION_MODES.ENABLE_FORMS ? "enable_forms" : "enable"}
-      aria-label={`Page ${displayPageNumber}`}
+      aria-label={localize("Page {0}", displayPageNumber)}
       aria-hidden={isIncomingPage || undefined}
       inert={isIncomingPage}
     >
@@ -897,12 +898,12 @@ function PdfPageCanvas({
         {!shouldRender ? <div className="page-placeholder" aria-hidden="true" /> : null}
         {shouldRender && renderState === "error" ? (
           <p className="page-error" role="alert">{sourceImageName
-            ? `Impossible d’afficher l’image « ${sourceImageName} ».`
-            : "Impossible d'afficher cette page."}</p>
+            ? localize("Impossible d’afficher l’image « {0} ».", sourceImageName)
+            : localize("Impossible d'afficher cette page.")}</p>
         ) : null}
         {shouldRender && renderState !== "ready" && renderState !== "error" ? (
           <div className="page-placeholder" aria-hidden="true">
-            {renderState === "loading" ? "Chargement..." : ""}
+            {renderState === "loading" ? localize("Chargement...") : ""}
           </div>
         ) : null}
         {shouldRender ? <canvas ref={canvasRef} className="pdf-canvas" /> : null}
@@ -984,7 +985,7 @@ function PdfPageCanvas({
             }}
             onFinish={(field) => onFinishEditCoalescing(`form-${field.pageIndex}-${field.name}`, "value")}
           />
-          {formOrganizationUnsupported ? <p className="native-text-layer__error" role="status">Formulaires après organisation — WIP. L’édition des champs est désactivée. Rétablissez l’organisation source pour modifier le formulaire.</p> : <FormLockToolbar
+          {formOrganizationUnsupported ? <p className="native-text-layer__error" role="status">{localize("Formulaires après organisation — WIP. L’édition des champs est désactivée. Rétablissez l’organisation source pour modifier le formulaire.")}</p> : <FormLockToolbar
             uiLocked={formUiLocked}
             pdfLocked={pdfFormLocked}
             onSetUiLocked={onSetFormUiLock}
@@ -993,16 +994,16 @@ function PdfPageCanvas({
           />}
           </>
         ) : null}
-        {shouldRender && formError && formRuntimeActive ? <p className="native-text-layer__error" role="status">{formError}</p> : null}
-        {shouldRender && nativeTextError && nativeTextRuntimeActive ? <p className="native-text-layer__error" role="status">{nativeTextError}</p> : null}
-        {shouldRender && nativeTextRuntimeActive && !nativeTextIndexed && !nativeTextError ? <p className="native-text-layer__error" role="status">Analyse du texte de cette page…</p> : null}
+        {shouldRender && formError && formRuntimeActive ? <p className="native-text-layer__error" role="status">{localize(formError)}</p> : null}
+        {shouldRender && nativeTextError && nativeTextRuntimeActive ? <p className="native-text-layer__error" role="status">{localize(nativeTextError)}</p> : null}
+        {shouldRender && nativeTextRuntimeActive && !nativeTextIndexed && !nativeTextError ? <p className="native-text-layer__error" role="status">{localize("Analyse du texte de cette page…")}</p> : null}
         {shouldRender && nativeTextRuntimeActive &&
         nativeTextIndexed &&
         !nativeTextError &&
         nativeTextSpans.length === 0 &&
         !edits.some((edit) => edit.type === "native_text") ? (
           <p className="native-text-layer__error" role="status">
-            Aucun texte PDF natif modifiable sur cette page. Le texte présent uniquement dans une image ou converti en courbes ne peut pas être édité directement.
+            {localize("Aucun texte PDF natif modifiable sur cette page. Le texte présent uniquement dans une image ou converti en courbes ne peut pas être édité directement.")}
           </p>
         ) : null}
         {shouldRender && viewport ? <PdfLinks
@@ -1146,6 +1147,7 @@ function PdfViewer({
   shouldFitToPage,
   fitRefreshToken,
 }: PdfViewerProps) {
+  const { t: localize } = useLocale();
   const editsBySourcePage = useMemo(() => {
     const pages = new Map<number, PdfEdit[]>();
     for (const edit of edits) {
@@ -1197,7 +1199,7 @@ function PdfViewer({
   }, [document.id]);
 
   const [pageTransitionError, setPageTransitionError] = useState<string | null>(null);
-  const reportRenderError = useCallback((pageNumber: number) => setPageTransitionError(`La page ${pageNumber} n’a pas pu être rendue. La slide courante est conservée.`), []);
+  const reportRenderError = useCallback((pageNumber: number) => setPageTransitionError(localize("La page {0} n’a pas pu être rendue. La slide courante est conservée.", pageNumber)), []);
   const requestedPageRef = useRef(activePageNumber);
   requestedPageRef.current = activePageNumber;
   const commitVisiblePage = useCallback((pageNumber: number) => {
@@ -1790,7 +1792,7 @@ function PdfViewer({
               ? "viewer viewer--eyedropper"
               : "viewer viewer--pan-enabled")
       }
-      aria-label={`Aperçu PDF ${document.fileName}`}
+      aria-label={localize("Aperçu PDF {0}", document.fileName)}
       onScroll={handleScroll}
       onKeyDown={handleKeyDown}
       onMouseDown={handleMouseDown}
@@ -1804,10 +1806,10 @@ function PdfViewer({
         }
       }}
     >
-      {pageTransitionError ? <p className="presentation-render-error" role="status">{pageTransitionError}</p> : null}
+      {pageTransitionError ? <p className="presentation-render-error" role="status">{localize(pageTransitionError)}</p> : null}
       {document.error ? <p className="status">{document.error}</p> : null}
       <div className={multipage ? `pdf-document pdf-document--${viewerMode}` : scrolling ? "pdf-document" : "pdf-document pdf-document--page-transition"}
-        style={multipage ? { gap: PAGE_ROW_GAP } : undefined} aria-label={`Document PDF ${document.fileName}`}>
+        style={multipage ? { gap: PAGE_ROW_GAP } : undefined} aria-label={localize("Document PDF {0}", document.fileName)}>
         {pagesToRender.map(({ page, isIncoming }) => {
           const isActiveDocumentSource = page.sourceDocumentId === document.id;
           const nativeTextRuntimeActive =
@@ -1891,23 +1893,23 @@ function PdfViewer({
         })}
       </div>
       {viewerMode === "single-page" ? (
-        <nav className="viewer-page-navigation" aria-label="Navigation des pages">
+        <nav className="viewer-page-navigation" aria-label={localize("Navigation des pages")}>
           <button
             type="button"
             onClick={() => goToPage(activePageNumber - 1)}
             disabled={activePageNumber <= 1}
-            aria-label="Page précédente"
-            title="Page précédente"
+            aria-label={localize("Page précédente")}
+            title={localize("Page précédente")}
           >
             ←
           </button>
-          <output aria-label={`Page ${activePageNumber} sur ${pages.length}`}>{activePageNumber} / {pages.length}</output>
+          <output aria-label={localize("Page {0} sur {1}", activePageNumber, pages.length)}>{activePageNumber} / {pages.length}</output>
           <button
             type="button"
             onClick={() => goToPage(activePageNumber + 1)}
             disabled={activePageNumber >= pages.length}
-            aria-label="Page suivante"
-            title="Page suivante"
+            aria-label={localize("Page suivante")}
+            title={localize("Page suivante")}
           >
             →
           </button>
@@ -1923,6 +1925,7 @@ type OrganizePageThumbnailProps = {
 };
 
 function OrganizePageThumbnail({ pdfDocument, page }: OrganizePageThumbnailProps) {
+  const { t: localize } = useLocale();
   const devicePixelRatio = useDevicePixelRatio();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [renderState, setRenderState] = useState<RenderState>("idle");
@@ -1987,13 +1990,13 @@ function OrganizePageThumbnail({ pdfDocument, page }: OrganizePageThumbnailProps
   }, [devicePixelRatio, page.rotation, page.sourcePageIndex, pdfDocument]);
 
   return (
-    <div className="organize-thumbnail" aria-label={`Miniature de la page source ${page.sourcePageIndex + 1}`}>
+    <div className="organize-thumbnail" aria-label={localize("Miniature de la page source {0}", page.sourcePageIndex + 1)}>
       {renderState !== "ready" && renderState !== "error" ? (
         <span className="organize-thumbnail__placeholder" aria-hidden="true">
-          {renderState === "loading" ? "Chargement…" : ""}
+          {renderState === "loading" ? localize("Chargement…") : ""}
         </span>
       ) : null}
-      {renderState === "error" ? <span className="organize-thumbnail__error">Aperçu indisponible</span> : null}
+      {renderState === "error" ? <span className="organize-thumbnail__error">{localize("Aperçu indisponible")}</span> : null}
       <canvas ref={canvasRef} className="organize-thumbnail__canvas" />
     </div>
   );
@@ -2005,6 +2008,7 @@ type ExternalPageThumbnailProps = {
 };
 
 function ExternalPageThumbnail({ pdfDocument, pageNumber }: ExternalPageThumbnailProps) {
+  const { t: localize } = useLocale();
   const thumbnailRef = useRef<HTMLDivElement | null>(null);
   const devicePixelRatio = useDevicePixelRatio();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -2093,10 +2097,10 @@ function ExternalPageThumbnail({ pdfDocument, pageNumber }: ExternalPageThumbnai
   }, [devicePixelRatio, pageNumber, pdfDocument, shouldRender]);
 
   return (
-    <div ref={thumbnailRef} className="external-page-thumbnail" aria-label={`Miniature externe de la page ${pageNumber}`}>
+    <div ref={thumbnailRef} className="external-page-thumbnail" aria-label={localize("Miniature externe de la page {0}", pageNumber)}>
       {renderState !== "ready" && renderState !== "error" ? (
         <span className="external-page-thumbnail__placeholder" aria-hidden="true">
-          {renderState === "loading" ? "Chargement…" : ""}
+          {renderState === "loading" ? localize("Chargement…") : ""}
         </span>
       ) : null}
       {renderState === "error" ? <span className="external-page-thumbnail__fallback">Page {pageNumber}</span> : null}
@@ -2193,6 +2197,7 @@ function OrganizePages({
   onDismissExportFeedback,
   onRemoveMissingSourcePages,
 }: OrganizePagesProps) {
+  const { t: localize } = useLocale();
   const hasPendingChanges = isPlanModified(plan, document.pageCount);
   const canReset = hasPendingChanges || selectedPageId !== null;
   const [draggedPageId, setDraggedPageId] = useState<string | null>(null);
@@ -2248,28 +2253,28 @@ function OrganizePages({
   };
 
   return (
-    <section className="organize-workspace" aria-label={`Organiser les pages de ${document.fileName}`}>
+    <section className="organize-workspace" aria-label={localize("Organiser les pages de {0}", document.fileName)}>
       <header className="organize-header">
         <div>
-          <h2>Organiser les pages</h2>
-          <p>Modifications locales uniquement — les PDF originaux restent inchangés.</p>
+          <h2>{localize("Organiser les pages")}</h2>
+          <p>{localize("Modifications locales uniquement — les PDF originaux restent inchangés.")}</p>
         </div>
-        <div className="organize-export-bar" aria-label="Plan d'export">
+        <div className="organize-export-bar" aria-label={localize("Plan d'export")}>
           <label className="organize-export-name">
-            <span>Nom final</span>
+            <span>{localize("Nom final")}</span>
             <input
               type="text"
               value={outputName}
               onChange={(event) => onOutputNameChange(event.target.value)}
-              aria-label="Nom du PDF exporté"
+              aria-label={localize("Nom du PDF exporté")}
               placeholder="document-modifie.pdf"
             />
           </label>
-          <span className="organize-page-count" aria-label={`${plan.pages.length} pages seront exportées`}>
+          <span className="organize-page-count" aria-label={localize("{0} pages seront exportées", plan.pages.length)}>
             <strong>{plan.pages.length}</strong> {plan.pages.length > 1 ? "pages" : "page"}
           </span>
           <span className={hasPendingChanges ? "organize-changes is-pending" : "organize-changes"}>
-            {hasPendingChanges ? "Modifié" : "Ordre d'origine"}
+            {hasPendingChanges ? localize("Modifié") : localize("Ordre d'origine")}
           </span>
           {!document.sessionOnly ? <label className="organize-export-output-option">
             <input
@@ -2277,16 +2282,16 @@ function OrganizePages({
               checked={saveToOutputDir}
               onChange={(event) => onSaveToOutputDirChange(event.target.checked)}
             />
-            Copier dans data/output
+            {localize("Copier dans data/output")}
           </label> : null}
           <button
             type="button"
             className="organize-reset-button"
             onClick={onReset}
             disabled={!canReset}
-            aria-label="Réinitialiser l'organisation"
+            aria-label={localize("Réinitialiser l'organisation")}
           >
-            Réinitialiser
+            {localize("Réinitialiser")}
           </button>
           <button
             type="button"
@@ -2295,12 +2300,12 @@ function OrganizePages({
             disabled={plan.pages.length === 0 || isExporting || hasMissingSources}
           >
             {isExporting ? <span className="organize-spinner" aria-hidden="true" /> : null}
-            {isExporting ? "Export en cours…" : "Exporter le PDF"}
+            {isExporting ? localize("Export en cours…") : localize("Exporter le PDF")}
           </button>
         </div>
       </header>
 
-      <section className="organize-source-summary" aria-label="Sources du plan d'export">
+      <section className="organize-source-summary" aria-label={localize("Sources du plan d'export")}>
         <span className="organize-source-summary__label">Sources</span>
         {sourceSummary.map(([sourceDocumentId, source]) => (
           <span key={sourceDocumentId} className="organize-source-summary__item" title={source.fileName}>
@@ -2312,23 +2317,23 @@ function OrganizePages({
       {hasMissingSources ? (
         <div className="organize-feedback organize-feedback--error" role="alert">
           <div>
-            <strong>Des documents sources sont indisponibles.</strong>
+            <strong>{localize("Des documents sources sont indisponibles.")}</strong>
             <span title={missingSourceDocuments.join(", ")}>
-              Export impossible tant que ces pages sont présentes : {missingSourceDocuments.join(", ")}.
+              {localize("Export impossible tant que ces pages sont présentes : ")}{missingSourceDocuments.join(", ")}.
             </span>
           </div>
           <div className="organize-feedback__actions">
             <button type="button" onClick={onRemoveMissingSourcePages}>
-              Retirer les pages indisponibles
+              {localize("Retirer les pages indisponibles")}
             </button>
             <button type="button" onClick={onReset}>
-              Réinitialiser le plan
+              {localize("Réinitialiser le plan")}
             </button>
           </div>
         </div>
       ) : null}
 
-      <section className="organize-add-pages" aria-label="Ajout de pages externes">
+      <section className="organize-add-pages" aria-label={localize("Ajout de pages externes")}>
         {additionalDocuments.length > 0 ? (
           <>
           <button
@@ -2336,15 +2341,15 @@ function OrganizePages({
             onClick={() => setIsAddPagesOpen((isOpen) => !isOpen)}
             aria-expanded={isAddPagesOpen}
           >
-            Ajouter depuis un PDF ouvert
+            {localize("Ajouter depuis un PDF ouvert")}
           </button>
           {isAddPagesOpen ? (
             <div className="organize-add-pages__panel">
               <label className="organize-add-pages__source">
-                <span>PDF source</span>
+                <span>{localize("PDF source")}</span>
                 <select
                   value={selectedExternalDocument?.id ?? ""}
-                  aria-label="PDF source externe"
+                  aria-label={localize("PDF source externe")}
                   onChange={(event) => {
                     setSelectedExternalDocumentId(event.target.value);
                     setSelectedExternalPageIndexes([]);
@@ -2358,7 +2363,7 @@ function OrganizePages({
                 </select>
               </label>
               {selectedExternalDocument && selectedExternalDocument.pageCount > 0 ? (
-                <div className="external-page-grid" aria-label="Miniatures des pages externes">
+                <div className="external-page-grid" aria-label={localize("Miniatures des pages externes")}>
                   {Array.from({ length: selectedExternalDocument.pageCount }, (_, sourcePageIndex) => {
                     const isSelected = selectedExternalPageIndexes.includes(sourcePageIndex);
 
@@ -2367,9 +2372,9 @@ function OrganizePages({
                         key={sourcePageIndex}
                         type="button"
                         className={isSelected ? "external-page is-selected" : "external-page"}
-                        aria-label={`Ajouter ${selectedExternalDocument.fileName}, page ${sourcePageIndex + 1}`}
+                        aria-label={localize("Ajouter {0}, page {1}", selectedExternalDocument.fileName, sourcePageIndex + 1)}
                         aria-pressed={isSelected}
-                        title={`${selectedExternalDocument.fileName} — page ${sourcePageIndex + 1}`}
+                        title={localize("{0} — page {1}", selectedExternalDocument.fileName, sourcePageIndex + 1)}
                         onClick={() => {
                           setSelectedExternalPageIndexes((currentIndexes) =>
                             isSelected
@@ -2391,7 +2396,7 @@ function OrganizePages({
                   })}
                 </div>
               ) : selectedExternalDocument ? (
-                <p className="organize-add-pages__empty">Ce PDF ne contient aucune page disponible.</p>
+                <p className="organize-add-pages__empty">{localize("Ce PDF ne contient aucune page disponible.")}</p>
               ) : null}
               <div className="organize-add-pages__actions">
                 <button
@@ -2406,7 +2411,7 @@ function OrganizePages({
                     setSelectedExternalPageIndexes([]);
                   }}
                 >
-                  Ajouter les pages sélectionnées
+                  {localize("Ajouter les pages sélectionnées")}
                 </button>
                 <button
                   type="button"
@@ -2423,21 +2428,21 @@ function OrganizePages({
                     setSelectedExternalPageIndexes([]);
                   }}
                 >
-                  Tout ajouter
+                  {localize("Tout ajouter")}
                 </button>
               </div>
             </div>
           ) : null}
           </>
         ) : (
-          <p>Ouvrez un autre PDF pour ajouter ses pages à la fin du plan.</p>
+          <p>{localize("Ouvrez un autre PDF pour ajouter ses pages à la fin du plan.")}</p>
         )}
       </section>
 
       {isExporting ? (
         <div className="organize-feedback organize-feedback--progress" role="status">
           <span className="organize-spinner" aria-hidden="true" />
-          Export en cours…
+          {localize("Export en cours…")}
         </div>
       ) : null}
 
@@ -2446,15 +2451,15 @@ function OrganizePages({
           className={`organize-feedback organize-feedback--${exportFeedback.kind}`}
           role={exportFeedback.kind === "error" ? "alert" : "status"}
         >
-          <span>{exportFeedback.message}</span>
-          <button type="button" onClick={onDismissExportFeedback} aria-label="Fermer le message d'export">
-            Fermer
+          <span>{localize(exportFeedback.message)}</span>
+          <button type="button" onClick={onDismissExportFeedback} aria-label={localize("Fermer le message d'export")}>
+            {localize("Fermer")}
           </button>
         </div>
       ) : null}
 
       {plan.pages.length > 0 ? (
-        <div className="organize-grid" aria-label="Grille des pages organisées">
+        <div className="organize-grid" aria-label={localize("Grille des pages organisées")}>
           {plan.pages.map((page, index) => {
             const selected = page.id === selectedPageId;
             const pageLabel = `Page ${page.displayPageNumber}`;
@@ -2495,16 +2500,16 @@ function OrganizePages({
                   <OrganizePageThumbnail pdfDocument={sourceDocument.pdfDocument} page={page} />
                 ) : (
                   <div className="organize-thumbnail organize-thumbnail--missing">
-                    Source indisponible
+                    {localize("Source indisponible")}
                   </div>
                 )}
                 <button
                   type="button"
                   className="organize-page__icon-button organize-page__select"
                   onClick={() => onToggleSelection(page.id)}
-                  aria-label={`Sélectionner la page ${page.displayPageNumber}`}
+                  aria-label={localize("Sélectionner la page {0}", page.displayPageNumber)}
                   aria-pressed={selected}
-                  title={selected ? "Désélectionner la page" : "Sélectionner la page"}
+                  title={selected ? localize("Désélectionner la page") : localize("Sélectionner la page")}
                 >
                   <OrganizeIcon name="check" />
                 </button>
@@ -2512,8 +2517,8 @@ function OrganizePages({
                   type="button"
                   className="organize-page__icon-button organize-page__rotate"
                   onClick={() => onRotatePage(page.id)}
-                  aria-label={`Tourner la page ${page.displayPageNumber} vers la droite`}
-                  title="Tourner de 90° vers la droite"
+                  aria-label={localize("Tourner la page {0} vers la droite", page.displayPageNumber)}
+                  title={localize("Tourner de 90° vers la droite")}
                 >
                   <OrganizeIcon name="rotate" />
                 </button>
@@ -2522,8 +2527,8 @@ function OrganizePages({
                   className="organize-page__icon-button organize-page__move organize-page__move--left"
                   onClick={() => onMovePageByIndex(index, index - 1)}
                   disabled={index === 0}
-                  aria-label={`Déplacer la page ${page.displayPageNumber} vers la gauche`}
-                  title="Déplacer d'un cran vers la gauche"
+                  aria-label={localize("Déplacer la page {0} vers la gauche", page.displayPageNumber)}
+                  title={localize("Déplacer d'un cran vers la gauche")}
                 >
                   <OrganizeIcon name="left" />
                 </button>
@@ -2532,8 +2537,8 @@ function OrganizePages({
                   className="organize-page__icon-button organize-page__move organize-page__move--right"
                   onClick={() => onMovePageByIndex(index, index + 1)}
                   disabled={index === plan.pages.length - 1}
-                  aria-label={`Déplacer la page ${page.displayPageNumber} vers la droite`}
-                  title="Déplacer d'un cran vers la droite"
+                  aria-label={localize("Déplacer la page {0} vers la droite", page.displayPageNumber)}
+                  title={localize("Déplacer d'un cran vers la droite")}
                 >
                   <OrganizeIcon name="right" />
                 </button>
@@ -2542,8 +2547,8 @@ function OrganizePages({
                     type="button"
                     className="organize-page__icon-button"
                     onClick={() => onDuplicatePage(page.id)}
-                    aria-label={`Dupliquer la page ${page.displayPageNumber}`}
-                    title="Dupliquer la page"
+                    aria-label={localize("Dupliquer la page {0}", page.displayPageNumber)}
+                    title={localize("Dupliquer la page")}
                   >
                     <OrganizeIcon name="duplicate" />
                   </button>
@@ -2551,18 +2556,18 @@ function OrganizePages({
                     type="button"
                     className="organize-page__icon-button organize-page__delete"
                     onClick={() => onDeletePage(page.id)}
-                    aria-label={`Supprimer la page ${page.displayPageNumber}`}
-                    title="Retirer du plan d'organisation"
+                    aria-label={localize("Supprimer la page {0}", page.displayPageNumber)}
+                    title={localize("Retirer du plan d'organisation")}
                   >
                     <OrganizeIcon name="trash" />
                   </button>
                 </div>
                 <div className="organize-page__meta">
                   <strong>{pageLabel}</strong>
-                  <span className="organize-page__source" title={`${page.sourceDocumentName} — p. ${page.sourcePageIndex + 1}`}>
+                  <span className="organize-page__source" title={localize("{0} — p. {1}", page.sourceDocumentName, page.sourcePageIndex + 1)}>
                     {page.sourceDocumentName} — p. {page.sourcePageIndex + 1}
                   </span>
-                  {page.rotation !== 0 ? <span>Rotation : {page.rotation}°</span> : null}
+                  {page.rotation !== 0 ? <span>{localize("Rotation : ")}{page.rotation}°</span> : null}
                 </div>
               </article>
             );
@@ -2570,9 +2575,9 @@ function OrganizePages({
         </div>
       ) : (
         <div className="organize-empty-state">
-          <p>Toutes les pages ont été retirées du plan.</p>
+          <p>{localize("Toutes les pages ont été retirées du plan.")}</p>
           <button type="button" onClick={onReset}>
-            Réinitialiser l'organisation
+            {localize("Réinitialiser l'organisation")}
           </button>
         </div>
       )}
@@ -2595,8 +2600,9 @@ function SidebarPageList({
   onSelectPage,
   pageView,
 }: SidebarPageListProps) {
+  const { t: localize } = useLocale();
   return (
-    <ol className={`sidebar-page-list sidebar-page-list--${pageView}`} aria-label="Pages du document">
+    <ol className={`sidebar-page-list sidebar-page-list--${pageView}`} aria-label={localize("Pages du document")}>
       {pagePlan.pages.map((page) => {
         const sourceDocument = documents.find(
           (document) => document.id === page.sourceDocumentId,
@@ -2613,7 +2619,7 @@ function SidebarPageList({
                   ? "sidebar-page is-active"
                   : "sidebar-page"
               }
-              aria-label={`Aller à la page ${page.displayPageNumber}`}
+              aria-label={localize("Aller à la page {0}", page.displayPageNumber)}
               aria-current={
                 page.displayPageNumber === activePageNumber ? "page" : undefined
               }
@@ -2651,9 +2657,10 @@ function DocumentTabs({
   onKeyDown,
   getDocumentButtonRef,
 }: DocumentTabsProps) {
+  const { t: localize } = useLocale();
   return (
-    <nav className="document-tabs" aria-label="Documents ouverts" onKeyDown={onKeyDown}>
-      <div className="document-tabs__scroll" aria-label="Documents ouverts">
+    <nav className="document-tabs" aria-label={localize("Documents ouverts")} onKeyDown={onKeyDown}>
+      <div className="document-tabs__scroll" aria-label={localize("Documents ouverts")}>
         {documents.map((document) => {
           const isActive = document.id === activeDocumentId;
           const isDirty = dirtyDocumentIds.has(document.id);
@@ -2667,22 +2674,22 @@ function DocumentTabs({
                 onClick={() => onSelectDocument(document.id)}
                 aria-selected={isActive}
                 aria-current={isActive ? "true" : undefined}
-                aria-label={`${document.fileName}${isActive ? ", document actif" : ""}`}
+                aria-label={localize("{0}{1}", document.fileName, isActive ? localize(", document actif") : "")}
                 aria-describedby={isDirty ? `document-dirty-${document.id}` : undefined}
                 tabIndex={isActive ? 0 : -1}
-                title={document.media?.kind === "image" ? `${document.fileName} · Image · ${document.media.mimeType.slice(6).toUpperCase()} · ${document.media.widthPx} × ${document.media.heightPx} px · ratio ${(document.media.widthPx / document.media.heightPx).toFixed(2)}` : document.fileName}
+                title={document.media?.kind === "image" ? localize("{0} · Image · {1} · {2} × {3} px · ratio {4}", document.fileName, document.media.mimeType.slice(6).toUpperCase(), document.media.widthPx, document.media.heightPx, (document.media.widthPx / document.media.heightPx).toFixed(2)) : document.fileName}
               >
-                <span className="document-title">{document.fileName}{document.media?.kind === "image" ? ` · Image · ${document.media.mimeType.slice(6).toUpperCase()}` : ""}</span>
-                {isDirty ? <span className="document-tab__dirty" title="Modifications non sauvegardées" aria-hidden="true">●</span> : null}
-                {isDirty ? <span id={`document-dirty-${document.id}`} className="visually-hidden">Modifications non sauvegardées.</span> : null}
+                <span className="document-title">{document.fileName}{document.media?.kind === "image" ? localize(" · Image · {0}", document.media.mimeType.slice(6).toUpperCase()) : ""}</span>
+                {isDirty ? <span className="document-tab__dirty" title={localize("Modifications non sauvegardées")} aria-hidden="true">●</span> : null}
+                {isDirty ? <span id={`document-dirty-${document.id}`} className="visually-hidden">{localize("Modifications non sauvegardées.")}</span> : null}
               </button>
               <button
                 type="button"
                 className="document-close"
                 data-document-id={document.id}
                 onClick={() => onCloseDocument(document.id)}
-                aria-label={`Fermer ${document.fileName}`}
-                title="Fermer"
+                aria-label={localize("Fermer {0}", document.fileName)}
+                title={localize("Fermer")}
               >
                 ×
               </button>
@@ -2714,22 +2721,23 @@ function DocumentSidebar({
   onCommentsViewChange,
   onSelectComment,
 }: DocumentSidebarProps) {
+  const { t: localize } = useLocale();
   return (
     <aside
       id={sidebarId}
       tabIndex={0}
       className="document-sidebar"
-      aria-label="Documents ouverts"
+      aria-label={localize("Documents ouverts")}
       onKeyDown={onKeyDown}
     >
       <div className="sidebar-header">
-        <div className="sidebar-section-tabs" role="tablist" aria-label="Navigation latérale">
+        <div className="sidebar-section-tabs" role="tablist" aria-label={localize("Navigation latérale")}>
           <button type="button" role="tab" aria-selected={!commentsView} onClick={() => onCommentsViewChange(false)}>Pages</button>
-          <button type="button" role="tab" aria-selected={commentsView} onClick={() => onCommentsViewChange(true)}><span>Commentaires</span>{comments.length > 0 ? <span className="sidebar-tab-badge" aria-label={`${comments.length} commentaires`}>{comments.length}</span> : null}</button>
+          <button type="button" role="tab" aria-selected={commentsView} onClick={() => onCommentsViewChange(true)}><span>{localize("Commentaires")}</span>{comments.length > 0 ? <span className="sidebar-tab-badge" aria-label={localize("{0} commentaires", comments.length)}>{comments.length}</span> : null}</button>
         </div>
-        {!commentsView ? <div className="sidebar-page-view" role="group" aria-label="Affichage des pages">
-          <button type="button" aria-label="Vue liste" aria-pressed={pageView === "list"} onClick={() => onPageViewChange("list")}><ToolbarIcon name="list" /></button>
-          <button type="button" aria-label="Vue grille" aria-pressed={pageView === "grid"} onClick={() => onPageViewChange("grid")}><ToolbarIcon name="organize" /></button>
+        {!commentsView ? <div className="sidebar-page-view" role="group" aria-label={localize("Affichage des pages")}>
+          <button type="button" aria-label={localize("Vue liste")} aria-pressed={pageView === "list"} onClick={() => onPageViewChange("list")}><ToolbarIcon name="list" /></button>
+          <button type="button" aria-label={localize("Vue grille")} aria-pressed={pageView === "grid"} onClick={() => onPageViewChange("grid")}><ToolbarIcon name="organize" /></button>
           <span className="sidebar-count">{pagePlan?.pages.length ?? 0}</span>
         </div> : null}
       </div>
@@ -2738,7 +2746,7 @@ function DocumentSidebar({
         <div className="document-sidebar__scroll-area">
           {!commentsView ? outline : null}
           {commentsView ? (
-            comments.length ? <ol className="comment-list" aria-label="Commentaires">{[...comments].sort((left, right) => left.page - right.page || left.rect.y0 - right.rect.y0).map((comment) => <li key={comment.id}><button type="button" className={comment.id === selectedCommentId ? "is-selected" : ""} onClick={() => onSelectComment(comment)}><strong>Page {comment.page}</strong><span>{comment.content}</span></button></li>)}</ol> : <p className="sidebar-hint">Aucun commentaire dans ce document.</p>
+            comments.length ? <ol className="comment-list" aria-label={localize("Commentaires")}>{[...comments].sort((left, right) => left.page - right.page || left.rect.y0 - right.rect.y0).map((comment) => <li key={comment.id}><button type="button" className={comment.id === selectedCommentId ? "is-selected" : ""} onClick={() => onSelectComment(comment)}><strong>Page {comment.page}</strong><span>{comment.content}</span></button></li>)}</ol> : <p className="sidebar-hint">{localize("Aucun commentaire dans ce document.")}</p>
           ) : pagePlan && pagePlan.pages.length > 0 ? (
             <SidebarPageList
               documents={documents}
@@ -2748,13 +2756,13 @@ function DocumentSidebar({
               pageView={pageView}
             />
           ) : (
-            <p className="sidebar-hint">{documents.length === 0 ? "Aucun document ouvert." : "Ouvrez un PDF pour afficher ses pages."}</p>
+            <p className="sidebar-hint">{documents.length === 0 ? localize("Aucun document ouvert.") : localize("Ouvrez un PDF pour afficher ses pages.")}</p>
           )}
 
-          {status ? <p className="sidebar-status">{status}</p> : null}
+          {status ? <p className="sidebar-status">{localize(status)}</p> : null}
           {storageWarning ? (
             <p className="sidebar-status" role="alert">
-              {storageWarning}
+              {localize(storageWarning)}
             </p>
           ) : null}
 
@@ -2768,7 +2776,7 @@ function DocumentSidebar({
         accept={DOCUMENT_ACCEPT}
         multiple
         onChange={onFileChange}
-        aria-label="Ouvrir un PDF"
+        aria-label={localize("Ouvrir un PDF")}
       />
     </aside>
   );
@@ -2801,17 +2809,18 @@ type EmptyStateProps = {
 };
 
 function EmptyState({ status, mode }: EmptyStateProps) {
+  const { t: localize } = useLocale();
   return (
-    <section className="empty-state" aria-label="Aucun PDF ouvert">
-      <p className="status">{status}</p>
+    <section className="empty-state" aria-label={localize("Aucun PDF ouvert")}>
+      <p className="status">{localize(status)}</p>
       <p>
         {mode === "organize"
-          ? "Ouvrez un PDF pour organiser ses pages."
-          : "Le panneau de gauche listera vos documents ouverts."}
+          ? localize("Ouvrez un PDF pour organiser ses pages.")
+          : localize("Le panneau de gauche listera vos documents ouverts.")}
       </p>
       {mode === "organize" ? (
         <button type="button" disabled>
-          Exporter le PDF
+          {localize("Exporter le PDF")}
         </button>
       ) : null}
     </section>
@@ -3057,7 +3066,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       .forEach((fontRef) => {
         void fontRegistry.ensureLoaded(fontRef).catch(() => {
           setStorageWarning(
-            `La police ${fontRef} référencée par un document est indisponible. Choisissez une police de remplacement.`,
+            t("La police {0} référencée par un document est indisponible. Choisissez une police de remplacement.", fontRef),
           );
         });
       });
@@ -3427,18 +3436,18 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           restorationMessages.push(
             failedCount === 1
               ? "1 document n'a pas pu être restauré."
-              : `${failedCount} documents n'ont pas pu être restaurés.`,
+              : t("{0} documents n'ont pas pu être restaurés.", failedCount),
           );
         }
         if (invalidPlanCount > 0) {
           restorationMessages.push(
             invalidPlanCount === 1
               ? "1 plan d'organisation a été réinitialisé car une source est indisponible ou invalide."
-              : `${invalidPlanCount} plans d'organisation ont été réinitialisés car une source est indisponible ou invalide.`,
+              : t("{0} plans d'organisation ont été réinitialisés car une source est indisponible ou invalide.", invalidPlanCount),
           );
         }
         setStatus(restorationMessages.join(" "));
-        if (diagnostics.length) setStorageWarning(`Restauration partielle : ${[...new Set(diagnostics)].join(", ")}. Les données locales ont été conservées.`);
+        if (diagnostics.length) setStorageWarning(t("Restauration partielle : {0}. Les données locales ont été conservées.", [...new Set(diagnostics)].join(", ")));
         setRestorationError(null);
         setIsRestoringDocuments(false);
       } catch (error) {
@@ -3829,7 +3838,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
   const addStampEdit = useCallback((page: number, rect: PdfRect) => {
     if (!activeDocument) return;
-    const edit = createTextStamp(page, rect, stampLabel, stampWithDate);
+    const edit = createTextStamp(page, rect, stampLabel ? (STAMP_PRESETS.some((preset) => preset === stampLabel) ? t(stampLabel) : stampLabel) : t("APPROUVÉ"), stampWithDate, new Date(), locale);
     dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
     setSelectedEditId(edit.id);
     setActiveEditingTool("select");
@@ -4351,7 +4360,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       if (
         plansUsingDocument.length > 0 &&
         !window.confirm(
-          "Ce document est utilisé dans le plan d'organisation. Le fermer retirera ses pages du document final.",
+          t("Ce document est utilisé dans le plan d'organisation. Le fermer retirera ses pages du document final."),
         )
       ) {
         return;
@@ -4733,7 +4742,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         file = new File([pdf], `${originalName}.pdf`, { type: "application/pdf" });
       } catch (error) {
         const reason = error instanceof Error ? error.message : "Conversion impossible.";
-        throw new Error(`Impossible de charger l’image « ${originalName} ». ${reason}`);
+        throw new Error(t("Impossible de charger l’image « {0} ». {1}", originalName, reason));
       }
       source = { type: "web" }; // An image original is never a PDF save destination.
     }
@@ -4853,7 +4862,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   });
 
   const clearLocalData = useCallback(() => {
-    if (exportInProgress.current || !window.confirm("Effacer toutes les données locales de ce viewer ?")) {
+    if (exportInProgress.current || !window.confirm(t("Effacer toutes les données locales de ce viewer ?"))) {
       return;
     }
 
@@ -4931,7 +4940,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       setActiveDocumentId(document.id);
       pendingFocusTargetRef.current = "viewer";
       setWorkspaceMode("read");
-      setStatus(usageWarnings.map((warning) => `Avertissement: ${warning}`).join(" "));
+      setStatus(usageWarnings.map((warning) => t("Avertissement: {0}", warning)).join(" "));
       if (!import.meta.env.MODE.startsWith("test")) void loadPdfComments(backendUrl, document.file).then((comments) => {
         if (comments.length) dispatchPdfEdits({ type: "hydrate", documentId: document.id, edits: comments });
       });
@@ -4953,7 +4962,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     }
     setExportFeedback(null);
     try {
-      const selected = await openDesktopPdf();
+      const selected = await openDesktopPdf(locale);
       if (selected) await openDesktopFile(selected);
     } catch (error) {
       if (error instanceof PdfOpenCancelled) { setStatus("Ouverture annulée."); return; }
@@ -5119,7 +5128,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         ? ` Pages rendered as images for secure redaction: ${rasterizedPages.join(", ")}. Text selection and accessibility are reduced on those pages.`
         : ` Pages reconstruites en image pour le biffage sécurisé : ${rasterizedPages.join(", ")}. La sélection de texte et l’accessibilité sont réduites sur ces pages.`) : "";
       const textOverflowMessage = (textOverflowWarningCount
-        ? ` ${textOverflowWarningCount} zone${textOverflowWarningCount > 1 ? "s" : ""} de texte dépassai${textOverflowWarningCount > 1 ? "ent" : "t"} de ${textOverflowWarningCount > 1 ? "leur" : "son"} cadre. ${textOverflowWarningCount > 1 ? "Leur export a" : "Son export a"} été réalisé en mode best effort.`
+        ? " " + (textOverflowWarningCount === 1
+          ? t("1 zone de texte dépassait de son cadre. Son export a été réalisé en mode best effort.")
+          : t("{0} zones de texte dépassaient de leur cadre. Leur export a été réalisé en mode best effort.", textOverflowWarningCount))
         : "") + rasterMessage;
       delivering = true;
       setExportPhase("writing");
@@ -5127,7 +5138,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const needsNativeDialog = hasRedactions || operation === "save_as" || operation === "export";
       const nativeSave = isDesktopRuntime()
         ? needsNativeDialog
-          ? await saveDesktopPdfAs(exported.downloadedName, exported.pdfBlob, Boolean(hasRedactions || sessionOnly || document?.media?.kind === "image"))
+          ? await saveDesktopPdfAs(exported.downloadedName, exported.pdfBlob, Boolean(hasRedactions || sessionOnly || document?.media?.kind === "image"), locale)
           : desktopSource
             ? await saveDesktopPdf(desktopSource.documentId, exported.pdfBlob)
             : null
@@ -5152,11 +5163,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           })
         : downloadPdfToBrowser(exported.pdfBlob, exported.downloadedName);
       const operationLabel = operation === "export" ? "exporté" : "sauvegardé";
-      const sizeReport = exportOptions ? ` Taille source : ${documents.filter((doc) => organizationPlans[documentId]?.pages.some((page) => page.sourceDocumentId === doc.id) || doc.id === documentId).reduce((size, doc) => size + doc.file.size, 0).toLocaleString("fr-FR")} octets. Taille exportée : ${exported.pdfBlob.size.toLocaleString("fr-FR")} octets. Profil : ${EXPORT_QUALITY_LABELS[exportOptions.quality]}.` : "";
+      const sizeReport = exportOptions ? t(" Taille source : {0} octets. Taille exportée : {1} octets. Profil : {2}.", documents.filter((doc) => organizationPlans[documentId]?.pages.some((page) => page.sourceDocumentId === doc.id) || doc.id === documentId).reduce((size, doc) => size + doc.file.size, 0).toLocaleString(locale), exported.pdfBlob.size.toLocaleString(locale), t(EXPORT_QUALITY_LABELS[exportOptions.quality])) : "";
       const delivery = nativeSave
         ? locale === "en" ? `PDF ${operation === "export" ? "exported" : "saved"} successfully: ${savedFileName}.` : `PDF ${operationLabel} avec succès : ${savedFileName}.`
         : locale === "en" ? `Download requested: ${savedFileName}.` : `Téléchargement demandé : ${savedFileName}.`;
-      const exportMessage = [delivery, exported.outputStatus === "saved" ? "Copie enregistrée dans data/output." : "", exported.outputWarning].filter(Boolean).join(" ");
+      const exportMessage = [delivery, exported.outputStatus === "saved" ? t("Copie enregistrée dans data/output.") : "", exported.outputWarning && t(exported.outputWarning)].filter(Boolean).join(" ");
 
       try {
         if ((!hasRedactions && document?.media?.kind !== "image" && isDesktopRuntime() && operation !== "export") || Boolean(exportOptions?.openPassword || exportOptions?.ownerPassword)) {
@@ -5174,7 +5185,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           }
           setExportFeedback({
             kind: exported.outputWarning || textOverflowWarningCount > 0 || rasterizedPages.length > 0 ? "warning" : "success",
-            message: `${exportMessage}${sizeReport}${textOverflowMessage}${exportOptions?.openPassword || exportOptions?.ownerPassword ? " PDF chiffré : la sortie n’est pas rouverte automatiquement dans l’application." : ""}`,
+            message: `${exportMessage}${sizeReport}${textOverflowMessage}${exportOptions?.openPassword || exportOptions?.ownerPassword ? t(" PDF chiffré : la sortie n’est pas rouverte automatiquement dans l’application.") : ""}`,
           });
         } else {
           const { usageWarnings: exportUsageWarnings } =
@@ -5193,15 +5204,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             exportUsageWarnings.length > 0
               ? "warning"
               : "success",
-          message: `${exportMessage}${sizeReport}${textOverflowMessage} Ouvert dans l'application en mode lecture.${exportUsageWarnings
-            .map((warning) => ` Avertissement: ${warning}`)
-            .join("")}`,
+          message: t("{0}{1}{2} Ouvert dans l'application en mode lecture.{3}", exportMessage, sizeReport, textOverflowMessage, exportUsageWarnings
+            .map((warning) => t(" Avertissement: {0}", t(warning)))
+            .join("")),
         });
         }
       } catch {
         setExportFeedback({
           kind: "warning",
-          message: `${exportMessage}${sizeReport}${textOverflowMessage} La copie n’a pas pu être rouverte dans l’application.`,
+          message: t("{0}{1}{2} La copie n’a pas pu être rouverte dans l’application.", exportMessage, sizeReport, textOverflowMessage),
         });
       }
       if (saving && nativeSave) {
@@ -5218,7 +5229,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const message = delivering
         ? error instanceof Error && error.name === "PreviewSaveLimitError"
           ? error.message
-          : `${isDesktopRuntime() ? "Écriture de la destination impossible." : "Téléchargement impossible."}${error instanceof Error ? ` ${error.message}` : ""}`
+          : `${t(isDesktopRuntime() ? "Écriture de la destination impossible." : "Téléchargement impossible.")}${error instanceof Error ? ` ${error.message}` : ""}`
         : "La préparation du PDF a échoué. Vérifiez que le service PDF est démarré.";
       setExportFeedback({ kind: "error", message });
       return false;
@@ -5241,7 +5252,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       return;
     }
     dispatchPdfEdits({ type: "mark_saved", documentId, ...snapshot });
-    setExportFeedback({ kind: "success", message: `Vous avez confirmé l’enregistrement de la copie ${pending.outputName}.` });
+    setExportFeedback({ kind: "success", message: t("Vous avez confirmé l’enregistrement de la copie {0}.", pending.outputName) });
   };
 
   const exportActiveOrganizationPlan = useCallback(() => {
@@ -5554,7 +5565,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
     setExportFeedback(null);
     setStatus(
-      selectedFiles.length === 1 ? "Ouverture du document..." : `Ouverture de ${selectedFiles.length} documents...`,
+      selectedFiles.length === 1 ? "Ouverture du document..." : t("Ouverture de {0} documents...", selectedFiles.length),
     );
 
     const openedDocuments: OpenPdfDocument[] = [];
@@ -5593,15 +5604,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     if (failedFileNames.length > 0) {
       const failureMessage =
         failedFileNames.length === 1
-          ? `Impossible d'ouvrir ${failedFileNames[0]}.`
-          : `${failedFileNames.length} documents n'ont pas pu être ouverts.`;
-      setStatus([failureMessage, ...usageWarnings.map((warning) => `Avertissement: ${warning}`)].join(" "));
+          ? t("Impossible d'ouvrir {0}.", failedFileNames[0])
+          : t("{0} documents n'ont pas pu être ouverts.", failedFileNames.length);
+      setStatus([failureMessage, ...usageWarnings.map((warning) => t("Avertissement: {0}", warning))].join(" "));
       return;
     }
 
     const ignoredFiles = selectedFiles.length - selectedFiles.length;
-    const ignoredFilesMessage = ignoredFiles > 0 ? `${ignoredFiles} fichier non PDF ignoré.` : "";
-    setStatus([ignoredFilesMessage, ...usageWarnings.map((warning) => `Avertissement: ${warning}`)].filter(Boolean).join(" "));
+    const ignoredFilesMessage = ignoredFiles > 0 ? t("{0} fichier non PDF ignoré.", ignoredFiles) : "";
+    setStatus([ignoredFilesMessage, ...usageWarnings.map((warning) => t("Avertissement: {0}", warning))].filter(Boolean).join(" "));
   }
 
   const startPropertiesResize = useCallback((event: MouseEvent<HTMLButtonElement>) => {
@@ -5658,7 +5669,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     return (
       <AppStateScreen
         state="loading"
-        title="Restauration en cours"
+        title={t("Restauration en cours")}
         description="Préparation de vos documents locaux…"
       />
     );
@@ -5668,7 +5679,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     return (
       <AppStateScreen
         state="error"
-        title="Impossible de restaurer vos documents"
+        title={t("Impossible de restaurer vos documents")}
         description="L’application n’a pas pu terminer son initialisation."
         action={
           <button
@@ -5679,10 +5690,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               setRestorationAttempt((attempt) => attempt + 1);
             }}
           >
-            Réessayer
+            {t("Réessayer")}
           </button>
         }
-        details={<code>{restorationError}</code>}
+        details={<code>{t(restorationError)}</code>}
       />
     );
   }
@@ -5698,23 +5709,23 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       <header
         className="toolbar toolbar--sticky"
         role="region"
-        aria-label="Contrôles PDF"
+        aria-label={t("Contrôles PDF")}
       >
         <div className="app-brand">
           <AppLogo className="app-brand__mark" size={24} />
           <h1>PDF Studio Local</h1>
         </div>
 
-        <div className="toolbar-actions" aria-label="Actions PDF">
-          <div className="toolbar-action-group toolbar-actions__primary" aria-label="Actions principales">
-            <button type="button" className="toolbar-icon-button" aria-label={t("Ouvrir un PDF")} title={`Ouvrir un PDF ou une image (${getAppCommandShortcutLabel("file.open")})`} onClick={() => void openPdfFromUser()}><ToolbarIcon name="open" /></button>
+        <div className="toolbar-actions" aria-label={t("Actions PDF")}>
+          <div className="toolbar-action-group toolbar-actions__primary" aria-label={t("Actions principales")}>
+            <button type="button" className="toolbar-icon-button" aria-label={t("Ouvrir un PDF")} title={t("Ouvrir un PDF ou une image ({0})", getAppCommandShortcutLabel("file.open"))} onClick={() => void openPdfFromUser()}><ToolbarIcon name="open" /></button>
             <button
               type="button"
               className="toolbar-icon-button"
               aria-label={isDesktopRuntime() ? t("Enregistrer") : t("Enregistrer sous…")}
               title={isDesktopRuntime()
-                ? `Enregistrer (${getAppCommandShortcutLabel("file.save")})`
-                : `Enregistrer sous… (${getAppCommandShortcutLabel("file.saveAs")})`}
+                ? t("Enregistrer ({0})", getAppCommandShortcutLabel("file.save"))
+                : t("Enregistrer sous… ({0})", getAppCommandShortcutLabel("file.saveAs"))}
               onClick={isDesktopRuntime() ? saveActiveDocument : openActiveSaveAsDialog}
               disabled={!activeDocument || !isActiveDocumentDirty || isExporting}
             ><ToolbarIcon name="save-as" /></button>
@@ -5743,8 +5754,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                       fileMenuTriggerRef.current?.focus({ preventScroll: true });
                     } else moveMenuFocus(event);
                   }}>
-                  <button type="button" role="menuitem" onClick={() => runFileAction(() => setIsImagesPdfOpen(true))}>Nouveau PDF à partir d’images</button>
-                  {activeDocument?.media?.kind === "image" ? <button type="button" role="menuitem" disabled={activeImagePending && !imageBackgroundError} onClick={() => runFileAction(() => setIsImageDocumentOpen(true))}>Éditer le fond image…</button> : null}
+                  <button type="button" role="menuitem" onClick={() => runFileAction(() => setIsImagesPdfOpen(true))}>{t("Nouveau PDF à partir d’images")}</button>
+                  {activeDocument?.media?.kind === "image" ? <button type="button" role="menuitem" disabled={activeImagePending && !imageBackgroundError} onClick={() => runFileAction(() => setIsImageDocumentOpen(true))}>{t("Éditer le fond image…")}</button> : null}
                   {isDesktopRuntime() ? (
                     <button
                       type="button"
@@ -5752,7 +5763,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                       onClick={() => runFileAction(saveActiveDocument)}
                       disabled={!isActiveDocumentDirty || isExporting}
                     >
-                      Enregistrer <span aria-hidden="true">{getAppCommandShortcutLabel("file.save")}</span>
+                      {t("Enregistrer ")}<span aria-hidden="true">{getAppCommandShortcutLabel("file.save")}</span>
                     </button>
                   ) : null}
                   <button
@@ -5770,21 +5781,21 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                     onClick={() => runFileAction(printActiveDocument)}
                     disabled={!activeDocument || isExporting}
                   >
-                    Imprimer (expérimental) <span aria-hidden="true">{isDesktopRuntime() ? getAppCommandShortcutLabel("print.document") : ""}</span>
+                    {t("Imprimer (expérimental) ")}<span aria-hidden="true">{isDesktopRuntime() ? getAppCommandShortcutLabel("print.document") : ""}</span>
                   </button>
                 </div>, floatingPortalTarget(fileMenuTriggerRef.current),
               ) : null}
             </div>
           </div>
-          <div className="toolbar-action-group" role="group" aria-label="Historique">
+          <div className="toolbar-action-group" role="group" aria-label={t("Historique")}>
             <button
               type="button"
               className="toolbar-icon-button"
               onClick={undoPdfEdit}
               disabled={!activeDocumentEditingState?.canUndo}
-              aria-label="Annuler"
+              aria-label={t("Annuler")}
               aria-keyshortcuts="Control+Z Meta+Z"
-              title={`Annuler (${getAppCommandShortcutLabel("history.undo")})`}
+              title={t("Annuler ({0})", getAppCommandShortcutLabel("history.undo"))}
             >
               <ToolbarIcon name="undo" />
             </button>
@@ -5795,7 +5806,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               disabled={!activeDocumentEditingState?.canRedo}
               aria-label={t("Rétablir")}
               aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z"
-              title={`Rétablir (${getAppCommandShortcutLabel("history.redo")})`}
+              title={t("Rétablir ({0})", getAppCommandShortcutLabel("history.redo"))}
             >
               <ToolbarIcon name="redo" />
             </button>
@@ -5832,14 +5843,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       {isFormLockConfirmOpen ? (
         <div className="unsaved-dialog-backdrop" role="presentation">
           <section className="unsaved-dialog" role="dialog" aria-modal="true" aria-labelledby="form-lock-title">
-            <h2 id="form-lock-title">Verrouiller le formulaire ?</h2>
+            <h2 id="form-lock-title">{t("Verrouiller le formulaire ?")}</h2>
             <p>
-              Les champs resteront présents et interactifs dans le PDF, mais ne pourront plus être modifiés dans les lecteurs qui respectent le flag ReadOnly.
+              {t("Les champs resteront présents et interactifs dans le PDF, mais ne pourront plus être modifiés dans les lecteurs qui respectent le flag ReadOnly.")}
             </p>
-            <p>Cette action peut être annulée avant l’enregistrement avec Annuler ou Annuler l’action.</p>
+            <p>{t("Cette action peut être annulée avant l’enregistrement avec Annuler ou Annuler l’action.")}</p>
             <div className="unsaved-dialog__actions">
-              <button type="button" autoFocus onClick={() => setIsFormLockConfirmOpen(false)}>Annuler</button>
-              <button type="button" onClick={lockActivePdfForm}>Verrouiller</button>
+              <button type="button" autoFocus onClick={() => setIsFormLockConfirmOpen(false)}>{t("Annuler")}</button>
+              <button type="button" onClick={lockActivePdfForm}>{t("Verrouiller")}</button>
             </div>
           </section>
         </div>
@@ -5915,10 +5926,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             aria-modal="true"
             aria-labelledby="unsaved-dialog-title"
           >
-            <h2 id="unsaved-dialog-title">Modifications non sauvegardées</h2>
+            <h2 id="unsaved-dialog-title">{t("Modifications non sauvegardées")}</h2>
             <p>
-              {pendingCloseDocument.fileName} contient des modifications non
-              sauvegardées.
+              {pendingCloseDocument.fileName}{t(" contient des modifications non sauvegardées.")}
             </p>
             <div className="unsaved-dialog__actions">
               <button
@@ -5926,7 +5936,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 onClick={savePendingCloseDocument}
                 disabled={isExporting}
               >
-                Enregistrer sous…
+                {t("Enregistrer sous…")}
               </button>
               <button
                 type="button"
@@ -5938,7 +5948,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 }}
                 disabled={isExporting}
               >
-                Ignorer les modifications
+                {t("Ignorer les modifications")}
               </button>
               <button
                 type="button"
@@ -5948,7 +5958,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 }}
                 disabled={isExporting}
               >
-                Annuler
+                {t("Annuler")}
               </button>
             </div>
           </section>
@@ -5956,8 +5966,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       ) : null}
 
       {activeImagePending ? imageBackgroundError
-        ? <p role="alert">{imageBackgroundError} Annulez la transformation ou réinitialisez le fond pour réessayer.</p>
-        : <p role="status">Transformation du fond image…</p> : null}
+        ? <p role="alert">{t(imageBackgroundError)}{t(" Annulez la transformation ou réinitialisez le fond pour réessayer.")}</p>
+        : <p role="status">{t("Transformation du fond image…")}</p> : null}
       {isImageDocumentOpen && activeDocument ? <ImageDocumentDialog pdf={activeDocument.pdfDocument} onCancel={() => setIsImageDocumentOpen(false)} onTransform={updateImageBackground} onReset={() => updateImageBackground()} /> : null}
       {isImagesPdfOpen ? <ImagesPdfDialog onCancel={() => setIsImagesPdfOpen(false)} onCreate={async (sources: ImageSource[], layout: ImageLayout, signal: AbortSignal) => {
         const blob = await createImagePdf(backendUrl, sources, layout, signal);
@@ -5990,7 +6000,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
       <section
         className={`${isSidebarVisible ? "content-area" : "content-area content-area--sidebar-hidden"}${isPropertiesPanelVisible ? "" : " content-area--properties-hidden"}${pendingComment?.rects || selectedCommentEdit?.rects?.length ? " content-area--anchored-comment" : ""}`}
-        aria-label="Espace de travail PDF"
+        aria-label={t("Espace de travail PDF")}
         style={{ "--properties-panel-width": `${propertiesPanelWidth}px` } as CSSProperties}
       >
         <SidebarNavigation key={`${activeDocumentId ?? ""}:${viewerMode === "presentation"}`} rasterSource={activeDocument?.media?.kind === "image"} activeTool={activeEditingTool} organizing={workspaceMode === "organize"}
@@ -5998,8 +6008,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           processingDisabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
           imageDisabled={!activeDocument || workspaceMode !== "read" || activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourceDocumentId !== activeDocument.id}
           onSelect={selectNavigationTool}  onSettings={() => settingsOpen ? closeSettings() : setSettingsOpen(true)} settingsOpen={settingsOpen} />
-        <input ref={stampImageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier tampon image" hidden onChange={(event) => void insertImage(event, true)} />
-        <input ref={imageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier image" hidden onChange={(event) => void insertImage(event)} />
+        <input ref={stampImageInputRef} type="file" accept="image/png,image/jpeg" aria-label={t("Fichier tampon image")} hidden onChange={(event) => void insertImage(event, true)} />
+        <input ref={imageInputRef} type="file" accept="image/png,image/jpeg" aria-label={t("Fichier image")} hidden onChange={(event) => void insertImage(event)} />
 
         <button
           type="button"
@@ -6007,7 +6017,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           onClick={() => setIsSidebarVisible((currentVisible) => !currentVisible)}
           aria-controls={sidebarId}
           aria-expanded={isSidebarVisible}
-          aria-label={isSidebarVisible ? "Masquer la barre latérale" : "Afficher la barre latérale"}
+          aria-label={isSidebarVisible ? t("Masquer la barre latérale") : t("Afficher la barre latérale")}
         >
           <span aria-hidden="true"><ToolbarIcon name={isSidebarVisible ? "chevron-left" : "chevron-right"} /></span>
         </button>
@@ -6052,14 +6062,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           />
         ) : null}
 
-        <section className="workspace-stage" aria-label="Document actif">
+        <section className="workspace-stage" aria-label={t("Document actif")}>
           {isOcrProcessing ? (
           <div
             className="export-read-feedback organize-feedback organize-feedback--progress"
             role="status"
           >
             <span className="organize-spinner" aria-hidden="true" />
-            <span>OCR en cours…</span>
+            <span>{t("OCR en cours…")}</span>
           </div>
         ) : isConverting ? (
           <div
@@ -6067,11 +6077,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             role="status"
           >
             <span className="organize-spinner" aria-hidden="true" />
-            <span>Conversion en cours…</span>
+            <span>{t("Conversion en cours…")}</span>
           </div>
         ) : workspaceMode === "read" && exportPhase ? (
           <div className="export-read-feedback organize-feedback organize-feedback--progress" role="status">
-            <span>{exportPhase === "preparing" ? "Préparation du PDF…" : "Remise de la copie à la destination…"}</span>
+            <span>{exportPhase === "preparing" ? t("Préparation du PDF…") : t("Remise de la copie à la destination…")}</span>
           </div>
         ) : (workspaceMode === "read" && exportFeedback) || pendingBrowserSave ? (
           <div
@@ -6079,11 +6089,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             role={exportFeedback?.kind === "error" ? "alert" : "status"}
           >
             <div>
-              {workspaceMode === "read" && exportFeedback ? <span>{exportFeedback.message}</span> : null}
-              {pendingBrowserSave ? <span>Vérifiez la copie « {pendingBrowserSave.outputName} » de « {pendingBrowserSave.sourceName} » dans vos téléchargements.</span> : null}
+              {workspaceMode === "read" && exportFeedback ? <span>{t(exportFeedback.message)}</span> : null}
+              {pendingBrowserSave ? <span>{t("Vérifiez la copie « ")}{pendingBrowserSave.outputName}{t(" » de « ")}{pendingBrowserSave.sourceName}{t(" » dans vos téléchargements.")}</span> : null}
             </div>
-            {pendingBrowserDocumentId ? <button type="button" disabled={isExporting} onClick={() => confirmBrowserSave(pendingBrowserDocumentId)}>J’ai enregistré cette copie</button> : null}
-            {exportFeedback ? <button type="button" onClick={() => setExportFeedback(null)} aria-label="Fermer le message">Fermer</button> : null}
+            {pendingBrowserDocumentId ? <button type="button" disabled={isExporting} onClick={() => confirmBrowserSave(pendingBrowserDocumentId)}>{t("J’ai enregistré cette copie")}</button> : null}
+            {exportFeedback ? <button type="button" onClick={() => setExportFeedback(null)} aria-label={t("Fermer le message")}>{t("Fermer")}</button> : null}
           </div>
           ) : null}
 
@@ -6201,12 +6211,12 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         </section>
 
         {isPropertiesPanelVisible ? <aside className="properties-panel" aria-label={t("Propriétés")}>
-          <button type="button" className="properties-panel__resize" aria-label="Redimensionner les propriétés" onMouseDown={startPropertiesResize} />
+          <button type="button" className="properties-panel__resize" aria-label={t("Redimensionner les propriétés")} onMouseDown={startPropertiesResize} />
           <header className="properties-panel__header">
             <div><span>{t("Inspecteur")}</span><h2>{t("Propriétés")}</h2></div>
-            <button type="button" aria-label="Masquer les propriétés" title="Masquer les propriétés" onClick={() => setIsPropertiesPanelVisible(false)}>❯</button>
+            <button type="button" aria-label={t("Masquer les propriétés")} title={t("Masquer les propriétés")} onClick={() => setIsPropertiesPanelVisible(false)}>❯</button>
           </header>
-          {workspaceMode === "read" && activeEditingTool === "link" && activeDocument ? <section aria-label="Lien">
+          {workspaceMode === "read" && activeEditingTool === "link" && activeDocument ? <section aria-label={t("Lien")}>
             {linkDraft ? <LinkInspector key={linkDraft.id} edit={linkDraft} pageCount={activeDocument.pageCount}
               onSave={(edit) => {
                 setLinkDraft(null);
@@ -6224,7 +6234,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 setExportFeedback(null);
               } : undefined}
               onCancel={() => setLinkDraft(null)}
-            /> : <p>Tracez un rectangle pour ajouter un lien, ou cliquez sur un lien pour le modifier. Les destinations nommées et certaines actions PDF sont en lecture seule.</p>}
+            /> : <p>{t("Tracez un rectangle pour ajouter un lien, ou cliquez sur un lien pour le modifier. Les destinations nommées et certaines actions PDF sont en lecture seule.")}</p>}
           </section> : null}
           {workspaceMode === "read" && activeDocument && redactionSearchMounted ? (
             <RedactionSearchPanel key={activeDocument.id} index={redactionIndex} total={activeDocument.pageCount} visible={redactionSearchOpen}
@@ -6257,17 +6267,17 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               dispatchPdfEdits({ type: "batch", documentId: activeDocument.id, deleteIds }); setSelectedEditId(null);
             } : undefined} />
           ) : workspaceMode === "read" && activeEditingTool === "stamp" ? (
-            <section className="shape-edit-toolbar" aria-label="Bibliothèque de tampons">
-              <strong>Tampon visuel</strong>
-              <label>Tampon prédéfini<select aria-label="Tampon prédéfini" value={STAMP_PRESETS.includes(stampLabel as typeof STAMP_PRESETS[number]) ? stampLabel : "custom"} onChange={(event) => setStampLabel(event.target.value === "custom" ? "" : event.target.value)}>{STAMP_PRESETS.map((label) => <option key={label}>{label}</option>)}<option value="custom">Personnalisé</option></select></label>
-              <label>Texte personnalisé<input aria-label="Texte personnalisé du tampon" maxLength={170} value={stampLabel} onChange={(event) => setStampLabel(event.target.value)} /></label>
-              <label><input type="checkbox" checked={stampWithDate} onChange={(event) => setStampWithDate(event.target.checked)} />Date à l’insertion (UTC)</label>
-              <p>Cliquez sur une page pour placer le tampon. La date reste figée.</p>
-              <button type="button" disabled={activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourceDocumentId !== activeDocument?.id} onClick={() => stampImageInputRef.current?.click()}>Tampon image PNG ou JPEG</button>
-              <p>Image locale insérée sur la page active. Ce marquage ne constitue pas une signature électronique.</p>
+            <section className="shape-edit-toolbar" aria-label={t("Bibliothèque de tampons")}>
+              <strong>{t("Tampon visuel")}</strong>
+              <label>{t("Tampon prédéfini")}<select aria-label={t("Tampon prédéfini")} value={STAMP_PRESETS.includes(stampLabel as typeof STAMP_PRESETS[number]) ? stampLabel : "custom"} onChange={(event) => setStampLabel(event.target.value === "custom" ? "" : event.target.value)}>{STAMP_PRESETS.map((label) => <option key={label} value={label}>{t(label)}</option>)}<option value="custom">{t("Personnalisé")}</option></select></label>
+              <label>{t("Texte personnalisé")}<input aria-label={t("Texte personnalisé du tampon")} maxLength={170} value={stampLabel} onChange={(event) => setStampLabel(event.target.value)} /></label>
+              <label><input type="checkbox" checked={stampWithDate} onChange={(event) => setStampWithDate(event.target.checked)} />{t("Date à l’insertion (UTC)")}</label>
+              <p>{t("Cliquez sur une page pour placer le tampon. La date reste figée.")}</p>
+              <button type="button" disabled={activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourceDocumentId !== activeDocument?.id} onClick={() => stampImageInputRef.current?.click()}>{t("Tampon image PNG ou JPEG")}</button>
+              <p>{t("Image locale insérée sur la page active. Ce marquage ne constitue pas une signature électronique.")}</p>
             </section>
           ) : workspaceMode === "read" && activeEditingTool === "visual_mask" ? (
-            <section className="properties-panel__empty"><strong>Masquage visuel (réversible)</strong><p>Ce masque ne supprime pas les informations : elles peuvent être copiées ou récupérées. Pour cacher des données sensibles, utiliser Biffage sécurisé.</p><p>Tracez un rectangle ; ajustez ensuite ses propriétés.</p></section>
+            <section className="properties-panel__empty"><strong>{t("Masquage visuel (réversible)")}</strong><p>{t("Ce masque ne supprime pas les informations : elles peuvent être copiées ou récupérées. Pour cacher des données sensibles, utiliser Biffage sécurisé.")}</p><p>{t("Tracez un rectangle ; ajustez ensuite ses propriétés.")}</p></section>
           ) : workspaceMode === "read" && (activeEditingTool === "redaction" || selectedPdfEdit?.type === "redaction") ? (
             <section className="properties-panel__empty" aria-label={t("Biffage sécurisé")}>
               <strong>{t("Biffage sécurisé")}</strong>
@@ -6276,10 +6286,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 setActiveEditingTool("redaction");
                 setRedactionTextDocumentId(redactionTextActive ? null : activeDocument?.id ?? null);
               }}>{redactionTextActive ? t("Tracer une zone") : t("Sélectionner le texte à biffer")}</button>
-              {redactionTextActive && !redactionIndex.complete && !redactionIndex.error ? <p role="status">Analyse du texte et OCR · {redactionIndex.scanned}/{activeDocument?.pageCount} pages</p> : null}
+              {redactionTextActive && !redactionIndex.complete && !redactionIndex.error ? <p role="status">{t("Analyse du texte et OCR · ")}{redactionIndex.scanned}/{activeDocument?.pageCount} pages</p> : null}
               {redactionTextActive && redactionIndex.error ? <p role="alert">{redactionIndex.error}</p> : null}
               {redactionTextActive && [...redactionIndex.pages.values()].some((page) => page.issue) ?
-                <p role="status">OCR à vérifier, pages source {[...redactionIndex.pages.values()].filter((page) => page.issue).map((page) => page.page).join(", ")}.</p> : null}
+                <p role="status">{t("OCR à vérifier, pages source ")}{[...redactionIndex.pages.values()].filter((page) => page.issue).map((page) => page.page).join(", ")}.</p> : null}
               <p>{redactionTextActive ? t("Glissez sur le passage ou double-cliquez sur un mot.") : t("Tracez un rectangle.")} {t("La suppression définitive s’effectue lors de la génération du PDF.")}</p>
               <p>{t("Le biffage par zones ne supprime pas les données ailleurs dans le document, notamment les métadonnées.")}</p>
               {selectedPdfEdit?.type === "redaction" ? <button type="button" onClick={() => deletePdfEdit(selectedPdfEdit.id)}>{t("Supprimer le biffage")}</button> : null}
@@ -6337,41 +6347,41 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               onDelete={selectedFreehandEdit ? () => deletePdfEdit(selectedFreehandEdit.id) : undefined}
             />
           ) : workspaceMode === "read" && selectedTextMarkupEdit ? (
-            <section className="shape-edit-toolbar" aria-label="Propriétés de l'annotation texte"><strong>{selectedTextMarkupEdit.kind === "highlight" ? "Surlignage" : selectedTextMarkupEdit.kind === "underline" ? "Soulignement" : "Barré"}</strong><ColorPicker label={t("Couleur de l'annotation")} value={selectedTextMarkupEdit.color} onChange={(color) => updatePdfEdit({ ...selectedTextMarkupEdit, color })} /><button type="button" onClick={() => deletePdfEdit(selectedTextMarkupEdit.id)}>Supprimer l'annotation</button></section>
+            <section className="shape-edit-toolbar" aria-label={t("Propriétés de l'annotation texte")}><strong>{selectedTextMarkupEdit.kind === "highlight" ? t("Surlignage") : selectedTextMarkupEdit.kind === "underline" ? t("Soulignement") : t("Barré")}</strong><ColorPicker label={t("Couleur de l'annotation")} value={selectedTextMarkupEdit.color} onChange={(color) => updatePdfEdit({ ...selectedTextMarkupEdit, color })} /><button type="button" onClick={() => deletePdfEdit(selectedTextMarkupEdit.id)}>{t("Supprimer l'annotation")}</button></section>
           ) : workspaceMode === "read" && selectedCommentEdit ? (
             <CommentInspector edit={selectedCommentEdit} onUpdate={updatePdfEdit} onDelete={() => deletePdfEdit(selectedCommentEdit.id)} />
           ) : (selectedPdfEdit?.type === "signature" || selectedPdfEdit?.type === "image") ? (
             <section className="properties-panel__empty">
-              <strong>{selectedPdfEdit.type === "image" ? "Image" : "Signature graphique"}</strong>
-              <p>Déplacez ou redimensionnez l’image directement sur la page. Shift conserve le ratio.</p>
-              {selectedPdfEdit.type === "image" ? <label><input type="checkbox" checked={selectedPdfEdit.aspectLocked ?? true} onChange={(event) => updatePdfEdit({ ...selectedPdfEdit, aspectLocked: event.target.checked })} />Conserver les proportions</label> : null}
+              <strong>{selectedPdfEdit.type === "image" ? "Image" : t("Signature graphique")}</strong>
+              <p>{t("Déplacez ou redimensionnez l’image directement sur la page. Shift conserve le ratio.")}</p>
+              {selectedPdfEdit.type === "image" ? <label><input type="checkbox" checked={selectedPdfEdit.aspectLocked ?? true} onChange={(event) => updatePdfEdit({ ...selectedPdfEdit, aspectLocked: event.target.checked })} />{t("Conserver les proportions")}</label> : null}
               <button type="button" onClick={() => deletePdfEdit(selectedPdfEdit.id)}>
-                Supprimer {selectedPdfEdit.type === "image" ? "l’image" : "la signature"}
+                {t("Supprimer ")}{selectedPdfEdit.type === "image" ? t("l’image") : t("la signature")}
               </button>
             </section>
           ) : (
             <section className="properties-panel__empty">
-              <strong>{workspaceMode === "organize" ? "Organisation" : "Document"}</strong>
+              <strong>{workspaceMode === "organize" ? t("Organisation") : "Document"}</strong>
               {activeDocument?.media?.kind === "image" ? <>
                 <p>Image · {activeDocument.media.mimeType.slice(6).toUpperCase()} · {activeDocument.media.widthPx} × {activeDocument.media.heightPx} px · ratio {(activeDocument.media.widthPx / activeDocument.media.heightPx).toFixed(2)}</p>
-                <p>Le projet conserve l’original et les modifications localement. Exporter en PDF crée une copie ; le texte dans les pixels reste une image.</p>
-                <button type="button" disabled={activeImagePending && !imageBackgroundError} onClick={() => setIsImageDocumentOpen(true)}>Éditer le fond image…</button>
-                <button type="button" disabled={isExporting || activeImagePending} onClick={openActiveSaveAsDialog}>Exporter en PDF</button>
+                <p>{t("Le projet conserve l’original et les modifications localement. Exporter en PDF crée une copie ; le texte dans les pixels reste une image.")}</p>
+                <button type="button" disabled={activeImagePending && !imageBackgroundError} onClick={() => setIsImageDocumentOpen(true)}>{t("Éditer le fond image…")}</button>
+                <button type="button" disabled={isExporting || activeImagePending} onClick={openActiveSaveAsDialog}>{t("Exporter en PDF")}</button>
               </> : null}
               <p>
                 {activeDocument
-                  ? `${activeOrganizationPlan?.pages.length ?? activeDocument.pageCount} page${(activeOrganizationPlan?.pages.length ?? activeDocument.pageCount) > 1 ? "s" : ""}`
-                  : "Aucun document ouvert"}
+                  ? t("{0} page{1}", activeOrganizationPlan?.pages.length ?? activeDocument.pageCount, (activeOrganizationPlan?.pages.length ?? activeDocument.pageCount) > 1 ? "s" : "")
+                  : t("Aucun document ouvert")}
               </p>
               <span>
                 {workspaceMode === "organize"
-                  ? "Réorganisez les pages sans enregistrer automatiquement."
-                  : "Sélectionnez un élément pour afficher ses réglages."}
+                  ? t("Réorganisez les pages sans enregistrer automatiquement.")
+                  : t("Sélectionnez un élément pour afficher ses réglages.")}
               </span>
             </section>
           )}
           <LayerControls edits={activeDocumentEditingState?.edits ?? []} page={(activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourcePageIndex ?? -1) + 1} selectedId={selectedEditId} onSelect={setSelectedEditId} onReorder={(editId, direction) => activeDocument && dispatchPdfEdits({ type: "reorder", documentId: activeDocument.id, editId, direction })} />
-        </aside> : <button type="button" className="properties-panel-toggle" aria-label="Afficher les propriétés" title="Afficher les propriétés" onClick={() => setIsPropertiesPanelVisible(true)}>❮</button>}
+        </aside> : <button type="button" className="properties-panel-toggle" aria-label={t("Afficher les propriétés")} title={t("Afficher les propriétés")} onClick={() => setIsPropertiesPanelVisible(true)}>❮</button>}
       </section>
 
       {textMarkupSelection && viewerMode !== "presentation" ? createPortal(
@@ -6409,24 +6419,24 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           <ColorPicker compact label={t("Couleur de l'annotation")} value={textMarkupColor} onChange={setTextMarkupColor} />
         </div>, document.body) : null}
 
-      <footer className="status-bar" aria-label="État du document">
+      <footer className="status-bar" aria-label={t("État du document")}>
         <span>
           {activeDocument
-            ? `Page ${activePageNumber} / ${activeOrganizationPlan?.pages.length ?? activeDocument.pageCount}`
-            : "Aucun document"}
+            ? t("Page {0} / {1}", activePageNumber, activeOrganizationPlan?.pages.length ?? activeDocument.pageCount)
+            : t("Aucun document")}
         </span>
         <span
           className="status-bar__document"
           title={activeDocument?.fileName}
         >
-          {activeDocument?.fileName ?? ""}{activeDocument?.sessionOnly ? " · Session temporaire" : ""}
+          {activeDocument?.fileName ?? ""}{activeDocument?.sessionOnly ? t(" · Session temporaire") : ""}
           {activeDocument && isDesktopRuntime() ? activeDocument.saveDestination
-            ? " · Destination active"
-            : " · Choisir une destination avec Enregistrer sous…" : null}
+            ? t(" · Destination active")
+            : t(" · Choisir une destination avec Enregistrer sous…") : null}
         </span>
-        <div className="page-controls" aria-label="Affichage et zoom">
+        <div className="page-controls" aria-label={t("Affichage et zoom")}>
           <label className="viewer-mode-control">
-            <span className="sr-only">Mode d'affichage</span>
+            <span className="sr-only">{t("Mode d'affichage")}</span>
             <select
               value={viewerMode}
               onChange={(event) => {
@@ -6436,14 +6446,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 event.currentTarget.blur();
               }}
               disabled={!activeDocument || workspaceMode === "organize"}
-              aria-label="Mode d'affichage"
-              title="Choisir le mode d'affichage"
+              aria-label={t("Mode d'affichage")}
+              title={t("Choisir le mode d'affichage")}
             >
-              <option value="continuous">Continu</option>
-              <option value="single-page">Page unique</option>
-              <option value="facing">Double page</option>
-              <option value="adaptive">Multipage automatique</option>
-              <option value="presentation">Présentation</option>
+              <option value="continuous">{t("Continu")}</option>
+              <option value="single-page">{t("Page unique")}</option>
+              <option value="facing">{t("Double page")}</option>
+              <option value="adaptive">{t("Multipage automatique")}</option>
+              <option value="presentation">{t("Présentation")}</option>
             </select>
           </label>
           <div className="zoom-controls" role="group" aria-label="Zoom">
@@ -6456,10 +6466,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 }
               }}
               disabled={!activeDocument || workspaceMode === "organize" || viewerMode === "continuous" || viewerMode === "adaptive"}
-              aria-label="Ajuster à la page"
-              title="Ajuster la page à l'espace disponible"
+              aria-label={t("Ajuster à la page")}
+              title={t("Ajuster la page à l'espace disponible")}
             >
-              Ajuster
+              {t("Ajuster")}
             </button>
             <button
               type="button"
@@ -6469,8 +6479,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 }
               }}
               disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom <= MIN_ZOOM}
-              aria-label="Réduire le zoom"
-              title="Réduire le zoom"
+              aria-label={t("Réduire le zoom")}
+              title={t("Réduire le zoom")}
             >
               −
             </button>
@@ -6485,8 +6495,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 }
               }}
               disabled={!activeDocument || workspaceMode === "organize" || activeDocument.zoom >= MAX_ZOOM}
-              aria-label="Augmenter le zoom"
-              title="Augmenter le zoom"
+              aria-label={t("Augmenter le zoom")}
+              title={t("Augmenter le zoom")}
             >
               +
             </button>

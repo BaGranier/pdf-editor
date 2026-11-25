@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import type { FreehandEdit, FreehandStyle } from "../editing/types";
 import { ColorPicker } from "./ColorPicker";
 import { PropertySlider } from "./PropertySlider";
@@ -19,20 +20,21 @@ export function FreehandEditToolbar({
   onFinishUpdate,
   onDelete,
 }: FreehandEditToolbarProps) {
+  const { t: localize } = useLocale();
   const opacity = getFreehandOpacity(edit.style);
   const opacityPercent = Math.round(opacity * 100);
   const updateStyle = (style: FreehandStyle, coalesceKey?: string) => onUpdate({ style }, coalesceKey);
 
   return (
-    <section className="shape-edit-toolbar" aria-label="Propriétés du dessin">
-      <strong>Dessin</strong>
+    <section className="shape-edit-toolbar" aria-label={localize("Propriétés du dessin")}>
+      <strong>{localize("Dessin")}</strong>
       <ColorPicker
-        label="Couleur du dessin"
+        label={localize("Couleur du dessin")}
         value={edit.style.color}
         onChange={(color) => updateStyle({ ...edit.style, color, opacity })}
       />
       <PropertySlider
-        label="Épaisseur du dessin"
+        label={localize("Épaisseur du dessin")}
         value={edit.style.strokeWidth}
         min={1}
         max={20}
@@ -45,7 +47,7 @@ export function FreehandEditToolbar({
         onCommit={() => onFinishUpdate("stroke-width")}
       />
       <PropertySlider
-        label="Opacité du dessin"
+        label={localize("Opacité du dessin")}
         value={opacityPercent}
         min={0}
         max={100}
@@ -60,7 +62,7 @@ export function FreehandEditToolbar({
       />
       {onDelete ? (
         <button type="button" className="shape-edit-toolbar__delete" onClick={onDelete}>
-          Supprimer le dessin
+          {localize("Supprimer le dessin")}
         </button>
       ) : null}
     </section>

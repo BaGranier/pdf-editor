@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { constrainSquare } from "../editing/objectGeometry";
 import { useRef } from "react";
 import { SHAPE_TYPES, type ShapeEdit, type ShapeType } from "../editing/types";
@@ -29,6 +30,7 @@ export function ShapeEditToolbar({
   onPickColor,
   onDelete,
 }: ShapeEditToolbarProps) {
+  const { t: localize } = useLocale();
   const supportsFill = edit.shapeType !== "line";
   const opacity = Math.min(1, Math.max(0, edit.style.opacity ?? 1));
   const opacityPercent = Math.round(opacity * 100);
@@ -38,12 +40,12 @@ export function ShapeEditToolbar({
   }
 
   return (
-    <section className="shape-edit-toolbar" aria-label="Propriétés de la forme">
-      {edit.visualMask ? <p role="note">Ce masque ne supprime pas les informations : elles peuvent être copiées ou récupérées. Pour cacher des données sensibles, utiliser Biffage sécurisé.</p> : null}
+    <section className="shape-edit-toolbar" aria-label={localize("Propriétés de la forme")}>
+      {edit.visualMask ? <p role="note">{localize("Ce masque ne supprime pas les informations : elles peuvent être copiées ou récupérées. Pour cacher des données sensibles, utiliser Biffage sécurisé.")}</p> : null}
       <label>
         Type
         <select
-          aria-label="Type de forme"
+          aria-label={localize("Type de forme")}
           value={edit.shapeType}
           onChange={(event) => {
             const shapeType = event.target.value as ShapeType;
@@ -64,10 +66,10 @@ export function ShapeEditToolbar({
           ))}
         </select>
       </label>
-      {edit.shapeType === "line" ? <label>Trait<select aria-label="Type de trait" value={edit.lineStyle ?? "line"} onChange={(event) => onUpdate({ lineStyle: event.target.value as "line" | "arrow" })}><option value="line">Trait</option><option value="arrow">Flèche</option></select></label> : null}
-      <ColorPicker label="Contour" value={edit.style.strokeColor} onChange={(strokeColor) => onUpdate({ style: { ...edit.style, strokeColor } })} onPickColor={() => onPickColor("stroke")} eyedropperActive={eyedropperTarget === "stroke"} />
+      {edit.shapeType === "line" ? <label>{localize("Trait")}<select aria-label={localize("Type de trait")} value={edit.lineStyle ?? "line"} onChange={(event) => onUpdate({ lineStyle: event.target.value as "line" | "arrow" })}><option value="line">{localize("Trait")}</option><option value="arrow">{localize("Flèche")}</option></select></label> : null}
+      <ColorPicker label={localize("Contour")} value={edit.style.strokeColor} onChange={(strokeColor) => onUpdate({ style: { ...edit.style, strokeColor } })} onPickColor={() => onPickColor("stroke")} eyedropperActive={eyedropperTarget === "stroke"} />
       <PropertySlider
-        label="Épaisseur du contour"
+        label={localize("Épaisseur du contour")}
         value={edit.style.strokeWidth}
         min={1}
         max={20}
@@ -80,12 +82,12 @@ export function ShapeEditToolbar({
       />
       {supportsFill ? (
         <>
-          <ColorPicker label="Remplissage" value={edit.style.fillColor ?? lastFillColor.current} disabled={edit.style.fillColor === null} onChange={(fillColor) => onUpdate({ style: { ...edit.style, fillColor } })} onPickColor={() => onPickColor("fill")} eyedropperActive={eyedropperTarget === "fill"} />
-          <label className="shape-edit-toolbar__transparent"><input type="checkbox" aria-label="Remplissage transparent" checked={edit.style.fillColor === null} onChange={(event) => onUpdate({ style: { ...edit.style, fillColor: event.target.checked ? null : lastFillColor.current } })} /> Transparent</label>
+          <ColorPicker label={localize("Remplissage")} value={edit.style.fillColor ?? lastFillColor.current} disabled={edit.style.fillColor === null} onChange={(fillColor) => onUpdate({ style: { ...edit.style, fillColor } })} onPickColor={() => onPickColor("fill")} eyedropperActive={eyedropperTarget === "fill"} />
+          <label className="shape-edit-toolbar__transparent"><input type="checkbox" aria-label={localize("Remplissage transparent")} checked={edit.style.fillColor === null} onChange={(event) => onUpdate({ style: { ...edit.style, fillColor: event.target.checked ? null : lastFillColor.current } })} /> Transparent</label>
         </>
       ) : null}
       <PropertySlider
-        label="Opacité de la forme"
+        label={localize("Opacité de la forme")}
         value={opacityPercent}
         min={0}
         max={100}
@@ -101,7 +103,7 @@ export function ShapeEditToolbar({
         onCommit={() => onFinishUpdate("opacity")}
       />
       <button type="button" className="shape-edit-toolbar__delete" onClick={onDelete}>
-        Supprimer la forme
+        {localize("Supprimer la forme")}
       </button>
     </section>
   );

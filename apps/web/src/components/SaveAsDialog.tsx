@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { normalizePdfFileName } from "../saving/fileName";
 
@@ -16,6 +17,7 @@ export function SaveAsDialog({
   onCancel,
   onSave,
 }: SaveAsDialogProps) {
+  const { t: localize } = useLocale();
   const titleId = useId();
   const triggerRef = useRef(document.activeElement as HTMLElement | null);
   const nameRef = useRef<HTMLInputElement | null>(null);
@@ -66,9 +68,9 @@ export function SaveAsDialog({
           }
         }}
       >
-        <h2 id={titleId}>Enregistrer sous</h2>
-        <p>Le navigateur choisit le dossier de téléchargement. Vérifiez la copie avant de confirmer l’enregistrement dans l’éditeur.</p>
-        <label htmlFor={`${titleId}-file-name`}>Nom du fichier</label>
+        <h2 id={titleId}>{localize("Enregistrer sous")}</h2>
+        <p>{localize("Le navigateur choisit le dossier de téléchargement. Vérifiez la copie avant de confirmer l’enregistrement dans l’éditeur.")}</p>
+        <label htmlFor={`${titleId}-file-name`}>{localize("Nom du fichier")}</label>
         <input
           id={`${titleId}-file-name`}
           ref={nameRef}
@@ -90,10 +92,10 @@ export function SaveAsDialog({
         ) : null}
         <div className="unsaved-dialog__actions">
           <button type="button" onClick={onCancel} disabled={isSaving}>
-            Annuler
+            {localize("Annuler")}
           </button>
           <button type="submit" disabled={isSaving}>
-            {isSaving ? "Enregistrement…" : "Enregistrer"}
+            {isSaving ? localize("Enregistrement…") : localize("Enregistrer")}
           </button>
         </div>
       </form>

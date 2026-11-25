@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import type { AddTextEdit, NativeTextEdit } from "../editing/types";
 import { ColorPicker } from "./ColorPicker";
 import { FontSelector } from "./FontSelector";
@@ -11,10 +12,11 @@ type TextEditToolbarProps = {
 };
 
 export function TextEditToolbar({ edit, onUpdate, onDelete, onLibraryChange }: TextEditToolbarProps) {
+  const { t: localize } = useLocale();
   const fontRef = resolveFontRef(edit.style);
   const supportsVariants = fontRef.startsWith("pdf-standard:");
   return (
-    <section className="text-edit-toolbar" aria-label={edit.type === "native_text" ? "Propriétés du texte PDF" : "Propriétés du texte ajouté"}>
+    <section className="text-edit-toolbar" aria-label={edit.type === "native_text" ? localize("Propriétés du texte PDF") : localize("Propriétés du texte ajouté")}>
       <FontSelector
         style={edit.style}
         documentFontName={edit.type === "native_text" ? edit.source.sourceFontName : undefined}
@@ -23,9 +25,9 @@ export function TextEditToolbar({ edit, onUpdate, onDelete, onLibraryChange }: T
       />
       {edit.type === "native_text" && edit.fontFallbackReason ? <p className="font-selector__warning" role="status">{edit.fontFallbackReason}</p> : null}
       <label>
-        Taille
+        {localize("Taille")}
         <input
-          aria-label="Taille du texte"
+          aria-label={localize("Taille du texte")}
           type="number"
           min="6"
           max="144"
@@ -40,21 +42,21 @@ export function TextEditToolbar({ edit, onUpdate, onDelete, onLibraryChange }: T
           }}
         />
       </label>
-      <ColorPicker label="Couleur du texte" value={edit.style.color} onChange={(color) => onUpdate({ style: { ...edit.style, color } })} />
+      <ColorPicker label={localize("Couleur du texte")} value={edit.style.color} onChange={(color) => onUpdate({ style: { ...edit.style, color } })} />
       <button
         type="button"
-        aria-label="Gras"
+        aria-label={localize("Gras")}
         aria-pressed={edit.style.bold}
         disabled={!supportsVariants}
         onClick={() =>
           onUpdate({ style: { ...edit.style, bold: !edit.style.bold } })
         }
       >
-        <strong>G</strong>
+        <strong>{localize("G")}</strong>
       </button>
       <button
         type="button"
-        aria-label="Italique"
+        aria-label={localize("Italique")}
         aria-pressed={edit.style.fontStyle === "italic"}
         disabled={!supportsVariants}
         onClick={() => onUpdate({ style: { ...edit.style, fontStyle: edit.style.fontStyle === "italic" ? "normal" : "italic" } })}
@@ -62,7 +64,7 @@ export function TextEditToolbar({ edit, onUpdate, onDelete, onLibraryChange }: T
         <em>I</em>
       </button>
       <button type="button" className="text-edit-toolbar__delete" onClick={onDelete}>
-        {edit.type === "native_text" ? "Annuler le remplacement" : "Supprimer le bloc"}
+        {edit.type === "native_text" ? localize("Annuler le remplacement") : localize("Supprimer le bloc")}
       </button>
     </section>
   );

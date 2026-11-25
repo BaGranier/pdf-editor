@@ -1,3 +1,5 @@
+import { useLocale } from "../viewer/locale";
+
 type PropertySliderProps = {
   label: string;
   value: number;
@@ -33,18 +35,19 @@ export function PropertySlider({
   onChange,
   onCommit,
 }: PropertySliderProps) {
+  const { t } = useLocale();
   const displayValue = Number.isInteger(value) ? value : value.toFixed(1);
   const previewHeight = Math.min(20, Math.max(1, previewThickness));
 
   return (
     <div className="property-slider">
       <div className="property-slider__header">
-        <span>{label}</span>
+        <span>{t(label)}</span>
         <output>{signed && value >= 0 ? "+" : ""}{displayValue} {unit}</output>
       </div>
       <input
         type="range"
-        aria-label={label}
+        aria-label={t(label)}
         aria-valuetext={signed ? `${value >= 0 ? "+" : ""}${displayValue} ${unit}` : undefined}
         min={min}
         max={max}
@@ -59,7 +62,7 @@ export function PropertySlider({
         <span>{min} {unit}</span>
         <span>{max} {unit}</span>
       </div>
-      <div className="property-slider__preview" aria-label={previewLabel}>
+      <div className="property-slider__preview" aria-label={t(previewLabel)}>
         <span
           className={previewKind === "shape" ? "property-slider__preview-shape" : undefined}
           style={{

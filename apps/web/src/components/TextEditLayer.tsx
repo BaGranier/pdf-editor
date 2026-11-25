@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import {
   useCallback,
   useEffect,
@@ -49,6 +50,7 @@ export function TextEditBlock({
   onMove,
   onResize,
 }: TextEditBlockProps) {
+  const { t: localize } = useLocale();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const overflowTooltipId = useId();
   const blockRef = useRef<HTMLDivElement>(null);
@@ -266,17 +268,17 @@ export function TextEditBlock({
       <button
         type="button"
         className="pdf-text-edit__drag-handle"
-        aria-label={`Déplacer le bloc de texte page ${edit.page}`}
-        title="Déplacer le bloc"
+        aria-label={localize("Déplacer le bloc de texte page {0}", edit.page)}
+        title={localize("Déplacer le bloc")}
         onMouseDown={(event) => startInteraction("move", event)}
       >
         ⋮⋮
       </button>
       <textarea
         ref={inputRef}
-        aria-label={`Texte ajouté page ${edit.page}`}
+        aria-label={localize("Texte ajouté page {0}", edit.page)}
         value={draftText}
-        placeholder="Saisissez votre texte"
+        placeholder={localize("Saisissez votre texte")}
         spellCheck
         style={{
           color: edit.style.color,
@@ -311,8 +313,7 @@ export function TextEditBlock({
           className="floating-surface pdf-text-edit__overflow-tooltip"
           role="tooltip"
         >
-          Le texte dépasse de cette zone. Agrandissez la zone ou réduisez la
-          taille du texte.
+          {localize("Le texte dépasse de cette zone. Agrandissez la zone ou réduisez la taille du texte.")}
         </span>, floatingPortalTarget(blockRef.current),
       ) : null}
       {selected
@@ -321,7 +322,7 @@ export function TextEditBlock({
               key={handle}
               type="button"
               className={`pdf-text-edit__resize pdf-text-edit__resize--${handle}`}
-              aria-label={`Redimensionner le bloc de texte depuis ${handle}`}
+              aria-label={localize("Redimensionner le bloc de texte depuis {0}", localize(handle))}
               data-resize-handle={handle}
               onMouseDown={(event) => startInteraction("resize", event, handle)}
             />

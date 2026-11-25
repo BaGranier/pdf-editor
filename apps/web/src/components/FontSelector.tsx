@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { useEffect, useLayoutEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { floatingPortalTarget, useFloatingPosition } from "../hooks/useFloatingPosition";
@@ -14,6 +15,7 @@ type Props = {
 };
 
 export function FontSelector({ style, documentFontName, onChange, onLibraryChange }: Props) {
+  const { t: localize } = useLocale();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [customFonts, setCustomFonts] = useState<CustomFontRecord[]>([]);
   const [message, setMessage] = useState<string | null>(null);
@@ -40,9 +42,9 @@ export function FontSelector({ style, documentFontName, onChange, onLibraryChang
   return (
     <div className="font-selector">
       <label>
-        Police
+        {localize("Police")}
         <select
-          aria-label="Police du texte"
+          aria-label={localize("Police du texte")}
           value={selectedRef}
           onChange={(event) => {
             const font = all.find((candidate) => candidate.id === event.target.value);
@@ -51,20 +53,20 @@ export function FontSelector({ style, documentFontName, onChange, onLibraryChang
             onChange(font);
           }}
         >
-          {documentFont ? <optgroup label="Police du document"><option value={documentFont.id}>{documentFont.displayName}</option></optgroup> : null}
-          <optgroup label="Polices PDF standard">{PDF_STANDARD_FONTS.filter((font) => font.weight === 400).map((font) => <option key={font.id} value={font.id}>{font.displayName}</option>)}</optgroup>
-          <optgroup label="Polices intégrées">{BUNDLED_FONTS.map((font) => <option key={font.id} value={font.id}>{font.displayName}</option>)}</optgroup>
-          {customFonts.length ? <optgroup label="Polices personnalisées">{customFonts.map((font) => <option key={font.id} value={font.id}>{font.displayName}</option>)}</optgroup> : null}
+          {documentFont ? <optgroup label={localize("Police du document")}><option value={documentFont.id}>{documentFont.displayName}</option></optgroup> : null}
+          <optgroup label={localize("Polices PDF standard")}>{PDF_STANDARD_FONTS.filter((font) => font.weight === 400).map((font) => <option key={font.id} value={font.id}>{font.displayName}</option>)}</optgroup>
+          <optgroup label={localize("Polices intégrées")}>{BUNDLED_FONTS.map((font) => <option key={font.id} value={font.id}>{font.displayName}</option>)}</optgroup>
+          {customFonts.length ? <optgroup label={localize("Polices personnalisées")}>{customFonts.map((font) => <option key={font.id} value={font.id}>{font.displayName}</option>)}</optgroup> : null}
         </select>
       </label>
       <div className="font-selector__import-actions">
-        <button type="button" onClick={() => inputRef.current?.click()}>+ Ajouter une police…</button>
-        <button ref={helpButtonRef} type="button" className="font-selector__help" aria-label="Comment ajouter une police personnalisée" aria-haspopup="dialog" aria-expanded={helpOpen} aria-controls={helpOpen ? panelId : undefined} onClick={() => setHelpOpen((open) => !open)}>i</button>
+        <button type="button" onClick={() => inputRef.current?.click()}>{localize("+ Ajouter une police…")}</button>
+        <button ref={helpButtonRef} type="button" className="font-selector__help" aria-label={localize("Comment ajouter une police personnalisée")} aria-haspopup="dialog" aria-expanded={helpOpen} aria-controls={helpOpen ? panelId : undefined} onClick={() => setHelpOpen((open) => !open)}>i</button>
       </div>
       <input
         ref={inputRef}
         className="visually-hidden"
-        aria-label="Importer une police TTF ou OTF"
+        aria-label={localize("Importer une police TTF ou OTF")}
         type="file"
         accept=".ttf,.otf,font/ttf,font/otf"
         onChange={(event) => {
@@ -81,7 +83,7 @@ export function FontSelector({ style, documentFontName, onChange, onLibraryChang
       />
       {customFonts.length ? (
         <details className="font-selector__library">
-          <summary>Gérer les polices personnalisées</summary>
+          <summary>{localize("Gérer les polices personnalisées")}</summary>
           <ul>
             {customFonts.map((font) => {
               const inUse = font.id === selectedRef;
@@ -90,9 +92,9 @@ export function FontSelector({ style, documentFontName, onChange, onLibraryChang
                 <button
                   type="button"
                   disabled={inUse}
-                  title={inUse ? "Choisissez une autre police avant de supprimer celle-ci." : "Supprimer de la bibliothèque locale"}
+                  title={inUse ? localize("Choisissez une autre police avant de supprimer celle-ci.") : localize("Supprimer de la bibliothèque locale")}
                   onClick={() => void fontRegistry.removeCustom(font.id).then(() => { refresh(); onLibraryChange?.(); setMessage("Police supprimée de la bibliothèque locale."); }).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "Suppression impossible."))}
-                >Supprimer</button>
+                >{localize("Supprimer")}</button>
               </li>;
             })}
           </ul>
@@ -100,12 +102,12 @@ export function FontSelector({ style, documentFontName, onChange, onLibraryChang
       ) : null}
       {message ? <p className="font-selector__message" role="status">{message}</p> : null}
       {helpOpen ? createPortal(
-        <section ref={helpPopoverRef} id={panelId} className="floating-surface font-selector__help-popover" role="dialog" aria-label="Ajouter une police personnalisée" tabIndex={-1}>
-          <strong>Ajouter une police personnalisée</strong>
-          <p>Cliquez sur <b>Ajouter une police…</b>, puis sélectionnez un fichier <code>.ttf</code> ou <code>.otf</code>.</p>
-          <p>La police est ajoutée à la bibliothèque locale de l’application et devient disponible pour l’aperçu et l’export PDF. Les polices installées sur votre ordinateur ne sont pas ajoutées automatiquement : importez leur fichier.</p>
-          <p>Vérifiez que vous disposez des droits nécessaires pour utiliser et incorporer cette police dans un PDF.</p>
-          <details><summary>Où trouver mes fichiers de police ?</summary><p>Windows : C:\\Windows\\Fonts<br />macOS : ~/Library/Fonts ou /Library/Fonts<br />Linux : ~/.local/share/fonts ou /usr/share/fonts</p></details>
+        <section ref={helpPopoverRef} id={panelId} className="floating-surface font-selector__help-popover" role="dialog" aria-label={localize("Ajouter une police personnalisée")} tabIndex={-1}>
+          <strong>{localize("Ajouter une police personnalisée")}</strong>
+          <p>{localize("Cliquez sur ")}<b>{localize("Ajouter une police…")}</b>{localize(", puis sélectionnez un fichier ")}<code>.ttf</code> ou <code>.otf</code>.</p>
+          <p>{localize("La police est ajoutée à la bibliothèque locale de l’application et devient disponible pour l’aperçu et l’export PDF. Les polices installées sur votre ordinateur ne sont pas ajoutées automatiquement : importez leur fichier.")}</p>
+          <p>{localize("Vérifiez que vous disposez des droits nécessaires pour utiliser et incorporer cette police dans un PDF.")}</p>
+          <details><summary>{localize("Où trouver mes fichiers de police ?")}</summary><p>{localize("Windows : C:\\\\Windows\\\\Fonts")}<br />{localize("macOS : ~/Library/Fonts ou /Library/Fonts")}<br />{localize("Linux : ~/.local/share/fonts ou /usr/share/fonts")}</p></details>
         </section>,
         floatingPortalTarget(helpButtonRef.current),
       ) : null}

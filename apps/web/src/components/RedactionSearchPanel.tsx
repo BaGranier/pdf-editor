@@ -10,6 +10,7 @@ export function RedactionSearchPanel({ index, total, sourcePages, zones, current
   onNavigate: (hit: PdfSearchHit | null) => void;
   onCreate: (hits: PdfSearchHit[]) => number; onClose: () => void; visible?: boolean;
 }) {
+  const { t: localize } = useLocale();
   const { t, locale } = useLocale();
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { if (visible) inputRef.current?.focus(); }, [visible]);
@@ -84,7 +85,7 @@ export function RedactionSearchPanel({ index, total, sourcePages, zones, current
       {hits.map((hit, index) => <div key={hit.id}>
         <label><input type="checkbox" aria-label={locale === "en" ? `Select match ${index + 1} on page ${hit.pageNumber}` : `Sélectionner l’occurrence ${index + 1} page ${hit.pageNumber}`} checked={selected.has(hit.id)} onChange={(event) => setSelected((previous) => { const next = new Set(previous); event.target.checked ? next.add(hit.id) : next.delete(hit.id); return next; })} />Page {hit.pageNumber} · {index + 1}</label>
         <button type="button" onClick={() => onNavigate(hit)} aria-label={`${locale === "en" ? "Go to match" : "Voir l’occurrence"} ${index + 1}`}>{hit.context}</button>
-        <button type="button" disabled={status !== "complete"} onClick={() => create([hit])} aria-label={`${locale === "en" ? "Redact match" : "Biffer cette occurrence"} ${index + 1}`}>{locale === "en" ? "Redact this match" : "Biffer cette occurrence"}</button>
+        <button type="button" disabled={status !== "complete"} onClick={() => create([hit])} aria-label={`${locale === "en" ? "Redact match" : "Biffer cette occurrence"} ${index + 1}`}>{t("Biffer cette occurrence")}</button>
       </div>)}
       </div>
     </details>

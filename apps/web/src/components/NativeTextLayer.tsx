@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { BEFORE_TOOL_CHANGE } from "../editing/toolTransition";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import type { PageViewport } from "pdfjs-dist";
@@ -21,6 +22,7 @@ type Props = {
 };
 
 export function NativeTextLayer({ spans, edits, viewport, selectedEditId, onCreateEdit, onSelectEdit, onUpdateEdit, onPreviewChange, onPrepareBackground, isBackgroundReady = true, fontValidationByEditId = {} }: Props) {
+  const { t: localize } = useLocale();
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [editingSource, setEditingSource] = useState<string | null>(null);
   const [preparingSource, setPreparingSource] = useState<string | null>(null);
@@ -37,7 +39,7 @@ export function NativeTextLayer({ spans, edits, viewport, selectedEditId, onCrea
     if (prepared) setEditingSource(span.sourceFingerprint);
   };
   return (
-    <div className="native-text-layer" aria-label="Textes PDF modifiables">
+    <div className="native-text-layer" aria-label={localize("Textes PDF modifiables")}>
       {spans.map((span) => {
         const edit = editByFingerprint.get(span.sourceFingerprint);
         const style = pdfRectToViewportStyle(viewport, span.rect);
@@ -50,12 +52,12 @@ export function NativeTextLayer({ spans, edits, viewport, selectedEditId, onCrea
             type="button"
             className={`native-text-hitbox${span.editable ? "" : " is-limited"}${selectedSource === span.sourceFingerprint ? " is-selected" : ""}`}
             style={style}
-            aria-label={span.editable ? `Modifier le texte « ${span.sourceText} »` : `Texte non modifiable : ${span.limitationMessage ?? span.sourceText}`}
+            aria-label={span.editable ? localize("Modifier le texte « {0} »", span.sourceText) : localize("Texte non modifiable : {0}", span.limitationMessage ?? span.sourceText)}
             title={span.editable ? span.sourceText : span.limitationMessage}
             onClick={(event) => { event.stopPropagation(); setSelectedSource(span.sourceFingerprint); }}
             onDoubleClick={(event) => { event.stopPropagation(); void startEditing(span); }}
             onKeyDown={(event) => { if (event.key === "Enter" && span.editable) { event.preventDefault(); void startEditing(span); } }}
-          >{preparingSource === span.sourceFingerprint ? <span className="visually-hidden">Préparation de l’aperçu du texte</span> : null}</button>
+          >{preparingSource === span.sourceFingerprint ? <span className="visually-hidden">{localize("Préparation de l’aperçu du texte")}</span> : null}</button>
         );
       })}
     </div>
@@ -63,6 +65,7 @@ export function NativeTextLayer({ spans, edits, viewport, selectedEditId, onCrea
 }
 
 function NativeTextDraftEditor({ span, viewport, backgroundReady, onCancel, onCommit, onPreviewChange }: { span: NativeTextSpan; viewport: PageViewport; backgroundReady: boolean; onCancel: () => void; onCommit: (text: string) => void; onPreviewChange: (edit: NativeTextEdit | null) => void }) {
+  const { t: localize } = useLocale();
   const [draft, setDraft] = useState(span.sourceText);
   const [transitionBlocked, setTransitionBlocked] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -105,7 +108,7 @@ function NativeTextDraftEditor({ span, viewport, backgroundReady, onCancel, onCo
   return <div className={`native-text-editor is-selected${hasOverflow ? " has-overflow" : ""}`} style={style} onClick={(event) => event.stopPropagation()}>
     {backgroundReady ? <textarea
       ref={inputRef}
-      aria-label={`Modifier le texte PDF « ${span.sourceText} »`}
+      aria-label={localize("Modifier le texte PDF « {0} »", span.sourceText)}
       value={draft}
       style={{ color: span.sourceColor, fontFamily: span.sourceFontName, fontSize: `${span.sourceFontSize * scale}px`, fontWeight: span.fontWeight, fontStyle: span.fontStyle }}
       onChange={(event) => setDraft(event.target.value)}
@@ -115,17 +118,18 @@ function NativeTextDraftEditor({ span, viewport, backgroundReady, onCancel, onCo
         if (event.key === "Escape") { event.preventDefault(); onCancel(); }
         if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); if (draft !== span.sourceText) onCommit(draft); else onCancel(); }
       }}
-    /> : <span className="native-text-editor__preparing" role="status">Préparation de l’aperçu…</span>}
-    {hasOverflow ? <p className="native-text-editor__overflow" role="status">Le texte dépasse la zone d’origine. Il ne sera pas tronqué, mais peut recouvrir le contenu voisin.</p> : null}
-    {transitionBlocked ? <p role="alert">Validez ou annulez le texte en cours avant de changer d’outil.</p> : null}
+    /> : <span className="native-text-editor__preparing" role="status">{localize("Préparation de l’aperçu…")}</span>}
+    {hasOverflow ? <p className="native-text-editor__overflow" role="status">{localize("Le texte dépasse la zone d’origine. Il ne sera pas tronqué, mais peut recouvrir le contenu voisin.")}</p> : null}
+    {transitionBlocked ? <p role="alert">{localize("Validez ou annulez le texte en cours avant de changer d’outil.")}</p> : null}
     <div className="native-text-editor__actions">
-      <button type="button" onClick={onCancel}>Annuler</button>
-      <button type="button" onClick={() => draft !== span.sourceText ? onCommit(draft) : onCancel()}>Valider</button>
+      <button type="button" onClick={onCancel}>{localize("Annuler")}</button>
+      <button type="button" onClick={() => draft !== span.sourceText ? onCommit(draft) : onCancel()}>{localize("Valider")}</button>
     </div>
   </div>;
 }
 
 function NativeTextEditor({ edit, viewport, selected, backgroundReady, onSelect, onUpdate, onPreviewChange }: { edit: NativeTextEdit; viewport: PageViewport; selected: boolean; backgroundReady: boolean; onSelect: () => void; onUpdate: (edit: NativeTextEdit) => void; onPreviewChange: (edit: NativeTextEdit | null) => void }) {
+  const { t: localize } = useLocale();
   const [draft, setDraft] = useState(edit.text);
   const initialRef = useRef(edit.text);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -144,7 +148,7 @@ function NativeTextEditor({ edit, viewport, selected, backgroundReady, onSelect,
     <div className={`native-text-editor${selected ? " is-selected" : ""}${hasOverflow ? " has-overflow" : ""}`} style={style} onClick={(event) => { event.stopPropagation(); onSelect(); }}>
       {backgroundReady ? <textarea
         ref={inputRef}
-        aria-label={`Modifier le texte PDF « ${edit.source.sourceText} »`}
+        aria-label={localize("Modifier le texte PDF « {0} »", edit.source.sourceText)}
         value={draft}
         style={{ color: edit.style.color, fontFamily: edit.style.fontFamily, fontSize: `${edit.style.fontSize * scale}px`, fontWeight: edit.style.bold ? 700 : 400, fontStyle: edit.style.fontStyle ?? "normal" }}
         onChange={(event) => setDraft(event.target.value)}
@@ -154,21 +158,22 @@ function NativeTextEditor({ edit, viewport, selected, backgroundReady, onSelect,
           if (event.key === "Escape") { setDraft(edit.text); inputRef.current?.blur(); }
           if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); commit(); inputRef.current?.blur(); }
         }}
-      /> : <span className="native-text-editor__preparing" role="status">Préparation de l’aperçu…</span>}
-      {hasOverflow ? <p className="native-text-editor__overflow" role="status">Le texte dépasse la zone d’origine. Il ne sera pas tronqué, mais peut recouvrir le contenu voisin.</p> : null}
+      /> : <span className="native-text-editor__preparing" role="status">{localize("Préparation de l’aperçu…")}</span>}
+      {hasOverflow ? <p className="native-text-editor__overflow" role="status">{localize("Le texte dépasse la zone d’origine. Il ne sera pas tronqué, mais peut recouvrir le contenu voisin.")}</p> : null}
     </div>
   );
 }
 
 function FragmentWithDiagnostic({ children, style, validation }: { children: ReactNode; style: CSSProperties; validation?: NativeTextFontValidation }) {
+  const { t: localize } = useLocale();
   const blocking = validation?.status === "missing" || validation?.status === "missing-glyphs" || validation?.status === "not-embeddable";
   return <>
     {children}
-    {blocking ? <div className="native-text-font-diagnostic" style={style} role="status" aria-label={validation.message} title={validation.message}>
+    {blocking ? <div className="native-text-font-diagnostic" style={style} role="status" aria-label={localize(validation.message)} title={localize(validation.message)}>
       <span className="native-text-font-diagnostic__icon" aria-hidden="true">!</span>
-      <span className="native-text-font-diagnostic__message">{validation.message}</span>
+      <span className="native-text-font-diagnostic__message">{localize(validation.message)}</span>
     </div> : null}
-    {validation?.status === "fallback" ? <span className="visually-hidden" role="status">{validation.message}</span> : null}
+    {validation?.status === "fallback" ? <span className="visually-hidden" role="status">{localize(validation.message)}</span> : null}
   </>;
 }
 

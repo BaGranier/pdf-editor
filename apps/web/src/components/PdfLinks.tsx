@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { invoke } from "@tauri-apps/api/core";
 import type { PDFDocumentProxy, PageViewport } from "pdfjs-dist";
 import { useEffect, useId, useState } from "react";
@@ -23,6 +24,7 @@ export function PdfLinks({ pdf, pageNumber, viewport, edits, tool, disabled, onF
   onFollow: (destination: LinkDestination) => void;
   onEdit?: (edit: PdfLinkEdit) => void;
 }) {
+  const { t: localize } = useLocale();
   const [source, setSource] = useState<SourcePdfLink[]>([]);
   useEffect(() => {
     let active = true;
@@ -50,9 +52,9 @@ export function PdfLinks({ pdf, pageNumber, viewport, edits, tool, disabled, onF
         ? `${label.trim()}${destination?.kind === "uri" ? " (lien externe)" : ""}`
         : linkLabel(destination);
       return areas.map((area, index) => <button key={`${id}-${index}`} tabIndex={index === 0 ? undefined : -1} type="button" role={editing ? undefined : "link"} className="pdf-link"
-        aria-label={editing ? editable ? `Modifier le lien : ${description}` : `Édition indisponible : ${description}` : description}
+        aria-label={editing ? editable ? localize("Modifier le lien : {0}", description) : localize("Édition indisponible : {0}", description) : description}
         aria-disabled={editing && !editable || undefined}
-        title={editing && !editable ? "Ce type de lien PDF ne peut pas être modifié." : description}
+        title={editing && !editable ? localize("Ce type de lien PDF ne peut pas être modifié.") : description}
         style={pdfRectToViewportStyle(viewport, area)}
         onClick={(event) => {
           event.stopPropagation();
@@ -70,6 +72,7 @@ function OutlineEntry({ item, onActivate }: {
   item: Outline[number];
   onActivate: (item: Outline[number]) => void;
 }) {
+  const { t: localize } = useLocale();
   const [expanded, setExpanded] = useState(false);
   const childrenId = useId();
   const title = item.title.trim() || "Signet sans titre";
@@ -79,14 +82,14 @@ function OutlineEntry({ item, onActivate }: {
   return <li>
     <div className="pdf-outline__entry">
       {item.items.length ? <button type="button" className="pdf-outline__expand"
-        aria-expanded={expanded} aria-controls={childrenId} aria-label={`${expanded ? "Réduire" : "Développer"} : ${title}`}
+        aria-expanded={expanded} aria-controls={childrenId} aria-label={localize("{0} : {1}", expanded ? localize("Réduire") : localize("Développer"), title)}
         onClick={() => setExpanded((current) => !current)}>
         <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor">
           <path d={expanded ? "m5 7 5 5 5-5" : "m7 5 5 5-5 5"} />
         </svg>
       </button> : null}
       {clickable ? <button type="button" onClick={() => onActivate(item)}
-        aria-label={href ? `${title} (lien externe)` : undefined}>{title}</button> : <span>{title}</span>}
+        aria-label={href ? localize("{0} (lien externe)", title) : undefined}>{title}</button> : <span>{title}</span>}
     </div>
     {item.items.length ? <ul id={childrenId} hidden={!expanded}>
       {expanded ? item.items.map((child, index) => <OutlineEntry key={index} item={child} onActivate={onActivate} />) : null}
@@ -98,6 +101,7 @@ export function PdfOutline({ pdf, onFollow }: {
   pdf: PDFDocumentProxy;
   onFollow: (destination: LinkDestination) => void;
 }) {
+  const { t: localize } = useLocale();
   const [outline, setOutline] = useState<Outline>([]);
   const [message, setMessage] = useState("");
   useEffect(() => {
@@ -119,9 +123,9 @@ export function PdfOutline({ pdf, onFollow }: {
     }
   };
   return <details className="pdf-outline">
-    <summary>Signets</summary>
+    <summary>{localize("Signets")}</summary>
     <ul>{outline.map((item, index) => <OutlineEntry key={index} item={item} onActivate={activate} />)}</ul>
-    {message ? <p role="status">{message}</p> : null}
+    {message ? <p role="status">{localize(message)}</p> : null}
   </details>;
 }
 
@@ -132,6 +136,7 @@ export function LinkInspector({ edit, pageCount, onSave, onDelete, onCancel }: {
   onDelete?: () => void;
   onCancel: () => void;
 }) {
+  const { t: localize } = useLocale();
   const initial = edit.destination;
   const [kind, setKind] = useState<LinkDestination["kind"]>(initial?.kind ?? "uri");
   const [url, setUrl] = useState(initial?.kind === "uri" ? initial.url : "");
@@ -154,14 +159,14 @@ export function LinkInspector({ edit, pageCount, onSave, onDelete, onCancel }: {
     }
     onSave({ ...edit, destination, label: label.trim() || undefined });
   }}>
-    <label>Type de lien<select autoFocus value={kind} onChange={(event) => setKind(event.target.value as LinkDestination["kind"])}>
-      <option value="uri">URL web</option><option value="internal">Destination dans le document</option>
+    <label>{localize("Type de lien")}<select autoFocus value={kind} onChange={(event) => setKind(event.target.value as LinkDestination["kind"])}>
+      <option value="uri">{localize("URL web")}</option><option value="internal">{localize("Destination dans le document")}</option>
     </select></label>
-    {kind === "uri" ? <label>URL web<input value={url} maxLength={4096} onChange={(event) => setUrl(event.target.value)} /></label>
-      : <label>Page source cible<input type="number" min={1} max={pageCount} required value={page} onChange={(event) => setPage(event.target.value)} /></label>}
-    <label>Intitulé facultatif<input value={label} maxLength={256} onChange={(event) => setLabel(event.target.value)} /></label>
-    {error ? <p role="alert">{error}</p> : null}
-    <div><button type="submit">Enregistrer le lien</button> <button type="button" onClick={onCancel}>Annuler</button>
-      {onDelete ? <button type="button" onClick={onDelete}>Supprimer le lien</button> : null}</div>
+    {kind === "uri" ? <label>{localize("URL web")}<input value={url} maxLength={4096} onChange={(event) => setUrl(event.target.value)} /></label>
+      : <label>{localize("Page source cible")}<input type="number" min={1} max={pageCount} required value={page} onChange={(event) => setPage(event.target.value)} /></label>}
+    <label>{localize("Intitulé facultatif")}<input value={label} maxLength={256} onChange={(event) => setLabel(event.target.value)} /></label>
+    {error ? <p role="alert">{localize(error)}</p> : null}
+    <div><button type="submit">{localize("Enregistrer le lien")}</button> <button type="button" onClick={onCancel}>{localize("Annuler")}</button>
+      {onDelete ? <button type="button" onClick={onDelete}>{localize("Supprimer le lien")}</button> : null}</div>
   </form>;
 }

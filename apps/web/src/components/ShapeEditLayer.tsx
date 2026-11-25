@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { arrowHead, constrainSquare } from "../editing/objectGeometry";
 import {
   useEffect,
@@ -44,6 +45,7 @@ export function ShapeEditBlock({
   onSelect,
   onMove,
 }: ShapeEditBlockProps) {
+  const { t: localize } = useLocale();
   const interactionRef = useRef<{
     kind: "move" | "resize" | "start" | "end";
     handle?: ResizeHandle;
@@ -221,8 +223,8 @@ export function ShapeEditBlock({
       </svg>
       {children}
       {selected && edit.shapeType === "line" ? <>
-        <button type="button" className="pdf-shape-edit__endpoint" style={{ left: start.x, top: start.y }} aria-label="Déplacer le début du trait" onMouseDown={(event) => startInteraction("start", event)} />
-        <button type="button" className="pdf-shape-edit__endpoint" style={{ left: end.x, top: end.y }} aria-label="Déplacer la fin du trait" onMouseDown={(event) => startInteraction("end", event)} />
+        <button type="button" className="pdf-shape-edit__endpoint" style={{ left: start.x, top: start.y }} aria-label={localize("Déplacer le début du trait")} onMouseDown={(event) => startInteraction("start", event)} />
+        <button type="button" className="pdf-shape-edit__endpoint" style={{ left: end.x, top: end.y }} aria-label={localize("Déplacer la fin du trait")} onMouseDown={(event) => startInteraction("end", event)} />
       </> : null}
       {selected
         ? (resizable ? RESIZE_HANDLES : []).map((handle) => (
@@ -230,7 +232,7 @@ export function ShapeEditBlock({
               key={handle}
               type="button"
               className={`pdf-shape-edit__resize pdf-shape-edit__resize--${handle}`}
-              aria-label={`Redimensionner la forme depuis ${handle}`}
+              aria-label={localize("Redimensionner la forme depuis {0}", localize(handle))}
               data-resize-handle={handle}
               onMouseDown={(event) => startInteraction("resize", event, handle)}
             />

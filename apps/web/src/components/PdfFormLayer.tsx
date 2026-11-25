@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import type { PageViewport } from "pdfjs-dist";
 import type { ChangeEvent } from "react";
 import { pdfRectToViewportStyle } from "../editing/coordinates";
@@ -27,8 +28,9 @@ export function PdfFormLayer({
   onChange: (field: PdfFormField, value: string | string[]) => void;
   onFinish: (field: PdfFormField) => void;
 }) {
+  const { t: localize } = useLocale();
   return (
-    <div className="pdf-form-layer" aria-label="Champs de formulaire PDF">
+    <div className="pdf-form-layer" aria-label={localize("Champs de formulaire PDF")}>
       {fields.map((field) => {
         const value = formValue(field, edits);
         const readOnly = field.readOnly || uiLocked || pdfLocked;
@@ -72,7 +74,7 @@ export function PdfFormLayer({
           const multiple = field.fieldType === "list" && Array.isArray(value);
           return <select key={field.id} {...common} multiple={multiple} value={value} disabled={readOnly} required={field.required} aria-label={label} aria-readonly={readOnly || undefined} onChange={(event) => onChange(field, multiple ? [...event.target.selectedOptions].map((option) => option.value) : event.target.value)} onBlur={() => onFinish(field)}>{field.options.map((option) => <option key={option} value={option}>{option}</option>)}</select>;
         }
-        return <div key={field.id} {...common} className="pdf-form-field pdf-form-field--unsupported" role="note">Champ PDF non pris en charge : {field.name}</div>;
+        return <div key={field.id} {...common} className="pdf-form-field pdf-form-field--unsupported" role="note">{localize("Champ PDF non pris en charge : ")}{field.name}</div>;
       })}
     </div>
   );

@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { useLayoutEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { floatingPortalTarget, useFloatingPosition } from "../hooks/useFloatingPosition";
@@ -26,6 +27,7 @@ export function FormLockToolbar({
   onRequestPdfLock: () => void;
   onUnlockPdf: () => void;
 }) {
+  const { t: localize } = useLocale();
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -51,7 +53,7 @@ export function FormLockToolbar({
   };
 
   return (
-    <section className="pdf-form-lock-toolbar" aria-label="Contrôle du formulaire">
+    <section className="pdf-form-lock-toolbar" aria-label={localize("Contrôle du formulaire")}>
       <button
         type="button"
         ref={triggerRef}
@@ -68,24 +70,24 @@ export function FormLockToolbar({
         <LockIcon locked={effectiveLocked} />
       </button>
       {isOpen ? createPortal(
-        <div ref={popoverRef} id={panelId} className="floating-surface pdf-form-lock-popover" role="dialog" aria-label="Mode d’édition du formulaire">
-          <strong>Formulaire</strong>
+        <div ref={popoverRef} id={panelId} className="floating-surface pdf-form-lock-popover" role="dialog" aria-label={localize("Mode d’édition du formulaire")}>
+          <strong>{localize("Formulaire")}</strong>
           <p>{stateLabel}.</p>
-          <div role="radiogroup" aria-label="État de l’édition">
+          <div role="radiogroup" aria-label={localize("État de l’édition")}>
             <button type="button" role="radio" aria-checked={!effectiveLocked} disabled={pdfLocked} onClick={() => selectUiMode(false)}>
               <LockIcon locked={false} />
-              <span><b>Autoriser l’édition</b><small>Les champs peuvent être modifiés.</small></span>
+              <span><b>{localize("Autoriser l’édition")}</b><small>{localize("Les champs peuvent être modifiés.")}</small></span>
             </button>
             <button type="button" role="radio" aria-checked={effectiveLocked} disabled={pdfLocked} onClick={() => selectUiMode(true)}>
               <LockIcon locked />
-              <span><b>Verrouiller</b><small>Empêche les modifications accidentelles dans l’application.</small></span>
+              <span><b>{localize("Verrouiller")}</b><small>{localize("Empêche les modifications accidentelles dans l’application.")}</small></span>
             </button>
           </div>
           <div className="pdf-form-lock-popover__persistent">
             {pdfLocked ? (
-              <button type="button" onClick={() => { onUnlockPdf(); setIsOpen(false); }}>Déverrouiller le PDF</button>
+              <button type="button" onClick={() => { onUnlockPdf(); setIsOpen(false); }}>{localize("Déverrouiller le PDF")}</button>
             ) : (
-              <button type="button" onClick={() => { onRequestPdfLock(); setIsOpen(false); }}>Verrouiller le PDF pour l'export</button>
+              <button type="button" onClick={() => { onRequestPdfLock(); setIsOpen(false); }}>{localize("Verrouiller le PDF pour l'export")}</button>
             )}
           </div>
         </div>,

@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import type { OcrLanguages, OcrOptions } from "../ocr/ocr";
 
@@ -18,6 +19,7 @@ export function OcrDialog({
   onSubmit,
   supportsDeskew = true,
 }: OcrDialogProps) {
+  const { t: localize } = useLocale();
   const titleId = useId();
   const descriptionId = useId();
   const firstControlRef = useRef<HTMLSelectElement | null>(null);
@@ -57,16 +59,16 @@ export function OcrDialog({
       >
         <header className="ocr-dialog__header">
           <div>
-            <h2 id={titleId}>Reconnaissance de texte (OCR)</h2>
+            <h2 id={titleId}>{localize("Reconnaissance de texte (OCR)")}</h2>
             <p id={descriptionId}>
-              Créer un nouveau PDF consultable à partir de <strong>{sourceFileName}</strong>.
+              {localize("Créer un nouveau PDF consultable à partir de ")}<strong>{sourceFileName}</strong>.
             </p>
           </div>
         </header>
 
         <form className="ocr-dialog__form" onSubmit={handleSubmit}>
           <label className="ocr-field" htmlFor={`${titleId}-languages`}>
-            <span>Langue du document</span>
+            <span>{localize("Langue du document")}</span>
             <select
               ref={firstControlRef}
               id={`${titleId}-languages`}
@@ -74,26 +76,26 @@ export function OcrDialog({
               disabled={isProcessing}
               onChange={(event) => setLanguages(event.target.value as OcrLanguages)}
             >
-              <option value="fra">Français</option>
-              <option value="eng">Anglais</option>
-              <option value="fra+eng">Français et anglais</option>
+              <option value="fra">{localize("Français")}</option>
+              <option value="eng">{localize("Anglais")}</option>
+              <option value="fra+eng">{localize("Français et anglais")}</option>
             </select>
           </label>
 
           <div className="ocr-dialog__info">
-            <p>L’OCR sera appliqué à toutes les pages du document.</p>
-            <p>Le traitement de toutes les pages peut prendre plusieurs minutes.</p>
+            <p>{localize("L’OCR sera appliqué à toutes les pages du document.")}</p>
+            <p>{localize("Le traitement de toutes les pages peut prendre plusieurs minutes.")}</p>
           </div>
           <label className="ocr-field">
-            <span>Correction de rotation des scans</span>
+            <span>{localize("Correction de rotation des scans")}</span>
             <select value={rotation} disabled={isProcessing} onChange={(event) => setRotation(Number(event.target.value) as 0 | 90 | 180 | 270)}>
-              <option value={0}>Aucune</option>
-              <option value={90}>90° sens horaire</option>
+              <option value={0}>{localize("Aucune")}</option>
+              <option value={90}>{localize("90° sens horaire")}</option>
               <option value={180}>180°</option>
-              <option value={270}>90° sens antihoraire</option>
+              <option value={270}>{localize("90° sens antihoraire")}</option>
             </select>
           </label>
-          <p>La correction s’applique à toutes les pages source. La détection automatique d’orientation n’est pas disponible.</p>
+          <p>{localize("La correction s’applique à toutes les pages source. La détection automatique d’orientation n’est pas disponible.")}</p>
 
           <label className="ocr-checkbox-field">
             <input
@@ -102,27 +104,26 @@ export function OcrDialog({
               disabled={isProcessing || !supportsDeskew}
               onChange={(event) => setDeskew(event.target.checked)}
             />
-            <span>Redresser automatiquement les pages inclinées</span>
+            <span>{localize("Redresser automatiquement les pages inclinées")}</span>
           </label>
-          {!supportsDeskew ? <p role="note">Le redressement automatique des pages inclinées n’est pas disponible dans cette version desktop.</p> : null}
+          {!supportsDeskew ? <p role="note">{localize("Le redressement automatique des pages inclinées n’est pas disponible dans cette version desktop.")}</p> : null}
 
           {hasPendingOrganizationChanges ? (
             <p className="ocr-dialog__warning" role="note">
-                L’OCR sera appliqué au PDF source. Les modifications non
-              exportées ne seront pas incluses.
+                {localize("L’OCR sera appliqué au PDF source. Les modifications non exportées ne seront pas incluses.")}
             </p>
           ) : null}
 
           <footer className="ocr-dialog__actions">
             <button type="button" onClick={onCancel} disabled={isProcessing}>
-              Annuler
+              {localize("Annuler")}
             </button>
             <button
               type="submit"
               className="ocr-dialog__submit"
               disabled={isProcessing}
             >
-              Lancer l’OCR
+              {localize("Lancer l’OCR")}
             </button>
           </footer>
         </form>

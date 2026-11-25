@@ -10,6 +10,7 @@ export function CommentEditMarker({ edit, viewport, selected, onSelect }: {
   selected: boolean;
   onSelect: () => void;
 }) {
+  const { t: localize } = useLocale();
   const { t } = useLocale();
   const anchors = edit.rects?.map((rect) => pdfRectToViewportStyle(viewport, rect));
   const anchor = anchors?.length ? {
@@ -32,7 +33,7 @@ export function CommentEditMarker({ edit, viewport, selected, onSelect }: {
       className={`pdf-comment-marker${anchor ? " pdf-comment-marker--anchored" : edit.source === "local" ? " pdf-comment-marker--local" : ""}${selected ? " is-selected" : ""}`}
       data-comment-id={edit.id}
       style={position}
-      aria-label={`${t("Commentaire")} page ${edit.page}: ${edit.content}`}
+      aria-label={t("{0} page {1}: {2}", t("Commentaire"), edit.page, edit.content)}
       title={edit.content}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => { event.stopPropagation(); onSelect(); }}

@@ -3,6 +3,12 @@
 Dernière mise à jour : 2026-11-23
 Version cible : MVP Preview Windows x64 / Tauri
 
+## Interface bilingue — 25 novembre 2026
+
+- La langue choisie s’applique aux menus, outils, dialogues et libellés d’accessibilité de l’éditeur.
+- Les dialogues Windows Ouvrir et Enregistrer sous reçoivent la langue de l’interface.
+- La recette expérimentale conserve la version embarquée 0.2.0. Le suffixe `_exp` identifie le fichier de test.
+
 ## WIN-FINAL-020 — 23 novembre 2026
 
 - NSIS Windows x64 **0.2.0**, reconstruit depuis la branche consolidée et installé sur la VM de développement.

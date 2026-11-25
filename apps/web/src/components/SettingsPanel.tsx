@@ -12,6 +12,7 @@ export function SettingsPanel({ children, onClose, onLocale, author, onAuthor, o
   onReset: () => void;
   resetDisabled: boolean;
 }) {
+  const { t: localize } = useLocale();
   const { locale, t } = useLocale();
   const panel = useRef<HTMLElement>(null);
   const trigger = document.querySelector<HTMLElement>(".tool-rail__settings");
@@ -28,7 +29,7 @@ export function SettingsPanel({ children, onClose, onLocale, author, onAuthor, o
       <legend>{t("Général")}</legend>
       <label>{t("Langue de l’interface")}
         <select value={locale} onChange={(event) => onLocale(event.currentTarget.value === "en" ? "en" : "fr")}>
-          <option value="fr">Français</option><option value="en">English</option>
+          <option value="fr">{t("Français")}</option><option value="en">English</option>
         </select>
       </label>
       <label>{t("Auteur par défaut des commentaires")}

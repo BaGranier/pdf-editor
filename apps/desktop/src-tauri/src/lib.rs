@@ -668,11 +668,19 @@ fn get_backend_status(runtime: State<'_, BackendRuntime>) -> BackendStatus {
 }
 
 #[tauri::command]
-fn open_pdf(files: State<'_, DesktopFileStore>) -> Result<Option<NativePdfFile>, String> {
+fn open_pdf(
+    files: State<'_, DesktopFileStore>,
+    locale: Option<String>,
+) -> Result<Option<NativePdfFile>, String> {
+    let (title, filter) = if locale.as_deref() == Some("en") {
+        ("Open a PDF or image", "PDF and images")
+    } else {
+        ("Ouvrir un PDF ou une image", "PDF et images")
+    };
     let selected_path = rfd::FileDialog::new()
-        .set_title("Ouvrir un PDF ou une image")
+        .set_title(title)
         .add_filter(
-            "PDF et images",
+            filter,
             &["pdf", "PDF", "png", "PNG", "jpg", "JPG", "jpeg", "JPEG", "webp", "WEBP"],
         )
         .pick_file();
@@ -737,8 +745,18 @@ fn save_pdf_as(
         .filter(|name| !name.is_empty())
         .ok_or_else(|| "Le nom proposé est invalide.".to_owned())?
         .to_owned();
+    let title = if request
+        .headers()
+        .get("x-ui-locale")
+        .and_then(|value| value.to_str().ok())
+        == Some("en")
+    {
+        "Save PDF as"
+    } else {
+        "Enregistrer le PDF sous"
+    };
     let selected_path = rfd::FileDialog::new()
-        .set_title("Enregistrer le PDF sous")
+        .set_title(title)
         .add_filter("PDF", &["pdf", "PDF"])
         .set_file_name(&suggested_name)
         .save_file();

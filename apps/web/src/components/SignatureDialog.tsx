@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { importLocalImage } from "../images/importImage";
 import {
   useRef,
@@ -21,6 +22,7 @@ type SignatureDialogProps = {
 const DRAWING_WIDTH = 900;
 const DRAWING_HEIGHT = 300;
 export function SignatureDialog({ onCancel, onConfirm }: SignatureDialogProps) {
+  const { t: localize } = useLocale();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
   const [mode, setMode] = useState<"draw" | "import">("draw");
@@ -137,13 +139,12 @@ export function SignatureDialog({ onCancel, onConfirm }: SignatureDialogProps) {
         aria-labelledby="signature-dialog-title"
       >
         <header>
-          <h2 id="signature-dialog-title">Ajouter une signature visuelle</h2>
+          <h2 id="signature-dialog-title">{localize("Ajouter une signature visuelle")}</h2>
           <p>
-            La signature reste locale. Elle ne constitue pas une signature
-            électronique ou cryptographique.
+            {localize("La signature reste locale. Elle ne constitue pas une signature électronique ou cryptographique.")}
           </p>
         </header>
-        <div className="signature-dialog__tabs" role="tablist" aria-label="Source de la signature">
+        <div className="signature-dialog__tabs" role="tablist" aria-label={localize("Source de la signature")}>
           <button
             type="button"
             role="tab"
@@ -153,7 +154,7 @@ export function SignatureDialog({ onCancel, onConfirm }: SignatureDialogProps) {
               setError(null);
             }}
           >
-            Dessiner
+            {localize("Dessiner")}
           </button>
           <button
             type="button"
@@ -164,7 +165,7 @@ export function SignatureDialog({ onCancel, onConfirm }: SignatureDialogProps) {
               setError(null);
             }}
           >
-            Importer
+            {localize("Importer")}
           </button>
         </div>
         <div className="signature-dialog__body">
@@ -175,7 +176,7 @@ export function SignatureDialog({ onCancel, onConfirm }: SignatureDialogProps) {
                 className="signature-drawing-canvas"
                 width={DRAWING_WIDTH}
                 height={DRAWING_HEIGHT}
-                aria-label="Zone de dessin de la signature"
+                aria-label={localize("Zone de dessin de la signature")}
                 onPointerDown={startDrawing}
                 onPointerMove={continueDrawing}
                 onPointerUp={stopDrawing}
@@ -183,17 +184,17 @@ export function SignatureDialog({ onCancel, onConfirm }: SignatureDialogProps) {
                 onPointerLeave={stopDrawing}
               />
               <button type="button" onClick={clearDrawing} disabled={!hasDrawing}>
-                Effacer et recommencer
+                {localize("Effacer et recommencer")}
               </button>
             </>
           ) : (
             <>
               <label className="signature-import-picker">
-                Choisir une image PNG ou JPEG
+                {localize("Choisir une image PNG ou JPEG")}
                 <input
                   type="file"
                   accept="image/png,image/jpeg,.png,.jpg,.jpeg"
-                  aria-label="Importer une image de signature"
+                  aria-label={localize("Importer une image de signature")}
                   onChange={importImage}
                 />
               </label>
@@ -201,21 +202,20 @@ export function SignatureDialog({ onCancel, onConfirm }: SignatureDialogProps) {
                 <img
                   className="signature-import-preview"
                   src={importedImage.dataUrl}
-                  alt="Aperçu de la signature importée"
+                  alt={localize("Aperçu de la signature importée")}
                 />
               ) : null}
             </>
           )}
-          {error ? <p className="signature-dialog__error" role="alert">{error}</p> : null}
+          {error ? <p className="signature-dialog__error" role="alert">{localize(error)}</p> : null}
           <p className="signature-dialog__warning">
-            L'ajout d'une signature visuelle peut invalider ou altérer la
-            validation cryptographique d'un PDF déjà signé numériquement.
+            {localize("L'ajout d'une signature visuelle peut invalider ou altérer la validation cryptographique d'un PDF déjà signé numériquement.")}
           </p>
         </div>
         <footer>
-          <button type="button" onClick={onCancel}>Annuler</button>
+          <button type="button" onClick={onCancel}>{localize("Annuler")}</button>
           <button type="button" onClick={confirm} disabled={!canConfirm}>
-            Valider la signature
+            {localize("Valider la signature")}
           </button>
         </footer>
       </section>

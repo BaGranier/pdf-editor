@@ -1,3 +1,4 @@
+import type { Locale } from "../viewer/locale";
 import { invoke } from "@tauri-apps/api/core";
 
 export type DocumentSource =
@@ -60,8 +61,10 @@ function toDesktopPdfFile(response: NativePdfResponse): DesktopPdfFile {
  * The path itself never crosses the IPC boundary. Rust owns it after a user
  * selects a file and this module only holds its opaque document identifier.
  */
-export async function openDesktopPdf(): Promise<DesktopPdfFile | null> {
-  const response = await invoke<NativePdfResponse | null>("open_pdf");
+export async function openDesktopPdf(locale: Locale = "fr"): Promise<DesktopPdfFile | null> {
+  const response = await (locale === "en"
+    ? invoke<NativePdfResponse | null>("open_pdf", { locale })
+    : invoke<NativePdfResponse | null>("open_pdf"));
   return response ? toDesktopPdfFile(response) : null;
 }
 
@@ -92,11 +95,12 @@ export async function saveDesktopPdfAs(
   suggestedName: string,
   content: Blob,
   preserveOpenSources = false,
+  locale: Locale = "fr",
 ): Promise<DesktopPdfSave | null> {
   validateSaveSize(content);
   const bytes = new Uint8Array(await content.arrayBuffer());
   markSavePhase("invoke", bytes.byteLength);
   return invoke<DesktopPdfSave | null>("save_pdf_as", bytes, {
-    headers: { "x-pdf-name": encodeURIComponent(suggestedName), ...(preserveOpenSources ? { "x-preserve-open-sources": "true" } : {}) },
+    headers: { "x-pdf-name": encodeURIComponent(suggestedName), ...(locale === "en" ? { "x-ui-locale": locale } : {}), ...(preserveOpenSources ? { "x-preserve-open-sources": "true" } : {}) },
   }).catch((error: unknown) => { throw desktopFileError(error); });
 }

@@ -128,9 +128,14 @@ test("crée, prévisualise, duplique et conserve plusieurs thèmes personnalisé
   await page.getByRole("combobox", { name: "Langue de l’interface" }).selectOption("en");
   await expect(page.getByRole("button", { name: "Select", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "File", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open PDF", exact: true })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "Properties" })).toBeVisible();
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await openSettings(page);
   await expect(page.getByRole("combobox", { name: "Interface language" })).toHaveValue("en");
   await expect(page.getByRole("combobox", { name: "Interface theme" }).locator("option")).toContainText(["Recette"]);
+  await page.getByRole("combobox", { name: "Interface language" }).selectOption("fr");
+  await expect(page.getByRole("button", { name: "Ouvrir un PDF", exact: true })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("lang", "fr");
 });

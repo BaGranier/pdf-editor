@@ -1,8 +1,10 @@
+import { useLocale } from "../viewer/locale";
 import { useEffect, useRef, useState } from "react";
 import { EXPORT_QUALITY_LABELS, type ExportOptions } from "../saving/exportOptions";
 
 type Props = { busy: boolean; onCancel: () => void; onExport: (options: ExportOptions) => Promise<boolean> };
 export function AdvancedExportDialog({ busy, onCancel, onExport }: Props) {
+  const { t: localize } = useLocale();
   const [quality, setQuality] = useState<ExportOptions["quality"]>("maximum");
   const [flattenForms, setFlattenForms] = useState(false);
   const [flattenAnnotations, setFlattenAnnotations] = useState(false);
@@ -38,22 +40,22 @@ export function AdvancedExportDialog({ busy, onCancel, onExport }: Props) {
       else if (!event.shiftKey && index === items.length - 1) { event.preventDefault(); items[0]?.focus(); }
     }
   }}>
-    <h2 id="advanced-export-title">Exporter / Finaliser</h2>
+    <h2 id="advanced-export-title">{localize("Exporter / Finaliser")}</h2>
     <fieldset disabled={busy}>
-      <label>Profil<select aria-label="Profil de compression" value={quality} onChange={(e) => setQuality(e.target.value as ExportOptions["quality"])}>{Object.entries(EXPORT_QUALITY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-      <p>Qualité maximale conserve les images. Équilibré et Taille réduite recompressent les images et réduisent leur résolution ; texte et formes restent vectoriels.</p>
-      <label><input type="checkbox" checked={flattenForms} onChange={(e) => setFlattenForms(e.target.checked)} />Finaliser les champs de formulaire</label>
-      <label><input type="checkbox" checked={flattenAnnotations} onChange={(e) => setFlattenAnnotations(e.target.checked)} />Finaliser les annotations</label>
-      <p>Les objets ajoutés sont toujours intégrés au PDF. La finalisation rend les champs ou annotations permanents. Le contenu des commentaires et les pièces jointes des annotations finalisées sont supprimés.</p>
-      <label>Mot de passe d’ouverture<input type="password" autoComplete="new-password" value={openPassword} onChange={(e) => setOpenPassword(e.target.value)} /></label>
-      <label>Confirmer le mot de passe d’ouverture<input type="password" autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></label>
-      <label>Mot de passe propriétaire<input type="password" autoComplete="new-password" value={ownerPassword} onChange={(e) => setOwnerPassword(e.target.value)} /></label>
-      <label>Confirmer le mot de passe propriétaire<input type="password" autoComplete="new-password" value={ownerConfirmation} onChange={(e) => setOwnerConfirmation(e.target.value)} /></label>
-      <label><input type="checkbox" checked={allowPrinting} onChange={(e) => setAllowPrinting(e.target.checked)} />Autoriser l’impression</label>
-      <label><input type="checkbox" checked={allowModification} onChange={(e) => setAllowModification(e.target.checked)} />Autoriser les modifications</label>
-      <p>Certains lecteurs ignorent les permissions PDF. Une signature graphique n’est pas une signature numérique avec certificat.</p>
+      <label>{localize("Profil")}<select aria-label={localize("Profil de compression")} value={quality} onChange={(e) => setQuality(e.target.value as ExportOptions["quality"])}>{Object.entries(EXPORT_QUALITY_LABELS).map(([value, label]) => <option key={value} value={value}>{localize(label)}</option>)}</select></label>
+      <p>{localize("Qualité maximale conserve les images. Équilibré et Taille réduite recompressent les images et réduisent leur résolution ; texte et formes restent vectoriels.")}</p>
+      <label><input type="checkbox" checked={flattenForms} onChange={(e) => setFlattenForms(e.target.checked)} />{localize("Finaliser les champs de formulaire")}</label>
+      <label><input type="checkbox" checked={flattenAnnotations} onChange={(e) => setFlattenAnnotations(e.target.checked)} />{localize("Finaliser les annotations")}</label>
+      <p>{localize("Les objets ajoutés sont toujours intégrés au PDF. La finalisation rend les champs ou annotations permanents. Le contenu des commentaires et les pièces jointes des annotations finalisées sont supprimés.")}</p>
+      <label>{localize("Mot de passe d’ouverture")}<input type="password" autoComplete="new-password" value={openPassword} onChange={(e) => setOpenPassword(e.target.value)} /></label>
+      <label>{localize("Confirmer le mot de passe d’ouverture")}<input type="password" autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></label>
+      <label>{localize("Mot de passe propriétaire")}<input type="password" autoComplete="new-password" value={ownerPassword} onChange={(e) => setOwnerPassword(e.target.value)} /></label>
+      <label>{localize("Confirmer le mot de passe propriétaire")}<input type="password" autoComplete="new-password" value={ownerConfirmation} onChange={(e) => setOwnerConfirmation(e.target.value)} /></label>
+      <label><input type="checkbox" checked={allowPrinting} onChange={(e) => setAllowPrinting(e.target.checked)} />{localize("Autoriser l’impression")}</label>
+      <label><input type="checkbox" checked={allowModification} onChange={(e) => setAllowModification(e.target.checked)} />{localize("Autoriser les modifications")}</label>
+      <p>{localize("Certains lecteurs ignorent les permissions PDF. Une signature graphique n’est pas une signature numérique avec certificat.")}</p>
     </fieldset>
-    {error ? <p role="alert">{error}</p> : null}
-    <div className="unsaved-dialog__actions"><button type="button" disabled={busy} onClick={onCancel}>Annuler</button><button type="button" disabled={busy} onClick={() => void submit()}>{busy ? "Export en cours…" : "Exporter"}</button></div>
+    {error ? <p role="alert">{localize(error)}</p> : null}
+    <div className="unsaved-dialog__actions"><button type="button" disabled={busy} onClick={onCancel}>{localize("Annuler")}</button><button type="button" disabled={busy} onClick={() => void submit()}>{busy ? localize("Export en cours…") : localize("Exporter")}</button></div>
   </section></div>;
 }

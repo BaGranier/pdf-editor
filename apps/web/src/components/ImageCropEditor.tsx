@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ImageCrop } from "../editing/types";
@@ -9,6 +10,7 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 export function ImageCropEditor({ initial, onApply, onCancel, rotation = 0, inlineActions = false }: {
   initial: ImageCrop; onApply: (crop: ImageCrop) => void; onCancel: () => void; rotation?: number; inlineActions?: boolean;
 }) {
+  const { t: localize } = useLocale();
   const [crop, setCrop] = useState(initial);
   const surface = useRef<HTMLDivElement>(null);
   const drag = useRef<{ pointerId: number; x: number; y: number; crop: ImageCrop; handle: Handle } | null>(null);
@@ -26,13 +28,13 @@ export function ImageCropEditor({ initial, onApply, onCancel, rotation = 0, inli
     surface.current?.setPointerCapture?.(event.pointerId);
     drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, crop, handle };
   };
-  const actions = <div className={inlineActions ? "image-crop-actions-inline" : "image-crop-actions"} role="toolbar" aria-label="Rognage de l’image">
-    <span>Rognage · déplacez le cadre ou ses poignées</span>
-    <button type="button" onClick={() => onApply(crop)}>Valider le rognage</button>
-    <button type="button" onClick={onCancel}>Annuler le rognage</button>
+  const actions = <div className={inlineActions ? "image-crop-actions-inline" : "image-crop-actions"} role="toolbar" aria-label={localize("Rognage de l’image")}>
+    <span>{localize("Rognage · déplacez le cadre ou ses poignées")}</span>
+    <button type="button" onClick={() => onApply(crop)}>{localize("Valider le rognage")}</button>
+    <button type="button" onClick={onCancel}>{localize("Annuler le rognage")}</button>
   </div>;
   return <>
-    <div ref={surface} tabIndex={0} className="image-crop-surface" role="group" aria-label="Cadre de rognage"
+    <div ref={surface} tabIndex={0} className="image-crop-surface" role="group" aria-label={localize("Cadre de rognage")}
       onPointerDown={(event) => start(event, "move")}
       onMouseDown={(event) => event.stopPropagation()}
       onPointerMove={(event) => {
@@ -55,7 +57,7 @@ export function ImageCropEditor({ initial, onApply, onCancel, rotation = 0, inli
       }}
       onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
       <div className="image-crop-frame" style={{ left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.width * 100}%`, height: `${crop.height * 100}%` }}>
-        {handles.map((handle) => <button key={handle} type="button" className={`image-crop-handle image-crop-handle--${handle}`} aria-label={`Rogner ${handle}`}
+        {handles.map((handle) => <button key={handle} type="button" className={`image-crop-handle image-crop-handle--${handle}`} aria-label={localize("Rogner {0}", localize(handle))}
           onPointerDown={(event) => start(event, handle)}
           onKeyDown={(event) => {
             const step = event.shiftKey ? 0.05 : 0.01;

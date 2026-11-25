@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { PageViewport } from "pdfjs-dist";
 import { getFreehandHitTolerance, isPointNearFreehand, translateFreehandByScreenDelta } from "../editing/freehandGeometry";
@@ -12,6 +13,7 @@ type Props = {
 };
 
 export function FreehandEditBlock({ edit, viewport, selected, onSelect, onMove }: Props) {
+  const { t: localize } = useLocale();
   const interactionRef = useRef<{ clientX: number; clientY: number; edit: FreehandEdit } | null>(null);
   const draftRef = useRef(edit);
   const [draft, setDraft] = useState(edit);
@@ -80,7 +82,7 @@ export function FreehandEditBlock({ edit, viewport, selected, onSelect, onMove }
   const visualWidth = Math.max(1, draft.style.strokeWidth * scale);
   const hitWidth = Math.max(visualWidth + 8, 12);
   return (
-    <svg className={selected ? "pdf-freehand-edit is-selected" : "pdf-freehand-edit"} aria-label={`Dessin libre page ${edit.page}`} viewBox={`0 0 ${viewport.width} ${viewport.height}`}>
+    <svg className={selected ? "pdf-freehand-edit is-selected" : "pdf-freehand-edit"} aria-label={localize("Dessin libre page {0}", edit.page)} viewBox={`0 0 ${viewport.width} ${viewport.height}`}>
       {selected ? <rect className="pdf-freehand-edit__selection" x={selectionRect.x} y={selectionRect.y} width={selectionRect.width} height={selectionRect.height} /> : null}
       <path d={path} fill="none" stroke={draft.style.color} strokeOpacity={draft.style.opacity ?? 1} strokeWidth={visualWidth} strokeLinecap="round" strokeLinejoin="round" pointerEvents="none" />
       <path d={path} fill="none" stroke="rgb(0 0 0 / 0.001)" strokeWidth={hitWidth} strokeLinecap="round" strokeLinejoin="round" pointerEvents="stroke" onMouseDown={startMove} onClick={(event) => { event.stopPropagation(); onSelect(); }} />

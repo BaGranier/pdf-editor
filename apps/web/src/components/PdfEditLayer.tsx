@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { isEditableKeyboardTarget } from "../commands/appShortcuts";
 import { DEFAULT_TILE } from "../editing/watermarkTiling";
 import { constrainSquare } from "../editing/objectGeometry";
@@ -73,6 +74,7 @@ export function PdfEditLayer({
   onUpdate,
   onDelete,
 }: PdfEditLayerProps) {
+  const { t: localize } = useLocale();
   const [creation, setCreation] = useState<{
     pointerId: number;
     start: { x: number; y: number };
@@ -192,7 +194,7 @@ export function PdfEditLayer({
           : "pdf-edit-layer"
       }
       inert={inert}
-      aria-label={`Couche d'édition de la page ${pageNumber}`}
+      aria-label={localize("Couche d'édition de la page {0}", pageNumber)}
       data-active-editing-tool={activeTool}
       onPointerDown={(event) => {
         if (activeTool === "comment" && event.button === 0) {
@@ -326,7 +328,7 @@ export function PdfEditLayer({
         if (edit.type === "redaction") {
           return <div key={edit.id} className="pdf-edit-object" style={{ zIndex: 10000 + order }}>
             <ShapeEditBlock edit={{ ...edit, type: "shape", shapeType: "rectangle", style: { strokeColor: "#000000", strokeWidth: 0, fillColor: "#000000", opacity: 1 } }}
-              label={`Biffage page ${edit.page}`} viewport={viewport} selected={edit.id === selectedEditId}
+              label={localize("Biffage page {0}", edit.page)} viewport={viewport} selected={edit.id === selectedEditId}
               onSelect={() => onSelect(edit.id)} onMove={(rect) => onUpdate({ ...edit, rect })} />
           </div>;
         }

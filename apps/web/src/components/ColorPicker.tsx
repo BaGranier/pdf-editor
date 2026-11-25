@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { floatingPortalTarget, useFloatingPosition } from "../hooks/useFloatingPosition";
@@ -15,6 +16,7 @@ type ColorPickerProps = {
 };
 
 export function ColorPicker({ label, value, onChange, onPickColor, eyedropperActive = false, disabled = false, compact = true }: ColorPickerProps) {
+  const { t: localize } = useLocale();
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
@@ -32,27 +34,27 @@ export function ColorPicker({ label, value, onChange, onPickColor, eyedropperAct
 
   const controls = (
     <>
-      <div className="color-picker__presets" role="group" aria-label={`Couleurs ${label}`}>
+      <div className="color-picker__presets" role="group" aria-label={localize("Couleurs {0}", label)}>
         {ANNOTATION_COLORS.map((color) => (
-          <button key={color} type="button" className="color-picker__swatch" aria-label={`Couleur ${color}`} aria-pressed={value.toLowerCase() === color} disabled={disabled} onClick={() => { onChange(color); setIsOpen(false); triggerRef.current?.focus(); }} style={{ "--swatch-color": color } as CSSProperties}><span aria-hidden="true">{value.toLowerCase() === color ? "✓" : ""}</span></button>
+          <button key={color} type="button" className="color-picker__swatch" aria-label={localize("Couleur {0}", color)} aria-pressed={value.toLowerCase() === color} disabled={disabled} onClick={() => { onChange(color); setIsOpen(false); triggerRef.current?.focus(); }} style={{ "--swatch-color": color } as CSSProperties}><span aria-hidden="true">{value.toLowerCase() === color ? "✓" : ""}</span></button>
         ))}
       </div>
       <div className="color-picker__actions">
-        <label className="color-picker__custom">Personnalisée<input type="color" aria-label={`Couleur personnalisée ${label}`} disabled={disabled} value={value} onChange={(event) => { onChange(event.target.value); setIsOpen(false); }} /></label>
-        {onPickColor ? <button type="button" className="shape-edit-toolbar__eyedropper" aria-label={`Pipette ${label}`} title="Prélever une couleur" aria-pressed={eyedropperActive} disabled={disabled} onClick={() => { onPickColor(); setIsOpen(false); }}>◉</button> : null}
+        <label className="color-picker__custom">{localize("Personnalisée")}<input type="color" aria-label={localize("Couleur personnalisée {0}", label)} disabled={disabled} value={value} onChange={(event) => { onChange(event.target.value); setIsOpen(false); }} /></label>
+        {onPickColor ? <button type="button" className="shape-edit-toolbar__eyedropper" aria-label={localize("Pipette {0}", label)} title={localize("Prélever une couleur")} aria-pressed={eyedropperActive} disabled={disabled} onClick={() => { onPickColor(); setIsOpen(false); }}>◉</button> : null}
       </div>
     </>
   );
 
   if (!compact) {
-    return <section className="color-picker" aria-label={`${label} palette`}><span className="color-picker__label">{label}</span>{controls}</section>;
+    return <section className="color-picker" aria-label={localize("{0} palette", label)}><span className="color-picker__label">{localize(label)}</span>{controls}</section>;
   }
 
   return (
     <div className="color-picker color-picker--compact">
       <button ref={triggerRef} type="button" className="color-picker__trigger" aria-label={label} aria-haspopup="dialog" aria-expanded={expanded} aria-controls={expanded ? panelId : undefined} title={label} disabled={disabled} onClick={() => setIsOpen((current) => !current)} style={{ "--swatch-color": value } as CSSProperties}><span aria-hidden="true" /><span className="color-picker__chevron" aria-hidden="true">▾</span></button>
       {expanded ? createPortal(
-        <div ref={popoverRef} id={panelId} className="floating-surface color-picker__popover" role="dialog" aria-label={`${label} palette`}>{controls}</div>,
+        <div ref={popoverRef} id={panelId} className="floating-surface color-picker__popover" role="dialog" aria-label={localize("{0} palette", label)}>{controls}</div>,
         floatingPortalTarget(triggerRef.current),
       ) : null}
     </div>

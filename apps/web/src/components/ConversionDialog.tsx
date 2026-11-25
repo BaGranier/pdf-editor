@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import type {
   ConversionImageDpi,
@@ -32,6 +33,7 @@ export function ConversionDialog({
   onCancel,
   onSubmit,
 }: ConversionDialogProps) {
+  const { t: localize } = useLocale();
   const titleId = useId();
   const descriptionId = useId();
   const firstControlRef = useRef<HTMLSelectElement | null>(null);
@@ -123,15 +125,15 @@ export function ConversionDialog({
         aria-describedby={descriptionId}
       >
         <header className="ocr-dialog__header">
-          <h2 id={titleId}>Convertir le PDF</h2>
+          <h2 id={titleId}>{localize("Convertir le PDF")}</h2>
           <p id={descriptionId}>
-            Convertir localement <strong>{sourceFileName}</strong> sans modifier la source.
+            {localize("Convertir localement ")}<strong>{sourceFileName}</strong>{localize(" sans modifier la source.")}
           </p>
         </header>
 
         <form className="ocr-dialog__form" onSubmit={handleSubmit}>
           <label className="ocr-field" htmlFor={`${titleId}-format`}>
-            <span>Format de sortie</span>
+            <span>{localize("Format de sortie")}</span>
             <select
               ref={firstControlRef}
               id={`${titleId}-format`}
@@ -143,18 +145,18 @@ export function ConversionDialog({
                 updateSuggestedFilename(nextTarget, docxMode, pages);
               }}
             >
-              <option value="docx">Document Word (DOCX)</option>
-              <option value="txt">Texte UTF-8 (TXT)</option>
-              <option value="html">Page autonome (HTML)</option>
-              <option value="png">Images PNG</option>
-              <option value="jpeg">Images JPEG</option>
+              <option value="docx">{localize("Document Word (DOCX)")}</option>
+              <option value="txt">{localize("Texte UTF-8 (TXT)")}</option>
+              <option value="html">{localize("Page autonome (HTML)")}</option>
+              <option value="png">{localize("Images PNG")}</option>
+              <option value="jpeg">{localize("Images JPEG")}</option>
             </select>
           </label>
 
           {targetFormat === "docx" ? (
             <>
               <label className="ocr-field" htmlFor={`${titleId}-docx-mode`}>
-                <span>Mode Word</span>
+                <span>{localize("Mode Word")}</span>
                 <select
                   id={`${titleId}-docx-mode`}
                   value={docxMode}
@@ -165,14 +167,14 @@ export function ConversionDialog({
                     updateSuggestedFilename(targetFormat, nextMode, pages);
                   }}
                 >
-                  <option value="editable">Word éditable</option>
-                  <option value="visual">Word fidèle visuellement</option>
+                  <option value="editable">{localize("Word éditable")}</option>
+                  <option value="visual">{localize("Word fidèle visuellement")}</option>
                 </select>
               </label>
               <p className="ocr-dialog__info">
                 {docxMode === "editable"
-                  ? "Produit un document modifiable. La mise en page peut être approximative."
-                  : "Conserve l’apparence sous forme d’images. Le texte n’est pas facilement modifiable."}
+                  ? localize("Produit un document modifiable. La mise en page peut être approximative.")
+                  : localize("Conserve l’apparence sous forme d’images. Le texte n’est pas facilement modifiable.")}
               </p>
             </>
           ) : null}
@@ -183,7 +185,7 @@ export function ConversionDialog({
               id={`${titleId}-pages`}
               type="text"
               value={pages}
-              placeholder="Toutes, ou par exemple 1-3,5"
+              placeholder={localize("Toutes, ou par exemple 1-3,5")}
               disabled={isProcessing}
               onChange={(event) => {
                 const nextPages = event.target.value;
@@ -194,7 +196,7 @@ export function ConversionDialog({
           </label>
 
           <label className="ocr-field" htmlFor={`${titleId}-output-filename`}>
-            <span>Nom du fichier</span>
+            <span>{localize("Nom du fichier")}</span>
             <input
               id={`${titleId}-output-filename`}
               type="text"
@@ -235,7 +237,7 @@ export function ConversionDialog({
           {isTextTarget ? (
             <>
               <label className="ocr-field" htmlFor={`${titleId}-languages`}>
-                <span>Langue OCR</span>
+                <span>{localize("Langue OCR")}</span>
                 <select
                   id={`${titleId}-languages`}
                   value={languages}
@@ -244,13 +246,13 @@ export function ConversionDialog({
                     setLanguages(event.target.value as ConversionLanguages)
                   }
                 >
-                  <option value="fra">Français</option>
-                  <option value="eng">Anglais</option>
-                  <option value="fra+eng">Français et anglais</option>
+                  <option value="fra">{localize("Français")}</option>
+                  <option value="eng">{localize("Anglais")}</option>
+                  <option value="fra+eng">{localize("Français et anglais")}</option>
                 </select>
               </label>
               <label className="ocr-field" htmlFor={`${titleId}-ocr-mode`}>
-                <span>Reconnaissance OCR</span>
+                <span>{localize("Reconnaissance OCR")}</span>
                 <select
                   id={`${titleId}-ocr-mode`}
                   value={ocrMode}
@@ -259,16 +261,16 @@ export function ConversionDialog({
                     setOcrMode(event.target.value as ConversionOcrMode)
                   }
                 >
-                  <option value="auto">Automatique</option>
-                  <option value="never">Jamais</option>
-                  <option value="always">Toujours</option>
+                  <option value="auto">{localize("Automatique")}</option>
+                  <option value="never">{localize("Jamais")}</option>
+                  <option value="always">{localize("Toujours")}</option>
                 </select>
               </label>
             </>
           ) : (
             <>
               <label className="ocr-field" htmlFor={`${titleId}-dpi`}>
-                <span>Résolution</span>
+                <span>{localize("Résolution")}</span>
                 <select
                   id={`${titleId}-dpi`}
                   value={imageDpi}
@@ -284,7 +286,7 @@ export function ConversionDialog({
               </label>
               {targetFormat === "jpeg" ? (
                 <label className="ocr-field" htmlFor={`${titleId}-quality`}>
-                  <span>Qualité JPEG : {imageQuality}%</span>
+                  <span>{localize("Qualité JPEG : ")}{imageQuality}%</span>
                   <input
                     id={`${titleId}-quality`}
                     type="range"
@@ -301,32 +303,30 @@ export function ConversionDialog({
 
           {targetFormat === "docx" && docxMode === "editable" ? (
             <p className="ocr-dialog__warning" role="note">
-              La conversion tente de conserver la mise en page, mais certains éléments
-              complexes peuvent être réorganisés.
+              {localize("La conversion tente de conserver la mise en page, mais certains éléments complexes peuvent être réorganisés.")}
             </p>
           ) : targetFormat === "docx" ? (
             <p className="ocr-dialog__warning" role="note">
-              Chaque page sera conservée comme une image dans le document Word.
+              {localize("Chaque page sera conservée comme une image dans le document Word.")}
             </p>
           ) : null}
 
           {hasPendingOrganizationChanges ? (
             <p className="ocr-dialog__warning" role="note">
-              La conversion utilise le PDF source. Les modifications non
-              exportées ne seront pas incluses.
+              {localize("La conversion utilise le PDF source. Les modifications non exportées ne seront pas incluses.")}
             </p>
           ) : null}
 
           <footer className="ocr-dialog__actions">
             <button type="button" onClick={onCancel} disabled={isProcessing}>
-              Annuler
+              {localize("Annuler")}
             </button>
             <button
               type="submit"
               className="ocr-dialog__submit"
               disabled={isProcessing || Boolean(filenameError)}
             >
-              Lancer la conversion
+              {localize("Lancer la conversion")}
             </button>
           </footer>
         </form>

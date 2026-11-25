@@ -1,3 +1,4 @@
+import { useLocale } from "../viewer/locale";
 import type { ReactNode } from "react";
 import { AppLogo } from "./AppLogo";
 
@@ -16,6 +17,7 @@ export function AppStateScreen({
   action,
   details,
 }: AppStateScreenProps) {
+  const { t: localize } = useLocale();
   return (
     <main
       className={`app-state-screen app-state-screen--${state}`}
@@ -24,15 +26,15 @@ export function AppStateScreen({
     >
       <AppLogo className="app-state-screen__logo" size={52} />
       <p className="app-state-screen__brand">PDF Studio Local</p>
-      <h1>{title}</h1>
-      <p className="app-state-screen__description">{description}</p>
+      <h1>{localize(title)}</h1>
+      <p className="app-state-screen__description">{localize(description)}</p>
       {state === "loading" ? (
         <span className="app-state-screen__spinner" aria-hidden="true" />
       ) : null}
       {action ? <div className="app-state-screen__action">{action}</div> : null}
       {details ? (
         <details className="app-state-screen__details">
-          <summary>Détails techniques</summary>
+          <summary>{localize("Détails techniques")}</summary>
           <div>{details}</div>
         </details>
       ) : null}

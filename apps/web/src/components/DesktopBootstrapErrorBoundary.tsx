@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { logDesktopStartupError } from "../desktop/startupDiagnostics";
+import { useLocale } from "../viewer/locale";
 import { AppStateScreen } from "./AppStateScreen";
 
 type DesktopBootstrapErrorBoundaryProps = {
@@ -9,6 +10,16 @@ type DesktopBootstrapErrorBoundaryProps = {
 type DesktopBootstrapErrorBoundaryState = {
   failed: boolean;
 };
+
+function RetryStartup() {
+  const { t } = useLocale();
+  return <button type="button" onClick={() => window.location.reload()}>{t("Réessayer")}</button>;
+}
+
+function StartupDetails() {
+  const { t } = useLocale();
+  return t("Consultez la console de développement pour obtenir les détails de diagnostic.");
+}
 
 export class DesktopBootstrapErrorBoundary extends Component<
   DesktopBootstrapErrorBoundaryProps,
@@ -31,8 +42,8 @@ export class DesktopBootstrapErrorBoundary extends Component<
           state="error"
           title="Une erreur inattendue est survenue"
           description="L’interface n’a pas pu démarrer correctement."
-          action={<button type="button" onClick={() => window.location.reload()}>Réessayer</button>}
-          details="Consultez la console de développement pour obtenir les détails de diagnostic."
+          action={<RetryStartup />}
+          details={<StartupDetails />}
         />
       );
     }
