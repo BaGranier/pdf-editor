@@ -5793,7 +5793,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               className="toolbar-icon-button"
               onClick={undoPdfEdit}
               disabled={!activeDocumentEditingState?.canUndo}
-              aria-label={t("Annuler")}
+              aria-label={locale === "en" ? "Undo" : "Annuler"}
               aria-keyshortcuts="Control+Z Meta+Z"
               title={t("Annuler ({0})", getAppCommandShortcutLabel("history.undo"))}
             >
