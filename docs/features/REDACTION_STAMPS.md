@@ -103,7 +103,8 @@ réutilisent l’index du fichier ouvert et les changements de texte réindexent
 pages éditées. La couche OCR ajoutée pour la recherche reste dans l’index local.
 
 « Sélectionner le texte à biffer » permet de glisser sur un passage ou de
-double-cliquer sur un mot dans une page indexée. Dans le mode Sélection, la barre
+double-cliquer sur un mot dans une page indexée, puis de le biffer ou de le
+commenter. Dans le mode Sélection, la barre
 du texte natif propose également « Biffer » et « Commenter ». Un commentaire
 ancré est conservé dans le PDF sous forme d’annotation de surbrillance avec note.
 

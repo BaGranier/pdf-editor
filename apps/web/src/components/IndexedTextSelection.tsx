@@ -4,11 +4,12 @@ import type { PdfRect, RedactionEdit } from "../editing/types";
 import { coveringRect, glyphRect, indexedLines, selectedGlyphRects, type IndexedPage } from "../editing/redactionIndex";
 import { pdfRectToViewportStyle } from "../editing/coordinates";
 
-export function IndexedTextSelection({ page, zones, viewport, onRedact }: {
+export function IndexedTextSelection({ page, zones, viewport, onRedact, onComment }: {
   page: IndexedPage;
   zones: RedactionEdit[];
   viewport: PageViewport;
   onRedact: (rects: PdfRect[]) => void;
+  onComment: (rects: PdfRect[]) => void;
 }) {
   const layer = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<{ start: number; end: number } | null>(null);
@@ -48,7 +49,7 @@ export function IndexedTextSelection({ page, zones, viewport, onRedact }: {
 
   return <div ref={layer} className="indexed-text-selection" aria-label="Sélection du texte à biffer"
     onPointerDown={(event) => {
-      if (event.button !== 0 || event.target instanceof HTMLButtonElement) return;
+      if (event.button !== 0 || (event.target instanceof Element && event.target.closest("button"))) return;
       event.stopPropagation();
       const index = hit(event.clientX, event.clientY, false);
       setSelection(index < 0 ? null : { start: index, end: index });
@@ -74,7 +75,10 @@ export function IndexedTextSelection({ page, zones, viewport, onRedact }: {
       setSelection({ start, end });
     }}>
     {rects.map((rect, index) => <span key={index} style={pdfRectToViewportStyle(viewport, rect)} />)}
-    {anchor ? <button type="button" style={{ left: Math.max(0, Math.min(anchor.left, viewport.width - 150)), top: Math.max(0, anchor.top - 32) }}
-      onClick={(event) => { event.stopPropagation(); onRedact(rects); setSelection(null); }}>Biffer la sélection</button> : null}
+    {anchor ? <div className="indexed-text-selection__actions"
+      style={{ left: Math.max(0, Math.min(anchor.left, viewport.width - 220)), top: Math.max(0, anchor.top - 32) }}>
+      <button type="button" onClick={(event) => { event.stopPropagation(); onRedact(rects); setSelection(null); }}>Biffer la sélection</button>
+      <button type="button" disabled={rects.length > 500} onClick={(event) => { event.stopPropagation(); onComment(rects); setSelection(null); }}>Commenter</button>
+    </div> : null}
   </div>;
 }

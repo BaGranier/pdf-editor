@@ -410,6 +410,7 @@ type PdfPageCanvasProps = {
   indexedSelection?: IndexedPage;
   indexedHit?: PdfSearchHit;
   onRedactText: (page: number, rects: PdfRect[]) => void;
+  onCommentText: (page: number, rects: PdfRect[]) => void;
   isIncomingPage?: boolean;
   renderEnabled: boolean;
   onRenderReady?: (pageNumber: number) => void;
@@ -462,7 +463,7 @@ function PdfPageCanvas({
   fontLibraryRevision,
   searchHits,
   activeSearchHitId,
-  indexedSelection, indexedHit, onRedactText,
+  indexedSelection, indexedHit, onRedactText, onCommentText,
   isIncomingPage = false,
   renderEnabled,
   onRenderReady,
@@ -942,7 +943,8 @@ function PdfPageCanvas({
         ))}
         {shouldRender && viewport && indexedSelection ? <IndexedTextSelection key={`${sourcePageNumber}:${zoom}:${rotation}`}
           page={indexedSelection} zones={edits.filter((edit) => edit.type === "redaction")} viewport={viewport}
-          onRedact={(rects) => onRedactText(sourcePageNumber, rects)} /> : null}
+          onRedact={(rects) => onRedactText(sourcePageNumber, rects)}
+          onComment={(rects) => onCommentText(sourcePageNumber, rects)} /> : null}
         {shouldRender && viewport && nativeTextRuntimeActive ? (
           <NativeTextLayer
             spans={nativeTextSpans.length ? nativeTextSpans : edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text").map((edit) => ({ ...edit.source, page: edit.page, rect: edit.rect, fontWeight: edit.style.bold ? 700 : 400, fontStyle: edit.style.fontStyle ?? "normal" }))}
@@ -1076,6 +1078,7 @@ type PdfViewerProps = {
   indexedPages?: Map<number, IndexedPage>;
   indexedHit?: PdfSearchHit;
   onRedactText: (page: number, rects: PdfRect[]) => void;
+  onCommentText: (page: number, rects: PdfRect[]) => void;
   focusRequest: number;
   pageNavigationRequest: PageNavigationRequest | null;
   viewerMode: ViewerMode;
@@ -1125,7 +1128,7 @@ function PdfViewer({
   fontLibraryRevision,
   searchHits,
   activeSearchHitId,
-  indexedPages, indexedHit, onRedactText,
+  indexedPages, indexedHit, onRedactText, onCommentText,
   focusRequest,
   pageNavigationRequest,
   viewerMode,
@@ -1866,6 +1869,7 @@ function PdfViewer({
               indexedSelection={isActiveDocumentSource && viewerMode !== "presentation" ? indexedPages?.get(page.sourcePageIndex + 1) : undefined}
               indexedHit={isActiveDocumentSource && indexedHit?.pageNumber === page.sourcePageIndex + 1 ? indexedHit : undefined}
               onRedactText={onRedactText}
+              onCommentText={onCommentText}
               isIncomingPage={isIncoming}
               presentation={viewerMode === "presentation"}
               renderEnabled={!scrolling || continuousRenderPageNumbers?.has(page.displayPageNumber) === true}
@@ -3853,6 +3857,15 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setPendingComment({ documentId: activeDocument.id, page, rect: { x0: point.x, y0: point.y, x1: point.x + 18, y1: point.y + 18 } });
     setCommentDraft("");
     setCommentAuthorDraft(lastCommentAuthor);
+  }, [activeDocument, lastCommentAuthor]);
+
+  const commentOnSelection = useCallback((page: number, rects: PdfRect[]) => {
+    if (!activeDocument || rects.length === 0 || rects.length > 500) return;
+    setPendingComment({ documentId: activeDocument.id, page, rect: coveringRect(rects), rects });
+    setCommentDraft("");
+    setCommentAuthorDraft(lastCommentAuthor);
+    setTextMarkupSelection(null);
+    window.getSelection()?.removeAllRanges();
   }, [activeDocument, lastCommentAuthor]);
 
   const addComment = useCallback(() => {
@@ -6050,6 +6063,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             indexedPages={redactionTextActive ? redactionIndex.pages : undefined}
             indexedHit={redactionSearchOpen ? redactionHit ?? undefined : undefined}
             onRedactText={redactSelection}
+            onCommentText={commentOnSelection}
             focusRequest={viewerFocusRequest}
             pageNavigationRequest={pageNavigationRequest?.documentId === activeDocument.id ? pageNavigationRequest : null}
             viewerMode={viewerMode}
@@ -6282,15 +6296,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               setTextMarkupSelection(null);
               window.getSelection()?.removeAllRanges();
             }}><ToolbarIcon name="link" /></button>
-          <button type="button" disabled={textMarkupSelection.rects.length > 500} onClick={() => {
-            if (!activeDocument) return;
-            const { page, rects } = textMarkupSelection;
-            setPendingComment({ documentId: activeDocument.id, page, rect: coveringRect(rects), rects });
-            setCommentDraft("");
-            setCommentAuthorDraft(lastCommentAuthor);
-            setTextMarkupSelection(null);
-            window.getSelection()?.removeAllRanges();
-          }}>Commenter</button>
+          <button type="button" disabled={textMarkupSelection.rects.length > 500}
+            onClick={() => commentOnSelection(textMarkupSelection.page, textMarkupSelection.rects)}>Commenter</button>
           {activeDocument?.media?.kind !== "image" ? <button type="button" onClick={() => {
             const { page, rects } = textMarkupSelection;
             redactSelection(page, rects.map((box) => {

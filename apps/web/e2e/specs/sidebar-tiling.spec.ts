@@ -108,7 +108,7 @@ test("tiled watermark: mixed pages, live preview, history, persistence, zoom and
   if (!layer) throw new Error("Missing layer");
   await page.mouse.move(layer.x + 25, layer.y + 200); await page.mouse.down();
   await page.mouse.move(layer.x + 100, layer.y + 230); await page.mouse.up();
-  await expect(page.getByLabel("Biffage en attente page 1", { exact: true })).toHaveCount(1);
+  await expect(page.getByLabel("Biffage page 1", { exact: true })).toHaveCount(1);
   await chooseNavigationTool(page, "Ajouter du texte");
   await expect(page.getByLabel("Couche d'édition de la page 1", { exact: true })).toHaveAttribute("data-active-editing-tool", "add_text");
   await enterOrganizeMode(page);

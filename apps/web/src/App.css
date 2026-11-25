@@ -3499,7 +3499,7 @@ button:disabled {
 .indexed-text-selection { position: absolute; inset: 0; z-index: 9; cursor: text; touch-action: none; }
 .indexed-text-selection > span, .indexed-search-highlight { position: absolute; pointer-events: none; background: rgb(37 99 235 / 32%); }
 .indexed-search-highlight { z-index: 3; background: rgb(251 146 60 / 45%); }
-.indexed-text-selection > button { position: absolute; z-index: 1; white-space: nowrap; cursor: pointer; }
+.indexed-text-selection__actions { position: absolute; z-index: 1; display: flex; gap: .25rem; white-space: nowrap; }
 .custom-theme-editor { position: fixed; right: 1rem; top: 4.5rem; z-index: 120; display: grid; gap: .6rem; width: min(24rem, calc(100vw - 2rem)); max-height: calc(100vh - 5.5rem); overflow: auto; padding: 1rem; border: 1px solid var(--border); border-radius: .6rem; }
 .custom-theme-editor h2 { margin: 0; font-size: 1rem; }
 .custom-theme-editor label { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
