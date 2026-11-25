@@ -226,4 +226,5 @@ MVP-004 reste une référence historique.
 - Paramètres du rail pour le thème, les préférences globales et la langue française ou anglaise des parcours concernés.
 - Panneau de biffage avec occurrences repliables et conservation du brouillon à la fermeture.
 - Reconstruction bornée des pages avec des Form XObjects touchés et des pages partageant leurs ressources.
+- Export de pages biffées identiques avec des références distinctes, vérifié avec un second lecteur PDF.
 - Version de recette 0.2.0 et qualification sur VM Windows propre à consigner séparément.

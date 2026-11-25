@@ -123,3 +123,24 @@ def test_export_reports_pages_reconstructed():
     assert [(warning.type, warning.page) for warning in warnings] == [
         ("redaction_rasterized", 1)
     ]
+
+
+def test_final_export_preserves_distinct_identical_redacted_pages():
+    with fitz.open() as form, fitz.open() as source:
+        form.new_page(width=400, height=400).insert_text((40, 110), SECRET)
+        for _ in range(2):
+            page = source.new_page(width=400, height=400)
+            page.show_pdf_page(page.rect, form, 0)
+        original = source.tobytes()
+    result = export(original, [zone(1), zone(2)], exportOptions={})
+    assert_no_secret(result)
+    reader = PdfReader(io.BytesIO(result), strict=True)
+    assert len(reader.pages) == 2
+    assert "/Prev" not in reader.trailer
+    assert reader.pages[0].indirect_reference != reader.pages[1].indirect_reference
+    for page in reader.pages:
+        assert not page.extract_text().strip()
+        assert all(
+            item.get_object()["/Subtype"] == "/Image"
+            for item in page["/Resources"]["/XObject"].values()
+        )

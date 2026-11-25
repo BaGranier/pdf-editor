@@ -133,7 +133,9 @@ def finalize_export(source: bytes, options: ExportOptions | None) -> bytes:
                 )
             encrypted = bool(user or owner)
             output = document.tobytes(
-                garbage=4,
+                # Merging identical dictionaries can alias two page references
+                # when redaction has made the rendered pages identical.
+                garbage=2,
                 deflate=True,
                 deflate_images=True,
                 deflate_fonts=True,
@@ -148,8 +150,10 @@ def finalize_export(source: bytes, options: ExportOptions | None) -> bytes:
         with fitz.open(stream=output, filetype="pdf") as validation:
             if encrypted and not validation.authenticate(owner or user):
                 raise ValueError("export authentication")
-            if validation.page_count != page_count:
-                raise ValueError("export page count")
+            if validation.is_repaired or validation.page_count != page_count:
+                raise ValueError("export page tree")
+            if len({page.xref for page in validation}) != page_count:
+                raise ValueError("export page references")
             for page in validation:
                 # Force parsing of each final page before the destination is written.
                 page.get_contents()
