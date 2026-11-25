@@ -2,11 +2,13 @@ import type { ImageSource } from "../images/imageDocument";
 import type { OrganizePagePlan, OrganizedPage, PageRotation } from "../organize/pagePlan";
 import type { NativeTextEdit, PdfFormStateEdit, PdfEdit, SignatureImage } from "../editing/types";
 
+import type { Locale } from "../viewer/locale";
 import { isThemeId, systemTheme, type ThemeId } from "../viewer/themes";
 export type ViewerMode = "continuous" | "single-page" | "facing" | "adaptive";
 
 export type ViewerPreferences = {
   theme: ThemeId;
+  locale?: Locale;
   sidebarVisible: boolean;
   activeDocumentId: string | null;
   documentOrder: string[];
@@ -79,6 +81,7 @@ export function reportStorageFailure(operation: string, error?: unknown) {
 
 type RawViewerPreferences = {
   theme?: unknown;
+  locale?: unknown;
   sidebarVisible?: unknown;
   activeDocumentId?: unknown;
   documentOrder?: unknown;
@@ -185,6 +188,7 @@ export function parseViewerPreferences(serialized: string | null): ViewerPrefere
         : typeof parsed.theme === "boolean"
           ? parsed.theme ? "dark" : "light"
           : systemTheme(),
+      ...(parsed.locale === "en" || parsed.locale === "fr" ? { locale: parsed.locale } : {}),
       sidebarVisible: parsed.sidebarVisible,
       activeDocumentId: parsed.activeDocumentId,
       documentOrder: parsed.documentOrder,

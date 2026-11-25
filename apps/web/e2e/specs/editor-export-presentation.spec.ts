@@ -1,3 +1,4 @@
+import { changeInterfaceTheme } from "../helpers/app";
 import path from "node:path";
 import { readFileSync } from "node:fs";
 import { expect, test } from "../helpers/qa-test";
@@ -160,7 +161,7 @@ test("EXPORT-PRESENTATION-003-6 DPR 2 zoom 50–200 thèmes et modes", async ({ 
       const canvas = await page.locator(".viewer canvas").evaluate((element) => ({ width: (element as HTMLCanvasElement).width, cssWidth: parseFloat((element as HTMLCanvasElement).style.width), dpr: devicePixelRatio }));
       expect(canvas.dpr).toBe(2); expect(canvas.width / canvas.cssWidth).toBeCloseTo(2, 1);
     }
-    await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
+    await changeInterfaceTheme(page, "dark");
     await page.getByLabel("Mode d'affichage").selectOption("single-page"); await expect(page.getByLabel("Carré page 1")).toBeVisible();
     await page.getByLabel("Mode d'affichage").selectOption("presentation"); await expect(page.locator('.viewer [data-page-buffer="front"][data-render-state="ready"]')).toHaveCount(1);
     await page.screenshot({ path: info.outputPath("presentation-dpr2.png") });

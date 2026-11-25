@@ -2,6 +2,7 @@ export type ToolbarIconName =
   | "save-as"
   | "open"
   | "select"
+  | "settings"
   | "text"
   | "signature"
   | "shape"
@@ -71,6 +72,7 @@ export function ToolbarIcon({ name, className = "" }: { name: ToolbarIconName; c
           <path d="M7 17h6" />
         </>
       ) : null}
+      {name === "settings" ? <><circle cx="10" cy="10" r="2.5" /><path d="M8 2h4l.6 2.4 2 .9 2.2-.8 2 3.5-1.8 1.6v1.8l1.8 1.6-2 3.5-2.2-.8-2 .9L12 18H8l-.6-2.4-2-.9-2.2.8-2-3.5 1.8-1.6V9.6L1.2 8l2-3.5 2.2.8 2-.9Z" /></> : null}
       {name === "select" ? (
         <path d="m5 3 9.5 8.1-4.2.8 2.3 4.1-2.4 1.3-2.2-4-3 3z" />
       ) : null}

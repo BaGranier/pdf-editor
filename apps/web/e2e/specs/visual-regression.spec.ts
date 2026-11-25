@@ -1,3 +1,4 @@
+import { changeInterfaceTheme } from "../helpers/app";
 import { chooseNavigationTool } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import {
@@ -25,10 +26,10 @@ test("QA-E2E-018 @slow @visual capture les états stables par moteur", async ({
 
   const currentTheme = await page.evaluate(() => document.documentElement.dataset.theme);
   if (currentTheme !== "light") {
-    await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("light");
+    await changeInterfaceTheme(page, "light");
   }
   await expect(page).toHaveScreenshot("theme-light.png", { fullPage: true });
-  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
+  await changeInterfaceTheme(page, "dark");
   await expect(page).toHaveScreenshot("theme-dark.png", { fullPage: true });
 
   qa.allowError(/InvalidPDF|Invalid PDF|PDF.*corrupt|format error/i);

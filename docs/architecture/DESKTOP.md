@@ -38,6 +38,12 @@ WebView2 Evergreen est vérifié au démarrage installé. Son bootstrapper a bes
 du réseau si le runtime est absent. Les langues OCR embarquées sont vérifiées
 séparément avec des PDF synthétiques.
 
+Pour une recette expérimentale de même version 0.2.0, distinguer le package
+par le commit du manifeste. Fermer toute instance avant de lancer l’installateur.
+Si le programme d’installation refuse de remplacer la même version, désinstaller
+l’application puis réinstaller le package expérimental en conservant le dossier
+de données locales. La recette doit vérifier ce parcours sur le profil cible.
+
 ## Architecture retenue
 
 L’intégration native vit dans `apps/desktop`, tandis que `apps/web` reste le

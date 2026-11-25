@@ -148,10 +148,24 @@ export async function enterOrganizeMode(page: Page): Promise<void> {
   await expect(page.getByRole("heading", { name: "Organiser les pages" })).toBeVisible();
 }
 
+export async function openSettings(page: Page): Promise<void> {
+  const button = page.getByRole("button", { name: /^(Paramètres|Settings)$/ });
+  if (await button.getAttribute("aria-expanded") !== "true") await button.click();
+}
+
+export async function changeInterfaceTheme(page: Page, theme: string): Promise<void> {
+  await openSettings(page);
+  await page.getByRole("combobox", { name: /^(Thème de l’interface|Interface theme)$/ }).selectOption(theme);
+  await page.getByRole("button", { name: /^(Fermer les paramètres|Close settings)$/ }).click();
+}
+
 export async function clearLocalData(page: Page): Promise<void> {
+  await openSettings(page);
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Réinitialiser les données locales" }).click();
   await expect(page.getByLabel("Aucun PDF ouvert")).toBeVisible();
+  const close = page.getByRole("button", { name: "Fermer les paramètres" });
+  if (await close.isVisible()) await close.click();
 }
 
 /** Draw a 220×72 screen-space text box through the current pointer UI. */

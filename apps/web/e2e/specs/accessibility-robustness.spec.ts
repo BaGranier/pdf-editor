@@ -1,3 +1,4 @@
+import { changeInterfaceTheme } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import { ensureCorpus, scene, seed, selectObject } from "../helpers/robustness";
 import type { Locator } from "@playwright/test";
@@ -26,7 +27,7 @@ async function contrast(control: Locator) {
 test.beforeAll(ensureCorpus);
 test("A11Y-008 sombre : contraste ciblé toolbar/menu/palette/inspector/dialogue/erreur", async ({page},info)=>{
   const fixture=scene(); await seed(page,[{id:"global",edits:fixture.edits,dirty:true}],fixture.assets);
-  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
+  await changeInterfaceTheme(page, "dark");
   await selectObject(page,"alpha",fixture.edits);
   const measurements: unknown[]=[];
   for(const control of [page.getByRole("button",{name:"Fichier",exact:true}),page.getByRole("button",{name:"Ajouter du texte",exact:true}),page.getByRole("region",{name:"Ordre des plans"}).getByRole("button").first()]) {
@@ -95,7 +96,7 @@ test("A11Y-008 menu clavier et présentation : Escape restitue le focus",async({
 
 test("A11Y-008 focus visible et état disabled mesurés en sombre",async({page},info)=>{
   const fixture=scene();await seed(page,[{id:"global",edits:fixture.edits}],fixture.assets);
-  await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption("dark");
+  await changeInterfaceTheme(page, "dark");
   const redo=page.getByRole("button",{name:"Rétablir",exact:true});await expect(redo).toBeDisabled();
   const disabled=await contrast(redo);
   await page.getByRole("button",{name:"Fichier",exact:true}).focus();await page.keyboard.press("Tab");

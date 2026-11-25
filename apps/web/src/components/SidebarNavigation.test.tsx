@@ -5,14 +5,19 @@ import { NAVIGATION_GROUPS } from "../viewer/navigationGroups";
 
 const props = { activeTool: "watermark" as const, organizing: false, disabled: false, processingDisabled: false, imageDisabled: false, onSelect: vi.fn() };
 describe("compact navigation", () => {
-  it("declares every action once and uses seven icon-only entries", () => {
+  it("declares every action once and uses a separate selection icon and an icon for each group", () => {
     const ids = NAVIGATION_GROUPS.flatMap((group) => group.tools.map((tool) => tool.id));
     expect(new Set(ids).size).toBe(ids.length);
     render(<SidebarNavigation {...props} />);
     expect(screen.getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual(
-      ["Texte", "Formes et images", "Biffage et tampons", "Signature", "Pages", "Conversion", "Annotations"],
+      ["Sélection", "Texte", "Formes et images", "Biffage et tampons", "Signature", "Pages", "Conversion", "Annotations"],
     );
     for (const button of screen.getAllByRole("button")) expect(button).toHaveTextContent(/^$/);
+    const select = screen.getByRole("button", { name: "Sélection" });
+    expect(select.querySelector("svg")).toHaveAttribute("data-icon", "select");
+    fireEvent.click(select);
+    expect(props.onSelect).toHaveBeenLastCalledWith("select");
+    props.onSelect.mockClear();
   });
   it("separates open group from selected tool and restores focus on Escape", () => {
     const onSelect = vi.fn();

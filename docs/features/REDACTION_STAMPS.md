@@ -20,10 +20,29 @@ nettoie les ressources, réécrit le fichier dans son intégralité et rouvre le
 pour rechercher du texte résiduel dans les zones. Une erreur arrête la génération.
 
 Le moteur refuse les PDF réparés ou chiffrés, les formulaires, les signatures,
-les calques, les représentations alternatives et les pièces jointes. Les formes
-XObject sources sur une page biffée et les images partagées, inline ou masquées
-touchées sont également refusées. Le biffage porte sur les zones choisies.
+les calques, les représentations alternatives et les pièces jointes. Sur le
+parcours vectoriel, les images partagées, inline ou masquées touchées peuvent
+être refusées. Le biffage porte sur les zones choisies.
 Les informations situées ailleurs dans le document peuvent rester dans la copie.
+
+### Form XObjects
+
+Un Form XObject contient du contenu graphique réutilisable. La version de
+PyMuPDF verrouillée sait modifier certaines utilisations, mais la présence
+d’une copie dans une autre ressource rend le contrôle du texte extrait de la
+page insuffisant. Le moteur vérifie les enveloppes transformées des placements.
+Il conserve le parcours vectoriel si les zones restent hors des enveloppes.
+
+En cas d’intersection, le moteur reconstruit à 200 dpi les pages touchées et
+celles qui partagent les ressources à retirer. Il écrase les pixels protégés
+avant d’intégrer l’image. Le moteur remplace les flux et ressources de page,
+supprime les objets devenus inaccessibles, puis compare les pixels intégrés
+et recherche les anciens flux décompressés. Les autres occurrences restent
+visibles. Les pages reconstruites perdent leur couche de texte et leur
+accessibilité textuelle. La sauvegarde indique les numéros de ces pages.
+Les annotations et liens hors zone sont conservés selon la politique
+d’export. Les pages trop grandes ou les ensembles au-delà du budget sont
+refusés. Exportez alors un ensemble de pages plus petit.
 
 ## Qualification
 

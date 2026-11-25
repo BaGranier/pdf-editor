@@ -1,3 +1,6 @@
+import { LocaleContext, localizePdfError, translator, useLocale, type Locale } from "./viewer/locale";
+import { SettingsPanel } from "./components/SettingsPanel";
+import { TextSelectionActions } from "./components/TextSelectionActions";
 import { facingSpreadSize, isMultipageMode, isScrollingMode, PAGE_ROW_GAP } from "./viewer/pageLayout";
 import type { ReactNode } from "react";
 import { PdfLinks, PdfOutline, LinkInspector, followWebLink } from "./components/PdfLinks";
@@ -240,6 +243,7 @@ type DocumentSidebarProps = {
 };
 
 function CommentInspector({ edit, onUpdate, onDelete }: { edit: PdfCommentEdit; onUpdate: (edit: PdfCommentEdit) => void; onDelete: () => void }) {
+  const { t } = useLocale();
   const [author, setAuthor] = useState(edit.author ?? "");
   const [content, setContent] = useState(edit.content);
   useEffect(() => { setAuthor(edit.author ?? ""); setContent(edit.content); }, [edit]);
@@ -250,13 +254,13 @@ function CommentInspector({ edit, onUpdate, onDelete }: { edit: PdfCommentEdit; 
     if (!editable || !nextContent || (nextAuthor === edit.author && nextContent === edit.content)) return;
     onUpdate({ ...edit, author: nextAuthor, content: nextContent, modifiedAt: new Date().toISOString() });
   };
-  return <section className="shape-edit-toolbar comment-inspector" aria-label="Propriétés du commentaire">
-    <strong>Commentaire</strong>
-    <label>Rédacteur<input aria-label="Rédacteur" value={author} readOnly={!editable} onChange={(event) => setAuthor(event.target.value)} onBlur={commit} placeholder="Non renseigné" /></label>
-    <label>Message<textarea aria-label="Message" value={content} readOnly={!editable} onChange={(event) => setContent(event.target.value)} onBlur={commit} rows={4} /></label>
-    <label>Type de message<output aria-label="Type de message">{getCommentTypeLabel(edit.commentType)}</output></label>
-    <label>Source<output aria-label="Source">{edit.source === "pdf" ? "PDF source" : "Créé dans PDF Studio Local"}</output></label>
-    {editable ? <button type="button" onClick={onDelete}>Supprimer le commentaire</button> : null}
+  return <section className="shape-edit-toolbar comment-inspector" aria-label={t("Propriétés du commentaire")}>
+    <strong>{t("Commentaire")}</strong>
+    <label>{t("Rédacteur")}<input aria-label={t("Rédacteur")} value={author} readOnly={!editable} onChange={(event) => setAuthor(event.target.value)} onBlur={commit} placeholder={t("Non renseigné")} /></label>
+    <label>{t("Message")}<textarea aria-label={t("Message")} value={content} readOnly={!editable} onChange={(event) => setContent(event.target.value)} onBlur={commit} rows={4} /></label>
+    <label>{t("Type de message")}<output aria-label={t("Type de message")}>{t(getCommentTypeLabel(edit.commentType))}</output></label>
+    <label>{t("Source")}<output aria-label={t("Source")}>{edit.source === "pdf" ? t("PDF source") : t("Créé dans PDF Studio Local")}</output></label>
+    {editable ? <button type="button" onClick={onDelete}>{t("Supprimer le commentaire")}</button> : null}
   </section>;
 }
 
@@ -2813,6 +2817,9 @@ type AppProps = {
 
 export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const storedPreferences = useMemo(() => loadViewerPreferences(), []);
+  const [locale, setLocale] = useState<Locale>(() => storedPreferences?.locale ?? "fr");
+  const t = useMemo(() => translator(locale), [locale]);
+  useLayoutEffect(() => { document.documentElement.lang = locale; }, [locale]);
   const nextDocumentId = useRef(1);
   const [passwordPrompt, setPasswordPrompt] = useState<{ error: string; answer: (password: string | null) => void } | null>(null);
   const passwordAnswer = useRef<((password: string | null) => void) | null>(null);
@@ -2874,6 +2881,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [isFormLockConfirmOpen, setIsFormLockConfirmOpen] = useState(false);
   const [redactionHit, setRedactionHit] = useState<PdfSearchHit | null>(null);
   const [redactionTextDocumentId, setRedactionTextDocumentId] = useState<string | null>(null);
+  const [redactionSearchVisible, setRedactionSearchVisible] = useState(false);
   const [redactionSearchDocumentId, setRedactionSearchDocumentId] = useState<string | null>(null);
   const [watermarkPreview, setWatermarkPreview] = useState<{ documentId: string; edits: StampEdit[] } | null>(null);
   const watermarkGeneration = useRef(0);
@@ -2991,9 +2999,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     ? getDocumentEditingState(pdfEditsByDocument, activeDocument.id)
     : null;
   const activePdfEdits = activeDocumentEditingState?.edits ?? EMPTY_PDF_EDITS;
-  const redactionSearchOpen = Boolean(activeDocument && activeEditingTool === "redaction" && activeDocument.id === redactionSearchDocumentId);
+  const redactionSearchMounted = Boolean(activeDocument && activeEditingTool === "redaction" && activeDocument.id === redactionSearchDocumentId);
+  const redactionSearchOpen = redactionSearchMounted && redactionSearchVisible;
   useEffect(() => {
     if (activeEditingTool !== "redaction" || workspaceMode !== "read") {
+      setRedactionSearchVisible(false);
       setRedactionSearchDocumentId(null);
       setRedactionTextDocumentId(null);
       setRedactionHit(null);
@@ -3001,7 +3011,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, [activeEditingTool, workspaceMode]);
   const redactionTextActive = Boolean(activeDocument && activeEditingTool === "redaction" && activeDocument.id === redactionTextDocumentId);
   const redactionIndex = useRedactionIndex(backendUrl, activeDocument?.file ?? null, activeDocument?.pageCount ?? 0,
-    workspaceMode === "read" && (redactionSearchOpen || redactionTextActive), activePdfEdits, fontLibraryRevision);
+    workspaceMode === "read" && (redactionSearchMounted || redactionTextActive), activePdfEdits, fontLibraryRevision);
   const redactionSourcePages = useMemo(() => [...new Set(activeOrganizationPlan?.pages.flatMap((page) =>
     page.sourceDocumentId === activeDocumentId ? [page.sourcePageIndex + 1] : []))], [activeOrganizationPlan, activeDocumentId]);
   const redactionZones = useMemo(() => activePdfEdits.filter((edit) => edit.type === "redaction"), [activePdfEdits]);
@@ -3079,6 +3089,31 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   );
   const selectedTextMarkupEdit = activePdfEdits.find((edit): edit is TextMarkupEdit => edit.id === selectedEditId && edit.type === "text_markup") ?? null;
   const selectedCommentEdit = activePdfEdits.find((edit): edit is PdfCommentEdit => edit.id === selectedEditId && edit.type === "comment") ?? null;
+  useLayoutEffect(() => {
+    if (!selectedCommentEdit?.rects?.length) return;
+    const align = () => {
+      const panel = document.querySelector(".properties-panel");
+      const card = panel?.querySelector<HTMLElement>(".anchored-comment-card");
+      const marker = [...document.querySelectorAll<HTMLElement>(".pdf-comment-marker--anchored")]
+        .find((element) => element.dataset.commentId === selectedCommentEdit.id);
+      if (!panel || !card || !marker) return;
+      const margin = parseFloat(card.style.getPropertyValue("--comment-card-offset")) || 0;
+      const baseline = card.offsetTop - margin;
+      const panelBounds = panel.getBoundingClientRect();
+      const offset = Math.max(0, Math.min(marker.getBoundingClientRect().top - panelBounds.top - baseline, panel.clientHeight - baseline - card.offsetHeight - 8));
+      card.style.setProperty("--comment-card-offset", `${offset}px`);
+    };
+    let frame = 0;
+    const schedule = () => { window.cancelAnimationFrame(frame); frame = window.requestAnimationFrame(align); };
+    const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(schedule);
+    const stage = document.querySelector(".workspace-stage");
+    if (stage) resize?.observe(stage);
+    schedule();
+    window.addEventListener("scroll", schedule, true);
+    window.addEventListener("resize", schedule);
+    return () => { resize?.disconnect(); window.cancelAnimationFrame(frame); window.removeEventListener("scroll", schedule, true); window.removeEventListener("resize", schedule); };
+  }, [activeDocument?.zoom, activePageNumber, activeOrganizationPlan, isPropertiesPanelVisible, selectedCommentEdit, viewerMode]);
+
   const selectedPdfEdit =
     activePdfEdits.find((edit) => edit.id === selectedEditId) ?? null;
   useEffect(() => {
@@ -3207,6 +3242,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, [exitPresentation, viewerMode]);
 
   const [customThemes, setCustomThemes] = useState(loadCustomThemes);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [themeEditor, setThemeEditor] = useState(false);
   const [themePreview, setThemePreview] = useState<CustomTheme | null>(null);
   const [themeError, setThemeError] = useState("");
@@ -3224,6 +3260,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     }
   };
   const closeThemeEditor = () => { setThemePreview(null); setThemeEditor(false); };
+  const closeSettings = () => {
+    closeThemeEditor();
+    setSettingsOpen(false);
+    document.querySelector<HTMLButtonElement>(".tool-rail__settings")?.focus({ preventScroll: true });
+  };
 
   useEffect(() => {
     if (pendingFocusTargetRef.current === null) {
@@ -3418,6 +3459,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     const preferencesSaved = saveViewerPreferences({
       theme,
       sidebarVisible: isSidebarVisible,
+      ...(locale === "en" || storedPreferences?.locale ? { locale } : {}),
       activeDocumentId: documents.some((document) => document.id === activeDocumentId && !document.sessionOnly) ? activeDocumentId : null,
       documentOrder: [...new Set([...documents
         .filter((document) => document.source.type === "web" && !document.sessionOnly)
@@ -3429,7 +3471,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     if (!preferencesSaved) {
       setStorageWarning("Les préférences locales n'ont pas pu être enregistrées. Vérifiez l'espace de stockage du navigateur.");
     }
-  }, [activeDocumentId, documents, isRestoringDocuments, isSidebarVisible, lastCommentAuthor, theme, viewerMode]);
+  }, [locale, activeDocumentId, documents, isRestoringDocuments, isSidebarVisible, lastCommentAuthor, theme, viewerMode]);
 
   useEffect(() => {
     if (isRestoringDocuments) {
@@ -3862,12 +3904,29 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const commentOnSelection = useCallback((page: number, rects: PdfRect[]) => {
     if (!activeDocument || rects.length === 0 || rects.length > 500) return;
     setPendingComment({ documentId: activeDocument.id, page, rect: coveringRect(rects), rects });
+    setIsPropertiesPanelVisible(true);
+    setActiveEditingTool("select");
+    setSelectedEditId(null);
     setCommentDraft("");
     setCommentAuthorDraft(lastCommentAuthor);
     setTextMarkupSelection(null);
     window.getSelection()?.removeAllRanges();
   }, [activeDocument, lastCommentAuthor]);
 
+  const cancelComment = () => { setPendingComment(null); setCommentDraft(""); setActiveEditingTool("select"); };
+  const commentEditor = pendingComment?.documentId === activeDocumentId ? (<div className={pendingComment.rects ? "anchored-comment-card" : "unsaved-dialog-backdrop"} role="presentation">
+          <section className={pendingComment.rects ? "shape-edit-toolbar comment-dialog" : "unsaved-dialog comment-dialog"} role="dialog" aria-modal={pendingComment.rects ? undefined : true} aria-labelledby="comment-dialog-title" onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); cancelComment(); } }}>
+            <h2 id="comment-dialog-title">{t("Nouveau commentaire")}</h2>
+            <label>{t("Rédacteur")}<input aria-label={t("Rédacteur")} value={commentAuthorDraft} onChange={(event) => setCommentAuthorDraft(event.target.value)} placeholder={t("Non renseigné")} /></label>
+            <label>{t("Message")}</label>
+            <textarea autoFocus value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} aria-label={t("Texte du commentaire")} placeholder={t("Saisissez votre commentaire…")} rows={4} />
+            <div className="unsaved-dialog__actions">
+              <button type="button" onClick={cancelComment}>{t("Annuler")}</button>
+              <button type="button" onClick={() => addComment()} disabled={!commentDraft.trim()}>{t("Ajouter")}</button>
+            </div>
+          </section>
+        </div>
+      ) : null;
   const addComment = useCallback(() => {
     if (!activeDocument || pendingComment?.documentId !== activeDocument.id || !commentDraft.trim()) return;
     const now = new Date().toISOString();
@@ -3897,6 +3956,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   useEffect(() => {
     setTextMarkupSelection(null);
   }, [activeDocumentId, activeEditingTool, viewerMode]);
+
+  useEffect(() => { setPendingComment(null); }, [activeDocumentId]);
 
   const closeMarkupToolbar = useCallback(() => setTextMarkupSelection(null), []);
   useFloatingPosition(Boolean(textMarkupSelection), textMarkupSelection?.anchor ?? null, textMarkupToolbarRef, "top-center", closeMarkupToolbar);
@@ -4986,13 +5047,17 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         const list = redactionPages.slice(0, 12).join(", ");
         const remaining = redactionPages.length - 12;
         const details = remaining > 0 ? `${list} et ${remaining} autre(s)` : list;
-        const preflight = [
+        const preflight = (locale === "en" ? [
+          `Secure redaction copy. Output pages: ${details}.`,
+          "Check the black areas. Their content will be permanently removed from the copy. The source PDF is preserved.",
+          "The engine removes intersecting annotations. It may reconstruct pages that use shared or nested PDF objects. Text selection and accessibility are reduced on those pages.",
+        ] : [
           `Biffage sécurisé de la copie, pages de sortie concernées : ${details}.`,
           "Vérifiez les zones noires. Leur contenu sera supprimé définitivement dans la copie. Le PDF source sera conservé.",
-          "Le contenu hors des zones et les métadonnées peuvent rester dans la copie. Ce traitement ne nettoie pas les pièces jointes, formulaires, annotations ou autres structures sensibles. Les annotations touchées sont supprimées avec leur contenu. Le moteur refuse les structures et les zones dont il ne peut pas vérifier le traitement.",
-        ].join("\n\n");
+          "Le moteur retire les annotations touchées. Il peut reconstruire les pages qui utilisent des objets PDF imbriqués ou partagés. La sélection de texte et l’accessibilité sont réduites sur ces pages.",
+        ]).join("\n\n");
         if (!window.confirm(preflight)) {
-          setExportFeedback({ kind: "warning", message: "Opération annulée avant le biffage." });
+          setExportFeedback({ kind: "warning", message: locale === "en" ? "Redaction cancelled." : "Opération annulée avant le biffage." });
           return false;
         }
       }
@@ -5007,7 +5072,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           kind: "error",
           message: exported.kind === "network"
             ? exported.message
-            : `Erreur du backend : ${exported.message}`,
+            : `${t("Erreur du backend")} : ${localizePdfError(locale, exported.message)}`,
         });
         return false;
       }
@@ -5022,9 +5087,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const textOverflowWarningCount = exported.warnings.filter(
         (warning) => warning.type === "text_overflow",
       ).length;
-      const textOverflowMessage = textOverflowWarningCount
+      const rasterizedPages = exported.warnings.flatMap((warning) => warning.type === "redaction_rasterized" ? [warning.page] : []);
+      const rasterMessage = rasterizedPages.length ? (locale === "en"
+        ? ` Pages rendered as images for secure redaction: ${rasterizedPages.join(", ")}. Text selection and accessibility are reduced on those pages.`
+        : ` Pages reconstruites en image pour le biffage sécurisé : ${rasterizedPages.join(", ")}. La sélection de texte et l’accessibilité sont réduites sur ces pages.`) : "";
+      const textOverflowMessage = (textOverflowWarningCount
         ? ` ${textOverflowWarningCount} zone${textOverflowWarningCount > 1 ? "s" : ""} de texte dépassai${textOverflowWarningCount > 1 ? "ent" : "t"} de ${textOverflowWarningCount > 1 ? "leur" : "son"} cadre. ${textOverflowWarningCount > 1 ? "Leur export a" : "Son export a"} été réalisé en mode best effort.`
-        : "";
+        : "") + rasterMessage;
       delivering = true;
       setExportPhase("writing");
       const desktopSource = document?.saveDestination ?? null;
@@ -5058,8 +5127,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       const operationLabel = operation === "export" ? "exporté" : "sauvegardé";
       const sizeReport = exportOptions ? ` Taille source : ${documents.filter((doc) => organizationPlans[documentId]?.pages.some((page) => page.sourceDocumentId === doc.id) || doc.id === documentId).reduce((size, doc) => size + doc.file.size, 0).toLocaleString("fr-FR")} octets. Taille exportée : ${exported.pdfBlob.size.toLocaleString("fr-FR")} octets. Profil : ${EXPORT_QUALITY_LABELS[exportOptions.quality]}.` : "";
       const delivery = nativeSave
-        ? `PDF ${operationLabel} avec succès : ${savedFileName}.`
-        : `Téléchargement demandé : ${savedFileName}.`;
+        ? locale === "en" ? `PDF ${operation === "export" ? "exported" : "saved"} successfully: ${savedFileName}.` : `PDF ${operationLabel} avec succès : ${savedFileName}.`
+        : locale === "en" ? `Download requested: ${savedFileName}.` : `Téléchargement demandé : ${savedFileName}.`;
       const exportMessage = [delivery, exported.outputStatus === "saved" ? "Copie enregistrée dans data/output." : "", exported.outputWarning].filter(Boolean).join(" ");
 
       try {
@@ -5077,7 +5146,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             ));
           }
           setExportFeedback({
-            kind: exported.outputWarning || textOverflowWarningCount > 0 ? "warning" : "success",
+            kind: exported.outputWarning || textOverflowWarningCount > 0 || rasterizedPages.length > 0 ? "warning" : "success",
             message: `${exportMessage}${sizeReport}${textOverflowMessage}${exportOptions?.openPassword || exportOptions?.ownerPassword ? " PDF chiffré : la sortie n’est pas rouverte automatiquement dans l’application." : ""}`,
           });
         } else {
@@ -5093,7 +5162,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         setExportFeedback({
           kind:
             exported.outputWarning ||
-            textOverflowWarningCount > 0 ||
+            textOverflowWarningCount > 0 || rasterizedPages.length > 0 ||
             exportUsageWarnings.length > 0
               ? "warning"
               : "success",
@@ -5130,7 +5199,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       exportInProgress.current = false;
       setExportPhase(null);
     }
-  }, [imageJobsKey, imageBackgroundError, activeDocumentId, backendUrl, documents, openGeneratedPdfDocument, organizationPlans, outputName, pdfEditsByDocument, saveToOutputDir, signatureImages]);
+  }, [imageJobsKey, imageBackgroundError, activeDocumentId, backendUrl, documents, locale, openGeneratedPdfDocument, organizationPlans, outputName, pdfEditsByDocument, saveToOutputDir, signatureImages]);
 
   const confirmBrowserSave = (documentId: string) => {
     const pending = pendingBrowserSaves[documentId];
@@ -5592,7 +5661,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }
 
   return (
-    <main
+    <LocaleContext.Provider value={locale}><main
       ref={presentationContainerRef}
       data-persistence-state={localPersistenceState}
       className={viewerMode === "presentation" ? "app-shell app-shell--presentation" : "app-shell"}
@@ -5611,53 +5680,20 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
         <div className="toolbar-actions" aria-label="Actions PDF">
           <div className="toolbar-action-group toolbar-actions__primary" aria-label="Actions principales">
-            <button type="button" className="toolbar-icon-button" aria-label="Ouvrir un PDF" title={`Ouvrir un PDF ou une image (${getAppCommandShortcutLabel("file.open")})`} onClick={() => void openPdfFromUser()}><ToolbarIcon name="open" /></button>
+            <button type="button" className="toolbar-icon-button" aria-label={t("Ouvrir un PDF")} title={`Ouvrir un PDF ou une image (${getAppCommandShortcutLabel("file.open")})`} onClick={() => void openPdfFromUser()}><ToolbarIcon name="open" /></button>
             <button
               type="button"
               className="toolbar-icon-button"
-              aria-label={isDesktopRuntime() ? "Enregistrer" : "Enregistrer sous…"}
+              aria-label={isDesktopRuntime() ? t("Enregistrer") : t("Enregistrer sous…")}
               title={isDesktopRuntime()
                 ? `Enregistrer (${getAppCommandShortcutLabel("file.save")})`
                 : `Enregistrer sous… (${getAppCommandShortcutLabel("file.saveAs")})`}
               onClick={isDesktopRuntime() ? saveActiveDocument : openActiveSaveAsDialog}
               disabled={!activeDocument || !isActiveDocumentDirty || isExporting}
             ><ToolbarIcon name="save-as" /></button>
-            <button type="button" className="toolbar-icon-button" aria-label="Sélection" title="Sélection"
-              aria-pressed={workspaceMode === "read" && activeEditingTool === "select"}
-              disabled={!activeDocument || workspaceMode !== "read"} onClick={() => selectNavigationTool("select")}><ToolbarIcon name="select" /></button>
-            <button type="button" className="toolbar-icon-button toolbar-icon-button--danger" aria-label="Réinitialiser les données locales" title="Réinitialiser les données locales" disabled={isExporting} onClick={clearLocalData}><ResetIcon /></button>
           </div>
           <span className="toolbar-actions__spacer" aria-hidden="true" />
-          <div className="theme-selector">
-            <span className="theme-selector__preview" aria-hidden="true"><i /><i /><i /></span>
-            <select aria-label="Thème de l’interface" value={customThemes.activeId ?? theme} onChange={(event) => {
-              const value = event.currentTarget.value;
-              closeThemeEditor();
-              if (isThemeId(value)) {
-                if (!customThemes.activeId || changeCustomThemes(customThemes.themes, null)) setTheme(value);
-              } else changeCustomThemes(customThemes.themes, value);
-            }}>
-              {THEMES.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
-              {customThemes.themes.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
-            </select>
-            <button type="button" aria-label="Personnaliser le thème" aria-expanded={themeEditor}
-              onClick={() => themeEditor ? closeThemeEditor() : setThemeEditor(true)}>Personnaliser</button>
-            {themeEditor ? createPortal(<CustomThemeEditor active={customTheme} base={theme} onPreview={setThemePreview}
-              onSave={(draft) => {
-                const themes = customThemes.themes.some((candidate) => candidate.id === draft.id)
-                  ? customThemes.themes.map((candidate) => candidate.id === draft.id ? draft : candidate)
-                  : [...customThemes.themes, draft];
-                if (changeCustomThemes(themes, draft.id)) closeThemeEditor();
-              }}
-              onDelete={(draft) => {
-                if (changeCustomThemes(customThemes.themes.filter((candidate) => candidate.id !== draft.id), null)) {
-                  setTheme(draft.base);
-                  closeThemeEditor();
-                }
-              }} onClose={closeThemeEditor} />, document.body) : null}
-            {themeError ? <span role="alert">{themeError}</span> : null}
-          </div>
-          <div className="toolbar-action-group" aria-label="Fichier">
+          <div className="toolbar-action-group" aria-label={t("Fichier")}>
             <div className="file-menu">
               <button
                 type="button"
@@ -5670,10 +5706,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                   if (event.key === "ArrowDown") { event.preventDefault(); setIsFileMenuOpen(true); }
                 }}
               >
-                Fichier <span aria-hidden="true">▾</span>
+                {t("Fichier")} <span aria-hidden="true">▾</span>
               </button>
               {isFileMenuOpen ? createPortal(
-                <div ref={fileMenuRef} id={fileMenuId} className="floating-surface file-menu__items" role="menu" aria-label="Fichier"
+                <div ref={fileMenuRef} id={fileMenuId} className="floating-surface file-menu__items" role="menu" aria-label={t("Fichier")}
                   onKeyDown={(event) => {
                     if (event.key === "Tab") {
                       setIsFileMenuOpen(false);
@@ -5698,9 +5734,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                     onClick={() => runFileAction(openActiveSaveAsDialog)}
                     disabled={!activeDocument || isExporting}
                   >
-                    {activeDocument?.media?.kind === "image" ? "Exporter en PDF…" : "Enregistrer sous…"} <span aria-hidden="true">{getAppCommandShortcutLabel("file.saveAs")}</span>
+                    {activeDocument?.media?.kind === "image" ? t("Exporter en PDF…") : t("Enregistrer sous…")} <span aria-hidden="true">{getAppCommandShortcutLabel("file.saveAs")}</span>
                   </button>
-                  <button type="button" role="menuitem" disabled={!activeDocument || isExporting} onClick={() => runFileAction(() => setIsAdvancedExportOpen(true))}>Exporter / Finaliser…</button>
+                  <button type="button" role="menuitem" disabled={!activeDocument || isExporting} onClick={() => runFileAction(() => setIsAdvancedExportOpen(true))}>{t("Exporter / Finaliser…")}</button>
                   <button
                     type="button"
                     role="menuitem"
@@ -5730,7 +5766,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               className="toolbar-icon-button"
               onClick={redoPdfEdit}
               disabled={!activeDocumentEditingState?.canRedo}
-              aria-label="Rétablir"
+              aria-label={t("Rétablir")}
               aria-keyshortcuts="Control+Y Control+Shift+Z Meta+Shift+Z"
               title={`Rétablir (${getAppCommandShortcutLabel("history.redo")})`}
             >
@@ -5782,20 +5818,38 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         </div>
       ) : null}
 
-      {pendingComment ? (
-        <div className="unsaved-dialog-backdrop" role="presentation">
-          <section className="unsaved-dialog comment-dialog" role="dialog" aria-modal="true" aria-labelledby="comment-dialog-title">
-            <h2 id="comment-dialog-title">Nouveau commentaire</h2>
-            <label>Rédacteur<input aria-label="Rédacteur" value={commentAuthorDraft} onChange={(event) => setCommentAuthorDraft(event.target.value)} placeholder="Non renseigné" /></label>
-            <label>Message</label>
-            <textarea autoFocus value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} aria-label="Texte du commentaire" placeholder="Saisissez votre commentaire…" rows={4} />
-            <div className="unsaved-dialog__actions">
-              <button type="button" onClick={() => { setPendingComment(null); setCommentDraft(""); setActiveEditingTool("select"); }}>Annuler</button>
-              <button type="button" onClick={addComment} disabled={!commentDraft.trim()}>Ajouter</button>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      {settingsOpen ? <SettingsPanel onClose={closeSettings} onLocale={setLocale}
+        author={lastCommentAuthor} onAuthor={setLastCommentAuthor} onReset={clearLocalData} resetDisabled={isExporting}>
+        <div className="theme-selector">
+            <span className="theme-selector__preview" aria-hidden="true"><i /><i /><i /></span>
+            <select aria-label={t("Thème de l’interface")} value={customThemes.activeId ?? theme} onChange={(event) => {
+              const value = event.currentTarget.value;
+              closeThemeEditor();
+              if (isThemeId(value)) {
+                if (!customThemes.activeId || changeCustomThemes(customThemes.themes, null)) setTheme(value);
+              } else changeCustomThemes(customThemes.themes, value);
+            }}>
+              {THEMES.map(({ id, label }) => <option key={id} value={id}>{t(label)}</option>)}
+              {customThemes.themes.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+            </select></div>
+            <button type="button" aria-label={t("Personnaliser le thème")} aria-expanded={themeEditor}
+              onClick={() => themeEditor ? closeThemeEditor() : setThemeEditor(true)}>{t("Personnaliser")}</button>
+            {themeEditor ? <CustomThemeEditor active={customTheme} base={theme} onPreview={setThemePreview}
+              onSave={(draft) => {
+                const themes = customThemes.themes.some((candidate) => candidate.id === draft.id)
+                  ? customThemes.themes.map((candidate) => candidate.id === draft.id ? draft : candidate)
+                  : [...customThemes.themes, draft];
+                if (changeCustomThemes(themes, draft.id)) closeThemeEditor();
+              }}
+              onDelete={(draft) => {
+                if (changeCustomThemes(customThemes.themes.filter((candidate) => candidate.id !== draft.id), null)) {
+                  setTheme(draft.base);
+                  closeThemeEditor();
+                }
+              }} onClose={closeThemeEditor} /> : null}
+            {themeError ? <span role="alert">{t(themeError)}</span> : null}
+      </SettingsPanel> : null}
+      {pendingComment && !pendingComment.rects ? commentEditor : null}
 
       {saveAsDocument ? (
         <SaveAsDialog
@@ -5905,7 +5959,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       ) : null}
 
       <section
-        className={`${isSidebarVisible ? "content-area" : "content-area content-area--sidebar-hidden"}${isPropertiesPanelVisible ? "" : " content-area--properties-hidden"}`}
+        className={`${isSidebarVisible ? "content-area" : "content-area content-area--sidebar-hidden"}${isPropertiesPanelVisible ? "" : " content-area--properties-hidden"}${pendingComment?.rects || selectedCommentEdit?.rects?.length ? " content-area--anchored-comment" : ""}`}
         aria-label="Espace de travail PDF"
         style={{ "--properties-panel-width": `${propertiesPanelWidth}px` } as CSSProperties}
       >
@@ -5913,7 +5967,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           disabled={!activeDocument || workspaceMode !== "read"}
           processingDisabled={!activeDocument || isOcrProcessing || isExporting || isConverting}
           imageDisabled={!activeDocument || workspaceMode !== "read" || activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourceDocumentId !== activeDocument.id}
-          onSelect={selectNavigationTool} />
+          onSelect={selectNavigationTool}  onSettings={() => settingsOpen ? closeSettings() : setSettingsOpen(true)} settingsOpen={settingsOpen} />
         <input ref={stampImageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier tampon image" hidden onChange={(event) => void insertImage(event, true)} />
         <input ref={imageInputRef} type="file" accept="image/png,image/jpeg" aria-label="Fichier image" hidden onChange={(event) => void insertImage(event)} />
 
@@ -6047,7 +6101,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             onAddFreehand={addFreehandEdit}
             onStartComment={startComment}
             onPlaceSignature={placeSignature}
-            onSelectEdit={setSelectedEditId}
+            onSelectEdit={(id) => {
+              if (activePdfEdits.some((edit) => edit.id === id && edit.type === "comment")) {
+                setActiveEditingTool("select");
+                setIsPropertiesPanelVisible(true);
+                setPendingComment(null);
+              }
+              setSelectedEditId(id);
+            }}
             onDeselectEdit={() => setSelectedEditId(null)}
             onUpdateEdit={updatePdfEdit}
             onFinishEditCoalescing={finishPdfEditCoalescing}
@@ -6106,10 +6167,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           )}
         </section>
 
-        {isPropertiesPanelVisible ? <aside className="properties-panel" aria-label="Propriétés">
+        {isPropertiesPanelVisible ? <aside className="properties-panel" aria-label={t("Propriétés")}>
           <button type="button" className="properties-panel__resize" aria-label="Redimensionner les propriétés" onMouseDown={startPropertiesResize} />
           <header className="properties-panel__header">
-            <div><span>Inspecteur</span><h2>Propriétés</h2></div>
+            <div><span>{t("Inspecteur")}</span><h2>{t("Propriétés")}</h2></div>
             <button type="button" aria-label="Masquer les propriétés" title="Masquer les propriétés" onClick={() => setIsPropertiesPanelVisible(false)}>❯</button>
           </header>
           {workspaceMode === "read" && activeEditingTool === "link" && activeDocument ? <section aria-label="Lien">
@@ -6132,7 +6193,18 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               onCancel={() => setLinkDraft(null)}
             /> : <p>Tracez un rectangle pour ajouter un lien, ou cliquez sur un lien pour le modifier. Les destinations nommées et certaines actions PDF sont en lecture seule.</p>}
           </section> : null}
-          {workspaceMode === "read" && activeEditingTool === "watermark" ? (
+          {workspaceMode === "read" && activeDocument && redactionSearchMounted ? (
+            <RedactionSearchPanel key={activeDocument.id} index={redactionIndex} total={activeDocument.pageCount} visible={redactionSearchOpen}
+              sourcePages={redactionSourcePages} zones={redactionZones}
+              currentPage={activeOrganizationPlan?.pages[activePageNumber - 1]?.sourceDocumentId === activeDocument.id
+                ? activeOrganizationPlan.pages[activePageNumber - 1].sourcePageIndex + 1 : 0}
+              onNavigate={navigateToRedaction}
+              onClose={() => { setRedactionSearchVisible(false); setRedactionHit(null); }}
+              onCreate={addRedactions} />
+          ) : null}
+          {redactionSearchOpen ? null : pendingComment?.rects && workspaceMode === "read" ? commentEditor : workspaceMode === "read" && selectedCommentEdit?.rects?.length ? (
+            <div className="anchored-comment-card"><CommentInspector edit={selectedCommentEdit} onUpdate={updatePdfEdit} onDelete={() => deletePdfEdit(selectedCommentEdit.id)} /></div>
+          ) : workspaceMode === "read" && activeEditingTool === "watermark" ? (
             <WatermarkComposer key={activeDocument?.id} currentPage={activePageNumber} previewReady={watermarkPreview?.documentId === activeDocument?.id && Boolean(watermarkPreview?.edits.length)}
               onPreview={previewWatermark} onClear={clearWatermarkPreview}
               onCancel={() => { clearWatermarkPreview(); setActiveEditingTool("select"); }}
@@ -6143,14 +6215,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 dispatchPdfEdits({ type: "batch", documentId: activeDocument.id, add });
                 setSelectedEditId(add[0]?.id ?? null); clearWatermarkPreview(); setActiveEditingTool("select");
               }} />
-          ) : workspaceMode === "read" && activeDocument && redactionSearchOpen ? (
-            <RedactionSearchPanel key={activeDocument.id} index={redactionIndex} total={activeDocument.pageCount}
-              sourcePages={redactionSourcePages} zones={redactionZones}
-              currentPage={activeOrganizationPlan?.pages[activePageNumber - 1]?.sourceDocumentId === activeDocument.id
-                ? activeOrganizationPlan.pages[activePageNumber - 1].sourcePageIndex + 1 : 0}
-              onNavigate={navigateToRedaction}
-              onClose={() => { setRedactionSearchDocumentId(null); setRedactionHit(null); }}
-              onCreate={addRedactions} />
           ) : workspaceMode === "read" && selectedPdfEdit?.type === "stamp" ? (
             <StampInspector edit={selectedPdfEdit} onUpdate={(edit, key) => updatePdfEdit(edit, key ? `${edit.id}:${key}` : undefined)} onFinish={(key) => finishPdfEditCoalescing(selectedPdfEdit.id, key)} onDelete={() => deletePdfEdit(selectedPdfEdit.id)} onDeleteGroup={selectedPdfEdit.purpose === "watermark" && selectedPdfEdit.groupId ? () => {
               if (!activeDocument) return;
@@ -6170,20 +6234,20 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           ) : workspaceMode === "read" && activeEditingTool === "visual_mask" ? (
             <section className="properties-panel__empty"><strong>Masquage visuel (réversible)</strong><p>Ce masque ne supprime pas les informations : elles peuvent être copiées ou récupérées. Pour cacher des données sensibles, utiliser Biffage sécurisé.</p><p>Tracez un rectangle ; ajustez ensuite ses propriétés.</p></section>
           ) : workspaceMode === "read" && (activeEditingTool === "redaction" || selectedPdfEdit?.type === "redaction") ? (
-            <section className="properties-panel__empty" aria-label="Biffage sécurisé">
-              <strong>Biffage sécurisé</strong>
-              <button type="button" onClick={() => { closePdfSearch(); setActiveEditingTool("redaction"); setRedactionSearchDocumentId(activeDocument?.id ?? null); }}>Rechercher et biffer…</button>
+            <section className="properties-panel__empty" aria-label={t("Biffage sécurisé")}>
+              <strong>{t("Biffage sécurisé")}</strong>
+              <button type="button" onClick={() => { closePdfSearch(); setActiveEditingTool("redaction"); setRedactionSearchDocumentId(activeDocument?.id ?? null); setRedactionSearchVisible(true); }}>{t("Rechercher et biffer…")}</button>
               <button type="button" aria-pressed={redactionTextActive} onClick={() => {
                 setActiveEditingTool("redaction");
                 setRedactionTextDocumentId(redactionTextActive ? null : activeDocument?.id ?? null);
-              }}>{redactionTextActive ? "Tracer une zone" : "Sélectionner le texte à biffer"}</button>
+              }}>{redactionTextActive ? t("Tracer une zone") : t("Sélectionner le texte à biffer")}</button>
               {redactionTextActive && !redactionIndex.complete && !redactionIndex.error ? <p role="status">Analyse du texte et OCR · {redactionIndex.scanned}/{activeDocument?.pageCount} pages</p> : null}
               {redactionTextActive && redactionIndex.error ? <p role="alert">{redactionIndex.error}</p> : null}
               {redactionTextActive && [...redactionIndex.pages.values()].some((page) => page.issue) ?
                 <p role="status">OCR à vérifier, pages source {[...redactionIndex.pages.values()].filter((page) => page.issue).map((page) => page.page).join(", ")}.</p> : null}
-              <p>{redactionTextActive ? "Glissez sur le passage ou double-cliquez sur un mot." : "Tracez un rectangle."} La suppression définitive s’effectue lors de la génération du PDF.</p>
-              <p>Le biffage par zones ne supprime pas les données ailleurs dans le document, notamment les métadonnées.</p>
-              {selectedPdfEdit?.type === "redaction" ? <button type="button" onClick={() => deletePdfEdit(selectedPdfEdit.id)}>Supprimer le biffage</button> : null}
+              <p>{redactionTextActive ? t("Glissez sur le passage ou double-cliquez sur un mot.") : t("Tracez un rectangle.")} {t("La suppression définitive s’effectue lors de la génération du PDF.")}</p>
+              <p>{t("Le biffage par zones ne supprime pas les données ailleurs dans le document, notamment les métadonnées.")}</p>
+              {selectedPdfEdit?.type === "redaction" ? <button type="button" onClick={() => deletePdfEdit(selectedPdfEdit.id)}>{t("Supprimer le biffage")}</button> : null}
             </section>
           ) : workspaceMode === "read" && (selectedTextEdit || selectedNativeTextEdit) ? (
             <TextEditToolbar
@@ -6238,7 +6302,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               onDelete={selectedFreehandEdit ? () => deletePdfEdit(selectedFreehandEdit.id) : undefined}
             />
           ) : workspaceMode === "read" && selectedTextMarkupEdit ? (
-            <section className="shape-edit-toolbar" aria-label="Propriétés de l'annotation texte"><strong>{selectedTextMarkupEdit.kind === "highlight" ? "Surlignage" : selectedTextMarkupEdit.kind === "underline" ? "Soulignement" : "Barré"}</strong><ColorPicker label="Couleur de l'annotation" value={selectedTextMarkupEdit.color} onChange={(color) => updatePdfEdit({ ...selectedTextMarkupEdit, color })} /><button type="button" onClick={() => deletePdfEdit(selectedTextMarkupEdit.id)}>Supprimer l'annotation</button></section>
+            <section className="shape-edit-toolbar" aria-label="Propriétés de l'annotation texte"><strong>{selectedTextMarkupEdit.kind === "highlight" ? "Surlignage" : selectedTextMarkupEdit.kind === "underline" ? "Soulignement" : "Barré"}</strong><ColorPicker label={t("Couleur de l'annotation")} value={selectedTextMarkupEdit.color} onChange={(color) => updatePdfEdit({ ...selectedTextMarkupEdit, color })} /><button type="button" onClick={() => deletePdfEdit(selectedTextMarkupEdit.id)}>Supprimer l'annotation</button></section>
           ) : workspaceMode === "read" && selectedCommentEdit ? (
             <CommentInspector edit={selectedCommentEdit} onUpdate={updatePdfEdit} onDelete={() => deletePdfEdit(selectedCommentEdit.id)} />
           ) : (selectedPdfEdit?.type === "signature" || selectedPdfEdit?.type === "image") ? (
@@ -6276,11 +6340,11 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       </section>
 
       {textMarkupSelection && viewerMode !== "presentation" ? createPortal(
-        <div ref={textMarkupToolbarRef} className="floating-surface text-markup-toolbar" role="toolbar" aria-label="Annotations du texte">
-          <button type="button" title="Surligner" aria-label="Surligner" onClick={() => addTextMarkupEdit("highlight", textMarkupColor)}><ToolbarIcon name="highlight" /></button>
-          <button type="button" title="Souligner" aria-label="Souligner" onClick={() => addTextMarkupEdit("underline", textMarkupColor)}><ToolbarIcon name="underline" /></button>
-          <button type="button" title="Barrer" aria-label="Barrer" onClick={() => addTextMarkupEdit("strikeout", textMarkupColor)}><ToolbarIcon name="strikeout" /></button>
-          <button type="button" title="Ajouter un lien à la sélection" aria-label="Ajouter un lien à la sélection"
+        <div ref={textMarkupToolbarRef} className="floating-surface text-markup-toolbar" role="toolbar" aria-label={t("Annotations du texte")}>
+          <button type="button" title={t("Surligner")} aria-label={t("Surligner")} onClick={() => addTextMarkupEdit("highlight", textMarkupColor)}><ToolbarIcon name="highlight" /></button>
+          <button type="button" title={t("Souligner")} aria-label={t("Souligner")} onClick={() => addTextMarkupEdit("underline", textMarkupColor)}><ToolbarIcon name="underline" /></button>
+          <button type="button" title={t("Barrer")} aria-label={t("Barrer")} onClick={() => addTextMarkupEdit("strikeout", textMarkupColor)}><ToolbarIcon name="strikeout" /></button>
+          <button type="button" title={t("Ajouter un lien à la sélection")} aria-label={t("Ajouter un lien à la sélection")}
             disabled={textMarkupSelection.rects.length > 256}
             onClick={() => {
               const { page, rects: areas } = textMarkupSelection;
@@ -6296,9 +6360,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               setTextMarkupSelection(null);
               window.getSelection()?.removeAllRanges();
             }}><ToolbarIcon name="link" /></button>
-          <button type="button" disabled={textMarkupSelection.rects.length > 500}
-            onClick={() => commentOnSelection(textMarkupSelection.page, textMarkupSelection.rects)}>Commenter</button>
-          {activeDocument?.media?.kind !== "image" ? <button type="button" onClick={() => {
+          <TextSelectionActions canComment={textMarkupSelection.rects.length <= 500}
+            onComment={() => commentOnSelection(textMarkupSelection.page, textMarkupSelection.rects)}
+            onRedact={activeDocument?.media?.kind !== "image" ? () => {
             const { page, rects } = textMarkupSelection;
             redactSelection(page, rects.map((box) => {
               const inset = Math.min(0.1, (box.x1 - box.x0) / 4, (box.y1 - box.y0) / 4);
@@ -6306,8 +6370,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             }));
             setTextMarkupSelection(null);
             window.getSelection()?.removeAllRanges();
-          }}>Biffer</button> : null}
-          <ColorPicker compact label="Couleur de l'annotation" value={textMarkupColor} onChange={setTextMarkupColor} />
+          } : undefined} />
+          <ColorPicker compact label={t("Couleur de l'annotation")} value={textMarkupColor} onChange={setTextMarkupColor} />
         </div>, document.body) : null}
 
       <footer className="status-bar" aria-label="État du document">
@@ -6394,6 +6458,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           </div>
         </div>
       </footer>
-    </main>
+    </main></LocaleContext.Provider>
   );
 }

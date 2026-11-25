@@ -1,3 +1,4 @@
+import { changeInterfaceTheme, openSettings } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import { chooseNavigationTool, fixtures, getLocalState, openApp, openPdf } from "../helpers/app";
 
@@ -6,7 +7,9 @@ test("six palettes préservent la page, l’outil, les couleurs PDF et les préf
   await openApp(page);
   await openPdf(page, fixtures.conversionText);
   const selector = page.getByRole("combobox", { name: "Thème de l’interface" });
+  await openSettings(page);
   await expect(selector.locator("option")).toHaveText(["Clair", "Sombre", "Océan", "Forêt", "Prune", "Sable"]);
+  await page.getByRole("button", { name: "Fermer les paramètres" }).click();
   await expect(page.locator(".viewer .pdf-page").first()).toHaveAttribute("data-render-state", "ready");
   const canvas = page.locator(".viewer canvas").first();
   await expect(canvas).toBeVisible();
@@ -20,12 +23,11 @@ test("six palettes préservent la page, l’outil, les couleurs PDF et les préf
   const layer = page.getByLabel("Couche d'édition de la page 1");
   const backgrounds = new Set<string>();
   const text = page.getByRole("button", { name: "Texte", exact: true });
-  await text.click();
   const panel = page.getByRole("region", { name: "Outils Texte" });
 
   for (const theme of ["light", "dark", "ocean", "forest", "plum", "sand"]) {
-    if (theme !== "light") await text.click();
-    await selector.selectOption(theme);
+    await changeInterfaceTheme(page, theme);
+    await text.click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     await expect(layer).toHaveAttribute("data-active-editing-tool", "add_text");
     await expect(text).toHaveAttribute("aria-pressed", "true");
@@ -79,6 +81,7 @@ test("six palettes préservent la page, l’outil, les couleurs PDF et les préf
   await expect(page.getByTitle("Modifications non sauvegardées")).toHaveCount(0);
   await expect.poll(async () => JSON.parse((await getLocalState(page)).preferences ?? "{}").theme).toBe("sand");
   await page.reload();
+  await openSettings(page);
   await expect(selector).toHaveValue("sand");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "sand");
   await expect(page.locator(".document-select[aria-current=true]")).toHaveText("conversion-simple-text.pdf");
@@ -89,6 +92,7 @@ test("six palettes préservent la page, l’outil, les couleurs PDF et les préf
 
 test("crée, prévisualise, duplique et conserve plusieurs thèmes personnalisés", async ({ page }) => {
   await openApp(page);
+  await openSettings(page);
   const select = page.getByRole("combobox", { name: "Thème de l’interface" });
   await select.selectOption("forest");
   const open = page.getByRole("button", { name: "Personnaliser le thème" });
@@ -101,6 +105,7 @@ test("crée, prévisualise, duplique et conserve plusieurs thèmes personnalisé
   await expect.poll(accent).toBe("#136843");
   await editor.getByRole("button", { name: "Enregistrer le thème" }).click();
   await page.reload();
+  await openSettings(page);
   await expect(select.locator("option:checked")).toHaveText("Recette");
   await expect.poll(accent).toBe("#136843");
   await open.click();
@@ -120,4 +125,12 @@ test("crée, prévisualise, duplique et conserve plusieurs thèmes personnalisé
   await expect.poll(accent).toBe("#136843");
   await select.selectOption("forest");
   await expect.poll(accent).not.toBe("#136843");
+  await page.getByRole("combobox", { name: "Langue de l’interface" }).selectOption("en");
+  await expect(page.getByRole("button", { name: "Select", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "File", exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await openSettings(page);
+  await expect(page.getByRole("combobox", { name: "Interface language" })).toHaveValue("en");
+  await expect(page.getByRole("combobox", { name: "Interface theme" }).locator("option")).toContainText(["Recette"]);
 });

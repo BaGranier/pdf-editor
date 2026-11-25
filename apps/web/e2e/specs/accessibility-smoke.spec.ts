@@ -1,3 +1,4 @@
+import { changeInterfaceTheme } from "../helpers/app";
 import { expect, test } from "../helpers/qa-test";
 import { fixtures, openApp, openPdf } from "../helpers/app";
 
@@ -55,7 +56,7 @@ test("QA-E2E-019 @smoke contrôle noms accessibles, clavier, focus et contraste 
   for (const theme of ["light", "dark"] as const) {
     const current = await page.evaluate(() => document.documentElement.dataset.theme);
     if (current !== theme) {
-      await page.getByRole("combobox", { name: "Thème de l’interface" }).selectOption(theme);
+      await changeInterfaceTheme(page, theme);
     }
     const colors = await page.locator("input[type='file'][aria-label='Ouvrir un PDF']").evaluate((element) => {
       const style = getComputedStyle(element.closest("label") ?? element);
