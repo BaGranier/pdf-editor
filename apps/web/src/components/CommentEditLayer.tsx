@@ -23,14 +23,19 @@ export function CommentEditMarker({ edit, viewport, selected, onSelect }: {
     width: 16,
     height: 16,
   } : pdfRectToViewportStyle(viewport, edit.rect);
-  return <button
-    type="button"
-    className={`pdf-comment-marker${anchor ? " pdf-comment-marker--anchored" : edit.source === "local" ? " pdf-comment-marker--local" : ""}${selected ? " is-selected" : ""}`}
-    data-comment-id={edit.id}
-    style={position}
-    aria-label={`${t("Commentaire")} page ${edit.page}: ${edit.content}`}
-    title={edit.content}
-    onPointerDown={(event) => event.stopPropagation()}
-    onClick={(event) => { event.stopPropagation(); onSelect(); }}
-  ><ToolbarIcon name="comment" /></button>;
+  return <>
+    {edit.source === "local" && anchors?.map((box, index) => (
+      <span key={index} className="pdf-comment-highlight" style={box} aria-hidden="true" />
+    ))}
+    <button
+      type="button"
+      className={`pdf-comment-marker${anchor ? " pdf-comment-marker--anchored" : edit.source === "local" ? " pdf-comment-marker--local" : ""}${selected ? " is-selected" : ""}`}
+      data-comment-id={edit.id}
+      style={position}
+      aria-label={`${t("Commentaire")} page ${edit.page}: ${edit.content}`}
+      title={edit.content}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => { event.stopPropagation(); onSelect(); }}
+    ><ToolbarIcon name="comment" /></button>
+  </>;
 }

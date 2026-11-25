@@ -43,7 +43,7 @@ async function saveCopy(page: Page, filename: string) {
   await (await pending).saveAs(filename);
 }
 
-test("sélection et copie multilignes, commentaire à droite puis réouverture", async ({ page }, info) => {
+test("sélection multilignes, saisie du commentaire dans le viewer et surbrillance avant sauvegarde", async ({ page }, info) => {
   await openApp(page);
   await openPdf(page, path.join(fixtureDirectory, "redaction-stamps.pdf"));
   const menu = await selectText(page, "SECRET_TEST_12345", true);
@@ -57,24 +57,45 @@ test("sélection et copie multilignes, commentaire à droite puis réouverture",
   const comment = menu.getByRole("button", { name: "Commentaire" });
   await expect(comment.locator("svg")).toHaveAttribute("data-icon", "comment");
   await comment.click();
-  const card = page.getByRole("dialog", { name: "Nouveau commentaire" });
+  const card = page.locator(".properties-panel").getByRole("dialog", { name: "Nouveau commentaire" });
+  const popup = page.getByRole("dialog", { name: "Nouveau commentaire" }).and(page.locator(".comment-popup"));
   const workspace = page.locator(".workspace-stage");
-  const [cardBounds, viewerBounds] = await Promise.all([card.boundingBox(), workspace.boundingBox()]);
+  await expect(popup).toBeVisible();
+  const [cardBounds, viewerBounds, popupBounds, anchor] = await Promise.all([
+    card.boundingBox(), workspace.boundingBox(), popup.boundingBox(), page.locator(".comment-draft-anchor").boundingBox(),
+  ]);
   expect(cardBounds && viewerBounds && cardBounds.x >= viewerBounds.x + viewerBounds.width - 1).toBe(true);
-  await card.getByLabel("Texte du commentaire").fill("Note ancrée sur deux lignes");
+  expect(popupBounds && viewerBounds && popupBounds.x < viewerBounds.x + viewerBounds.width && popupBounds.x + popupBounds.width > viewerBounds.x).toBe(true);
+  expect(popupBounds && anchor && (
+    Math.abs(popupBounds.y + popupBounds.height - anchor.y) <= 9 ||
+    Math.abs(popupBounds.y - (anchor.y + anchor.height)) <= 9
+  )).toBe(true);
+  const popupMessage = popup.getByLabel("Texte du commentaire");
+  await expect(popupMessage).toBeFocused();
+  await popupMessage.fill("Note ancrée sur deux lignes");
+  const sidebarMessage = card.getByLabel("Texte du commentaire");
+  await expect(sidebarMessage).toHaveValue("Note ancrée sur deux lignes");
+  await sidebarMessage.fill("Note ancrée sur deux lignes, vérifiée");
+  await expect(popupMessage).toHaveValue("Note ancrée sur deux lignes, vérifiée");
   await card.getByRole("button", { name: "Ajouter" }).click();
+  await expect(popup).toHaveCount(0);
+  const highlight = page.locator(".pdf-comment-highlight");
+  await expect(highlight).toHaveCount(2);
+  await expect(highlight.first()).toBeVisible();
+  await expect(dirty).toHaveCount(1);
   const marker = page.locator(".pdf-comment-marker--anchored");
   await expect(marker).toHaveCount(1);
   await expect(marker).toHaveCSS("width", "16px");
   await page.getByRole("button", { name: "Augmenter le zoom" }).click();
   await expect(marker).toHaveCSS("width", "16px");
+  await expect(highlight).toHaveCount(2);
   await page.setViewportSize({ width: 760, height: 860 });
   await marker.click();
   const [side, viewer] = await Promise.all([page.locator(".properties-panel").boundingBox(), workspace.boundingBox()]);
   expect(side && viewer && side.y >= viewer.y + viewer.height - 1).toBe(true);
   const result = info.outputPath("comment-anchored.pdf");
   await saveCopy(page, result);
-  python("import fitz,sys; d=fitz.open(sys.argv[1]); p=d[0]; n=p.first_annot; assert len(n.vertices)==8 and n.info['content']=='Note ancrée sur deux lignes'", result);
+  python("import fitz,sys; d=fitz.open(sys.argv[1]); p=d[0]; n=p.first_annot; assert len(n.vertices)==8 and n.info['content']=='Note ancrée sur deux lignes, vérifiée'", result);
   await expect(page.locator(".pdf-comment-marker--anchored").first()).toBeVisible();
 });
 

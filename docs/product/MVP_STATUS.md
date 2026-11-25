@@ -228,3 +228,9 @@ MVP-004 reste une référence historique.
 - Reconstruction bornée des pages avec des Form XObjects touchés et des pages partageant leurs ressources.
 - Export de pages biffées identiques avec des références distinctes, vérifié avec un second lecteur PDF.
 - Version de recette 0.2.0 et qualification sur VM Windows propre à consigner séparément.
+
+### 2026-11-25 — Commentaires sur une sélection
+
+- Saisie du commentaire au-dessus du passage sélectionné et dans l’inspecteur.
+- Un seul brouillon est partagé entre les deux emplacements.
+- Surbrillance dès la validation du commentaire, avant la sauvegarde du PDF.

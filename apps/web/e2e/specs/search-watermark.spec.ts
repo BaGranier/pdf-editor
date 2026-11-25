@@ -190,8 +190,9 @@ test("sélection directe et commentaire ancré, puis biffage du texte ajouté sa
     span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
   });
   await page.getByRole("button", { name: "Commentaire", exact: true }).click();
-  await page.getByLabel("Texte du commentaire").fill("Note ancrée au texte public");
-  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  const commentPopup = page.locator(".comment-popup");
+  await commentPopup.getByLabel("Texte du commentaire").fill("Note ancrée au texte public");
+  await commentPopup.getByRole("button", { name: "Ajouter", exact: true }).click();
   await expect(page.locator(".pdf-comment-marker--anchored")).toHaveCount(1);
   await expect(page.locator(".properties-panel").getByRole("region", {name: "Propriétés du commentaire"})).toBeVisible();
 

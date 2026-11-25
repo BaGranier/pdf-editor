@@ -3518,6 +3518,21 @@ button:disabled {
 .indexed-text-selection__actions > button { display: grid; place-items: center; min-width: 32px; padding: .3rem; }
 .anchored-comment-card { margin-block-start: var(--comment-card-offset, 0); }
 .anchored-comment-card h2 { margin: 0 0 .25rem; font-size: 1rem; }
+.comment-draft-anchor,
+.pdf-comment-highlight { position: absolute; pointer-events: none; transform-origin: 0 0; }
+.pdf-comment-highlight { background: rgb(255 225 0 / 38%); }
+.comment-popup.shape-edit-toolbar {
+  z-index: var(--layer-floating);
+  bottom: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  width: min(20rem, var(--floating-width, calc(100vw - 1rem)));
+  margin: 0;
+  transform: none;
+}
+.comment-popup input { width: 100%; box-sizing: border-box; }
+.comment-popup h2 { margin: 0 0 .25rem; font-size: 1rem; }
 @media (max-width: 900px) {
   .content-area--anchored-comment:not(.content-area--properties-hidden) { grid-template-rows: minmax(0, 1fr) minmax(5rem, min(42vh, 18rem)); }
   .content-area--anchored-comment > .tool-rail { grid-row: 1 / -1; }

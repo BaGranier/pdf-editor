@@ -269,7 +269,8 @@ type ViewerFocusTarget = "viewer" | null;
 type FocusTarget = SidebarKeyTarget | ViewerFocusTarget;
 const EMPTY_PDF_EDITS: PdfEdit[] = [];
 
-type TextMarkupSelection = { page: number; rects: PdfRect[]; anchor: Range };
+type TextMarkupSelection = { page: number; displayPage: number; rects: PdfRect[]; anchor: Range };
+type CommentDraftAnchor = { displayPage: number; rect: PdfRect; setElement: (element: HTMLSpanElement | null) => void };
 type PendingBrowserSave = {
   sourceName: string;
   outputName: string;
@@ -414,7 +415,8 @@ type PdfPageCanvasProps = {
   indexedSelection?: IndexedPage;
   indexedHit?: PdfSearchHit;
   onRedactText: (page: number, rects: PdfRect[]) => void;
-  onCommentText: (page: number, rects: PdfRect[]) => void;
+  onCommentText: (page: number, rects: PdfRect[], displayPage: number) => void;
+  commentDraftAnchor?: CommentDraftAnchor;
   isIncomingPage?: boolean;
   renderEnabled: boolean;
   onRenderReady?: (pageNumber: number) => void;
@@ -467,7 +469,7 @@ function PdfPageCanvas({
   fontLibraryRevision,
   searchHits,
   activeSearchHitId,
-  indexedSelection, indexedHit, onRedactText, onCommentText,
+  indexedSelection, indexedHit, onRedactText, onCommentText, commentDraftAnchor,
   isIncomingPage = false,
   renderEnabled,
   onRenderReady,
@@ -938,7 +940,7 @@ function PdfPageCanvas({
               const rects = selectionClientRectsToPdfRects(pageRects, surfaceBounds, viewport);
               const anchor = range.getBoundingClientRect();
               if (rects.length === 0 || anchor.width < 1) return;
-              window.dispatchEvent(new CustomEvent("pdf-text-markup-selection", { detail: { page: sourcePageNumber, rects, anchor: range.cloneRange() } }));
+              window.dispatchEvent(new CustomEvent("pdf-text-markup-selection", { detail: { page: sourcePageNumber, displayPage: displayPageNumber, rects, anchor: range.cloneRange() } }));
             }, 0);
           }}
         /> : null}
@@ -948,7 +950,10 @@ function PdfPageCanvas({
         {shouldRender && viewport && indexedSelection ? <IndexedTextSelection key={`${sourcePageNumber}:${zoom}:${rotation}`}
           page={indexedSelection} zones={edits.filter((edit) => edit.type === "redaction")} viewport={viewport}
           onRedact={(rects) => onRedactText(sourcePageNumber, rects)}
-          onComment={(rects) => onCommentText(sourcePageNumber, rects)} /> : null}
+          onComment={(rects) => onCommentText(sourcePageNumber, rects, displayPageNumber)} /> : null}
+        {shouldRender && viewport && commentDraftAnchor ? (
+          <span ref={commentDraftAnchor.setElement} className="comment-draft-anchor" style={pdfRectToViewportStyle(viewport, commentDraftAnchor.rect)} aria-hidden="true" />
+        ) : null}
         {shouldRender && viewport && nativeTextRuntimeActive ? (
           <NativeTextLayer
             spans={nativeTextSpans.length ? nativeTextSpans : edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text").map((edit) => ({ ...edit.source, page: edit.page, rect: edit.rect, fontWeight: edit.style.bold ? 700 : 400, fontStyle: edit.style.fontStyle ?? "normal" }))}
@@ -1082,7 +1087,8 @@ type PdfViewerProps = {
   indexedPages?: Map<number, IndexedPage>;
   indexedHit?: PdfSearchHit;
   onRedactText: (page: number, rects: PdfRect[]) => void;
-  onCommentText: (page: number, rects: PdfRect[]) => void;
+  onCommentText: (page: number, rects: PdfRect[], displayPage: number) => void;
+  commentDraftAnchor?: CommentDraftAnchor;
   focusRequest: number;
   pageNavigationRequest: PageNavigationRequest | null;
   viewerMode: ViewerMode;
@@ -1132,7 +1138,7 @@ function PdfViewer({
   fontLibraryRevision,
   searchHits,
   activeSearchHitId,
-  indexedPages, indexedHit, onRedactText, onCommentText,
+  indexedPages, indexedHit, onRedactText, onCommentText, commentDraftAnchor,
   focusRequest,
   pageNavigationRequest,
   viewerMode,
@@ -1874,6 +1880,7 @@ function PdfViewer({
               indexedHit={isActiveDocumentSource && indexedHit?.pageNumber === page.sourcePageIndex + 1 ? indexedHit : undefined}
               onRedactText={onRedactText}
               onCommentText={onCommentText}
+              commentDraftAnchor={page.displayPageNumber === commentDraftAnchor?.displayPage && !isIncoming ? commentDraftAnchor : undefined}
               isIncomingPage={isIncoming}
               presentation={viewerMode === "presentation"}
               renderEnabled={!scrolling || continuousRenderPageNumbers?.has(page.displayPageNumber) === true}
@@ -2850,7 +2857,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(272);
   const [textMarkupSelection, setTextMarkupSelection] = useState<TextMarkupSelection | null>(null);
   const [textMarkupColor, setTextMarkupColor] = useState("#eab308");
-  const [pendingComment, setPendingComment] = useState<{ documentId: string; page: number; rect: PdfRect; rects?: PdfRect[] } | null>(null);
+  const [pendingComment, setPendingComment] = useState<{ documentId: string; page: number; rect: PdfRect; rects?: PdfRect[]; displayPage?: number } | null>(null);
+  const [commentAnchorElement, setCommentAnchorElement] = useState<HTMLSpanElement | null>(null);
+  const commentPopupRef = useRef<HTMLElement>(null);
   const [commentDraft, setCommentDraft] = useState("");
   const [commentAuthorDraft, setCommentAuthorDraft] = useState(() => storedPreferences?.commentAuthor ?? "");
   const [lastCommentAuthor, setLastCommentAuthor] = useState(() => storedPreferences?.commentAuthor ?? "");
@@ -3901,9 +3910,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setCommentAuthorDraft(lastCommentAuthor);
   }, [activeDocument, lastCommentAuthor]);
 
-  const commentOnSelection = useCallback((page: number, rects: PdfRect[]) => {
+  const commentOnSelection = useCallback((page: number, rects: PdfRect[], displayPage: number) => {
     if (!activeDocument || rects.length === 0 || rects.length > 500) return;
-    setPendingComment({ documentId: activeDocument.id, page, rect: coveringRect(rects), rects });
+    setPendingComment({ documentId: activeDocument.id, page, rect: coveringRect(rects), rects, displayPage });
     setIsPropertiesPanelVisible(true);
     setActiveEditingTool("select");
     setSelectedEditId(null);
@@ -3914,19 +3923,37 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   }, [activeDocument, lastCommentAuthor]);
 
   const cancelComment = () => { setPendingComment(null); setCommentDraft(""); setActiveEditingTool("select"); };
-  const commentEditor = pendingComment?.documentId === activeDocumentId ? (<div className={pendingComment.rects ? "anchored-comment-card" : "unsaved-dialog-backdrop"} role="presentation">
-          <section className={pendingComment.rects ? "shape-edit-toolbar comment-dialog" : "unsaved-dialog comment-dialog"} role="dialog" aria-modal={pendingComment.rects ? undefined : true} aria-labelledby="comment-dialog-title" onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); cancelComment(); } }}>
-            <h2 id="comment-dialog-title">{t("Nouveau commentaire")}</h2>
-            <label>{t("Rédacteur")}<input aria-label={t("Rédacteur")} value={commentAuthorDraft} onChange={(event) => setCommentAuthorDraft(event.target.value)} placeholder={t("Non renseigné")} /></label>
-            <label>{t("Message")}</label>
-            <textarea autoFocus value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} aria-label={t("Texte du commentaire")} placeholder={t("Saisissez votre commentaire…")} rows={4} />
-            <div className="unsaved-dialog__actions">
-              <button type="button" onClick={cancelComment}>{t("Annuler")}</button>
-              <button type="button" onClick={() => addComment()} disabled={!commentDraft.trim()}>{t("Ajouter")}</button>
-            </div>
-          </section>
+  const renderCommentEditor = (placement: "modal" | "sidebar" | "popup") => {
+    const titleId = `comment-dialog-title-${placement}`;
+    return (
+      <section
+        ref={placement === "popup" ? commentPopupRef : undefined}
+        className={`comment-dialog ${placement === "modal" ? "unsaved-dialog" : "shape-edit-toolbar"}${placement === "popup" ? " floating-surface comment-popup" : ""}`}
+        role="dialog"
+        aria-modal={placement === "modal" ? true : undefined}
+        aria-labelledby={titleId}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            cancelComment();
+          }
+        }}
+      >
+        <h2 id={titleId}>{t("Nouveau commentaire")}</h2>
+        <label>{t("Rédacteur")}<input aria-label={t("Rédacteur")} value={commentAuthorDraft} onChange={(event) => setCommentAuthorDraft(event.target.value)} placeholder={t("Non renseigné")} /></label>
+        <label>
+          {t("Message")}
+          <textarea autoFocus={placement !== "sidebar"} value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} aria-label={t("Texte du commentaire")} placeholder={t("Saisissez votre commentaire…")} rows={4} />
+        </label>
+        <div className="unsaved-dialog__actions">
+          <button type="button" onClick={cancelComment}>{t("Annuler")}</button>
+          <button type="button" onClick={() => addComment()} disabled={!commentDraft.trim()}>{t("Ajouter")}</button>
         </div>
-      ) : null;
+      </section>
+    );
+  };
+  const showCommentPopup = Boolean(commentAnchorElement && pendingComment?.documentId === activeDocumentId && workspaceMode === "read" && viewerMode !== "presentation" && !redactionSearchOpen);
+  useFloatingPosition(showCommentPopup, commentAnchorElement, commentPopupRef, "top-center");
   const addComment = useCallback(() => {
     if (!activeDocument || pendingComment?.documentId !== activeDocument.id || !commentDraft.trim()) return;
     const now = new Date().toISOString();
@@ -5849,7 +5876,10 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               }} onClose={closeThemeEditor} /> : null}
             {themeError ? <span role="alert">{t(themeError)}</span> : null}
       </SettingsPanel> : null}
-      {pendingComment && !pendingComment.rects ? commentEditor : null}
+      {pendingComment && pendingComment.documentId === activeDocumentId && !pendingComment.rects ? (
+        <div className="unsaved-dialog-backdrop" role="presentation">{renderCommentEditor("modal")}</div>
+      ) : null}
+      {showCommentPopup ? createPortal(renderCommentEditor("popup"), document.body) : null}
 
       {saveAsDocument ? (
         <SaveAsDialog
@@ -6125,6 +6155,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             indexedHit={redactionSearchOpen ? redactionHit ?? undefined : undefined}
             onRedactText={redactSelection}
             onCommentText={commentOnSelection}
+            commentDraftAnchor={pendingComment?.documentId === activeDocumentId && pendingComment.displayPage !== undefined && !redactionSearchOpen
+              ? { displayPage: pendingComment.displayPage, rect: pendingComment.rect, setElement: setCommentAnchorElement }
+              : undefined}
             focusRequest={viewerFocusRequest}
             pageNavigationRequest={pageNavigationRequest?.documentId === activeDocument.id ? pageNavigationRequest : null}
             viewerMode={viewerMode}
@@ -6202,7 +6235,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               onClose={() => { setRedactionSearchVisible(false); setRedactionHit(null); }}
               onCreate={addRedactions} />
           ) : null}
-          {redactionSearchOpen ? null : pendingComment?.rects && workspaceMode === "read" ? commentEditor : workspaceMode === "read" && selectedCommentEdit?.rects?.length ? (
+          {redactionSearchOpen ? null : pendingComment?.documentId === activeDocumentId && pendingComment?.rects && workspaceMode === "read" ? (
+            <div className="anchored-comment-card">{renderCommentEditor("sidebar")}</div>
+          ) : workspaceMode === "read" && selectedCommentEdit?.rects?.length ? (
             <div className="anchored-comment-card"><CommentInspector edit={selectedCommentEdit} onUpdate={updatePdfEdit} onDelete={() => deletePdfEdit(selectedCommentEdit.id)} /></div>
           ) : workspaceMode === "read" && activeEditingTool === "watermark" ? (
             <WatermarkComposer key={activeDocument?.id} currentPage={activePageNumber} previewReady={watermarkPreview?.documentId === activeDocument?.id && Boolean(watermarkPreview?.edits.length)}
@@ -6361,7 +6396,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               window.getSelection()?.removeAllRanges();
             }}><ToolbarIcon name="link" /></button>
           <TextSelectionActions canComment={textMarkupSelection.rects.length <= 500}
-            onComment={() => commentOnSelection(textMarkupSelection.page, textMarkupSelection.rects)}
+            onComment={() => commentOnSelection(textMarkupSelection.page, textMarkupSelection.rects, textMarkupSelection.displayPage)}
             onRedact={activeDocument?.media?.kind !== "image" ? () => {
             const { page, rects } = textMarkupSelection;
             redactSelection(page, rects.map((box) => {
