@@ -18,6 +18,7 @@ export function FontSelector({ style, documentFontName, onChange, onLibraryChang
   const [customFonts, setCustomFonts] = useState<CustomFontRecord[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const helpPopoverRef = useRef<HTMLElement | null>(null);
   const helpButtonRef = useRef<HTMLButtonElement | null>(null);
   const refresh = () => void fontRegistry.listCustom().then(setCustomFonts);
   useEffect(refresh, []);

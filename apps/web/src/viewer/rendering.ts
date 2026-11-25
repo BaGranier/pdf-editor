@@ -19,7 +19,7 @@ export function getCanvasRenderDimensions(
   const normalizedWidth = Math.max(1, cssWidth);
   const normalizedHeight = Math.max(1, cssHeight);
   const outputScale = Math.min(
-    Math.max(1, devicePixelRatio || 1),
+    Math.max(1, devicePixelRatio || 1, Math.min(2, 1 / zoom)),
     MAX_CANVAS_AXIS / Math.max(normalizedWidth, normalizedHeight),
     Math.sqrt(MAX_CANVAS_PIXELS / (normalizedWidth * normalizedHeight)),
   );

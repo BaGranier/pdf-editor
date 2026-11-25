@@ -20,7 +20,6 @@ import datetime as dt
 import tomllib
 import shutil
 import sys
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCT_VERSION = json.loads(
@@ -58,7 +57,9 @@ def build_identity(provenance: dict) -> str:
     if provenance["trackedChanges"] or git("diff", "HEAD", "--name-only"):
         raise ValueError("Release requires committed tracked sources")
     changes = set(git("diff", "--name-only", provenance["commit"], "HEAD").splitlines())
-    if not changes <= {"MVP_STATUS.md", "THIRD_PARTY_NOTICES.md", "WINDOWS_PREVIEW.md", "RELEASE_006.md"}:
+    if not changes <= set(RELEASE_DOCUMENTS) | {
+        "MVP_STATUS.md", "THIRD_PARTY_NOTICES.md", "WINDOWS_PREVIEW.md", "RELEASE_006.md",
+    }:
         raise ValueError("Compiled sources changed; rebuild from this commit")
     return provenance["commit"]
 

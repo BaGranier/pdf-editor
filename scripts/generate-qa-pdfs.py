@@ -513,6 +513,34 @@ def create_links_fixture(output_dir: Path = FIXTURE_DIR) -> Path:
     return path
 
 
+def create_sharpness_fixture(output_dir: Path = FIXTURE_DIR) -> Path:
+    """Vector text/lines at known sizes for equal-display-size viewer comparisons."""
+    document = fitz.open()
+    page = document.new_page(width=600, height=800)
+    page.insert_text((36, 42), "DESKTOP-005: text and fine lines", fontsize=18)
+    y = 80
+    for font in ("helv", "tiro"):
+        for size in (6, 8, 10, 12, 16):
+            page.insert_text(
+                (36, y),
+                f"{font} {size}pt: Reading PDF text 0123456789; fine glyphs AVMW ilft.",
+                fontname=font,
+                fontsize=size,
+            )
+            y += 28
+    for width in (0.25, 0.5, 0.75, 1):
+        page.draw_line((36, y), (564, y), color=(0.2, 0.2, 0.2), width=width)
+        y += 16
+    for index in range(16):
+        page.insert_text(
+            (36, y),
+            f"Dense vector text row {index + 1}: abcdefghijklmnopqrstuvwxyz 0123456789",
+            fontsize=7,
+        )
+        y += 12
+    return save_fitz_fixture("pdf-render-sharpness.pdf", document, output_dir)
+
+
 def generate(include_large: bool, output_dir: Path = FIXTURE_DIR) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     generated = [

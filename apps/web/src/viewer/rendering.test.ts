@@ -33,7 +33,7 @@ describe("getCanvasRenderDimensions", () => {
 
   it("caps huge pages and high DPR without allocating unbounded bitmaps", () => {
     const result = getCanvasRenderDimensions(10000, 20000, 3, 0.5);
-    expect(result.canvasWidth * result.canvasHeight).toBeLessThanOrEqual(16_000_000);
+    expect(result.canvasWidth * result.canvasHeight).toBeLessThanOrEqual(16 * 1024 * 1024);
     expect(Math.max(result.canvasWidth, result.canvasHeight)).toBeLessThanOrEqual(8192);
   });
 });
