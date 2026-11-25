@@ -32,22 +32,22 @@ test("search redaction watermark: auto-fit stamp, verified search, linked pages 
   await page.getByRole("button", { name: "Rechercher et biffer…", exact: true }).click();
   await page.getByLabel("Terme à biffer", { exact: true }).fill("SECRET_TEST_12345");
   await expect(page.getByLabel("Compteur des occurrences")).toHaveText("2 occurrences · 0 sélectionnées");
-  await expect(page.getByLabel("Biffage en attente page 1", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Biffage page 1", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Sélectionner toutes les occurrences", exact: true }).click();
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Biffer toutes les occurrences sélectionnées", exact: true }).click();
-  await expect(page.getByText("2 nouvelles zones de biffage en attente créées.", { exact: true })).toBeVisible();
+  await expect(page.getByText("2 nouvelles zones de biffage créées.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Annuler", exact: true }).click();
-  await expect(page.getByLabel("Biffage en attente page 1", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Biffage page 1", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Rétablir", exact: true }).click();
-  await expect(page.getByLabel("Biffage en attente page 1", { exact: true })).toHaveCount(1);
+  await expect(page.getByLabel("Biffage page 1", { exact: true })).toHaveCount(1);
 
   await chooseNavigationTool(page, "Filigrane");
   await page.getByLabel("Pages du filigrane").selectOption("all");
   await page.getByRole("button", { name: "Prévisualiser le filigrane", exact: true }).click();
   await expect(page.getByLabel("Filigrane page 1", { exact: true })).toHaveCount(1);
   expect(JSON.stringify(await getStoredDocuments(page))).not.toContain('"purpose":"watermark"');
-  await page.getByRole("button", { name: "Appliquer le filigrane", exact: true }).click();
+  await page.getByRole("button", { name: "Valider le filigrane", exact: true }).click();
   await page.getByLabel("Rotation du filigrane", { exact: true }).press("ArrowRight");
   await expect(page.getByLabel("Rotation du filigrane", { exact: true })).toHaveValue("-44");
   await page.getByLabel("Opacité du filigrane", { exact: true }).press("ArrowRight");
@@ -154,12 +154,11 @@ test("watermark 250 pages applies one editable group and exports all pages", asy
   await openApp(page);
   await qa.measure("open-250-watermark-pages", () => openPdf(page, synthetic));
   await chooseNavigationTool(page, "Filigrane");
-  await page.getByLabel("Pages du filigrane").selectOption("all");
+  await expect(page.getByLabel("Pages du filigrane")).toHaveValue("all");
   await qa.measure("preview-250-watermarks", async () => {
-    await page.getByRole("button", { name: "Prévisualiser le filigrane", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Appliquer le filigrane", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Valider le filigrane", exact: true })).toBeEnabled();
   });
-  await page.getByRole("button", { name: "Appliquer le filigrane", exact: true }).click();
+  await page.getByRole("button", { name: "Valider le filigrane", exact: true }).click();
   await expect.poll(async () => JSON.stringify(await getStoredDocuments(page)).match(/"purpose":"watermark"/g)?.length).toBe(250);
   await page.getByRole("button", { name: "Annuler", exact: true }).click();
   await expect(page.getByLabel("Filigrane page 1", { exact: true })).toHaveCount(0);
@@ -173,4 +172,69 @@ test("watermark 250 pages applies one editable group and exports all pages", asy
   const checked = validatePdf(output, 250);
   expect(checked.text.match(/CONFIDENTIEL/g)).toHaveLength(250);
   expect(checked.text).toContain("PUBLIC_PAGE_250");
+});
+
+test("sélection directe et commentaire ancré, puis biffage du texte ajouté sans sauvegarde intermédiaire", async ({ page }, testInfo) => {
+  await openApp(page);
+  await openPdf(page, fixture);
+  const layer = page.getByLabel("Couche d'édition de la page 1", { exact: true });
+  const surface = page.locator(".pdf-text-layer").first();
+  const word = surface.locator("span").filter({ hasText: "PUBLIC_NEIGHBOR_PAGE_1" }).last();
+  await word.evaluate((span) => {
+    const range = document.createRange();
+    range.selectNodeContents(span);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    span.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
+  await page.getByRole("button", { name: "Commenter", exact: true }).click();
+  await page.getByLabel("Texte du commentaire").fill("Note ancrée au texte public");
+  await page.getByRole("button", { name: "Ajouter", exact: true }).click();
+  await expect(page.locator(".pdf-comment-anchor")).toBeVisible();
+
+  await chooseNavigationTool(page, "Biffer");
+  await page.getByRole("button", { name: "Sélectionner le texte à biffer" }).click();
+  const selection = page.getByLabel("Sélection du texte à biffer").first();
+  await expect(selection).toBeVisible();
+  const bounds = await selection.boundingBox();
+  if (!bounds) throw new Error("Missing selection layer");
+  const scale = bounds.width / 400;
+  await page.mouse.move(bounds.x + 41 * scale, bounds.y + 107 * scale);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 154 * scale, bounds.y + 107 * scale, { steps: 6 });
+  await page.mouse.up();
+  await page.getByRole("button", { name: "Biffer la sélection" }).click();
+  await expect(page.getByLabel("Biffage page 1", { exact: true })).toHaveCount(1);
+  await expect(page.getByLabel("Biffage page 2", { exact: true })).toHaveCount(0);
+
+  await chooseNavigationTool(page, "Ajouter du texte");
+  await expect(layer).toHaveAttribute("data-active-editing-tool", "add_text");
+  const editBounds = await layer.boundingBox();
+  if (!editBounds) throw new Error("Missing edit layer");
+  await page.mouse.move(editBounds.x + 35, editBounds.y + 285);
+  await page.mouse.down();
+  await page.mouse.move(editBounds.x + 270, editBounds.y + 345, { steps: 6 });
+  await page.mouse.up();
+  const input = page.getByLabel("Texte ajouté page 1");
+  await input.fill("Avant PRIVÉ Après");
+  await input.blur();
+  await chooseNavigationTool(page, "Biffer");
+  await page.getByRole("button", { name: "Rechercher et biffer…" }).click();
+  await page.getByLabel("Terme à biffer").fill("PRIVÉ");
+  await expect(page.getByLabel("Compteur des occurrences")).toHaveText("1 occurrences · 0 sélectionnées");
+  await page.getByRole("button", { name: "Biffer cette occurrence 1" }).click();
+  await expect(page.getByLabel("Biffage page 1", { exact: true })).toHaveCount(2);
+
+  await enterOrganizeMode(page);
+  const download = page.waitForEvent("download");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Exporter le PDF", exact: true }).click();
+  const output = testInfo.outputPath("direct-redaction.pdf");
+  await (await download).saveAs(output);
+  const checked = validatePdf(output, 2);
+  expect(checked.text.match(/SECRET_TEST_12345/g)).toHaveLength(1);
+  expect(checked.text).toContain("Avant");
+  expect(checked.text).toContain("Après");
+  expect(checked.text).not.toContain("PRIVÉ");
 });

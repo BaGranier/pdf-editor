@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { PdfLinks, PdfOutline, LinkInspector, followWebLink } from "./components/PdfLinks";
 import type { LinkDestination, PdfLinkEdit } from "./editing/types";
 import { ImageDocumentDialog } from "./components/ImageDocumentDialog";
+import { useDevicePixelRatio } from "./viewer/useDevicePixelRatio";
 import { THEMES, isThemeId, systemTheme, type ThemeId } from "./viewer/themes";
 import { ToolbarIcon } from "./components/ToolbarIcon";
 import { DOCUMENT_ACCEPT, readImageSource, createImagePdf, type ImageSource, type ImageLayout, DEFAULT_IMAGE_LAYOUT, type ImageTransform, validateImageDocumentSession } from "./images/imageDocument";
@@ -101,7 +102,10 @@ import { TextEditToolbar } from "./components/TextEditToolbar";
 import { NativeTextLayer } from "./components/NativeTextLayer";
 import { createTextStamp, STAMP_PRESETS } from "./editing/stamps";
 import { RedactionSearchPanel } from "./components/RedactionSearchPanel";
-import { prepareSearchRedactions } from "./editing/redactionSearch";
+import { coveringRect, redactionEdits, type IndexedPage } from "./editing/redactionIndex";
+import { useRedactionIndex } from "./hooks/useRedactionIndex";
+import { IndexedTextSelection } from "./components/IndexedTextSelection";
+import { CustomThemeEditor, loadCustomThemes, saveCustomThemes, useThemeAppearance, type CustomTheme } from "./components/CustomThemes";
 import { WatermarkComposer } from "./components/WatermarkComposer";
 import { createWatermark, watermarkPages, type WatermarkDraft } from "./editing/watermarks";
 import type { StampEdit } from "./editing/types";
@@ -158,7 +162,7 @@ import { selectionClientRectsToPdfRects } from "./pdf/selectionGeometry";
 import { findTextMarkupAtPoint } from "./pdf/textMarkupHitTest";
 import { loadPdfComments } from "./pdf/comments";
 import { getCommentTypeLabel } from "./editing/comments";
-import { offsetPdfRectWithinPage } from "./editing/coordinates";
+import { offsetPdfRectWithinPage, pdfRectToViewportStyle } from "./editing/coordinates";
 import { getAnnotationScrollTop } from "./pdf/annotationNavigation";
 import { getDisplayAnnotationMode } from "./pdf/formRenderMode";
 import {
@@ -259,6 +263,8 @@ function CommentInspector({ edit, onUpdate, onDelete }: { edit: PdfCommentEdit; 
 type SidebarKeyTarget = "file-input" | string | null;
 type ViewerFocusTarget = "viewer" | null;
 type FocusTarget = SidebarKeyTarget | ViewerFocusTarget;
+const EMPTY_PDF_EDITS: PdfEdit[] = [];
+
 type TextMarkupSelection = { page: number; rects: PdfRect[]; anchor: Range };
 type PendingBrowserSave = {
   sourceName: string;
@@ -401,6 +407,9 @@ type PdfPageCanvasProps = {
   fontLibraryRevision: number;
   searchHits: PdfSearchHit[];
   activeSearchHitId: string | null;
+  indexedSelection?: IndexedPage;
+  indexedHit?: PdfSearchHit;
+  onRedactText: (page: number, rects: PdfRect[]) => void;
   isIncomingPage?: boolean;
   renderEnabled: boolean;
   onRenderReady?: (pageNumber: number) => void;
@@ -453,6 +462,7 @@ function PdfPageCanvas({
   fontLibraryRevision,
   searchHits,
   activeSearchHitId,
+  indexedSelection, indexedHit, onRedactText,
   isIncomingPage = false,
   renderEnabled,
   onRenderReady,
@@ -927,6 +937,12 @@ function PdfPageCanvas({
             }, 0);
           }}
         /> : null}
+        {shouldRender && viewport && indexedHit?.rects?.map((rect, index) => (
+          <span key={index} className="indexed-search-highlight" style={pdfRectToViewportStyle(viewport, rect)} />
+        ))}
+        {shouldRender && viewport && indexedSelection ? <IndexedTextSelection key={`${sourcePageNumber}:${zoom}:${rotation}`}
+          page={indexedSelection} zones={edits.filter((edit) => edit.type === "redaction")} viewport={viewport}
+          onRedact={(rects) => onRedactText(sourcePageNumber, rects)} /> : null}
         {shouldRender && viewport && nativeTextRuntimeActive ? (
           <NativeTextLayer
             spans={nativeTextSpans.length ? nativeTextSpans : edits.filter((edit): edit is NativeTextEdit => edit.type === "native_text").map((edit) => ({ ...edit.source, page: edit.page, rect: edit.rect, fontWeight: edit.style.bold ? 700 : 400, fontStyle: edit.style.fontStyle ?? "normal" }))}
@@ -1057,6 +1073,9 @@ type PdfViewerProps = {
   fontLibraryRevision: number;
   searchHits: PdfSearchHit[];
   activeSearchHitId: string | null;
+  indexedPages?: Map<number, IndexedPage>;
+  indexedHit?: PdfSearchHit;
+  onRedactText: (page: number, rects: PdfRect[]) => void;
   focusRequest: number;
   pageNavigationRequest: PageNavigationRequest | null;
   viewerMode: ViewerMode;
@@ -1106,6 +1125,7 @@ function PdfViewer({
   fontLibraryRevision,
   searchHits,
   activeSearchHitId,
+  indexedPages, indexedHit, onRedactText,
   focusRequest,
   pageNavigationRequest,
   viewerMode,
@@ -1113,6 +1133,15 @@ function PdfViewer({
   shouldFitToPage,
   fitRefreshToken,
 }: PdfViewerProps) {
+  const editsBySourcePage = useMemo(() => {
+    const pages = new Map<number, PdfEdit[]>();
+    for (const edit of edits) {
+      const page = pages.get(edit.page);
+      if (page) page.push(edit);
+      else pages.set(edit.page, [edit]);
+    }
+    return pages;
+  }, [edits]);
   const viewerRef = useRef<HTMLElement | null>(null);
   const scrollFrameRef = useRef<number | null>(null);
   const lastFocusRequestRef = useRef<number | null>(null);
@@ -1788,11 +1817,9 @@ function PdfViewer({
               zoom={document.zoom}
               edits={
                 isActiveDocumentSource
-                  ? edits.filter(
-                      (edit) => edit.page === page.sourcePageIndex + 1,
-                    )
+                  ? editsBySourcePage.get(page.sourcePageIndex + 1) ?? EMPTY_PDF_EDITS
                   : getDocumentEditingState(editsByDocument, page.sourceDocumentId).edits.filter(
-                      (edit) => edit.type === "link" && edit.page === page.sourcePageIndex + 1,
+                      (edit) => (edit.type === "link" || edit.type === "redaction") && edit.page === page.sourcePageIndex + 1,
                     )
               }
               signatureImages={signatureImages}
@@ -1836,6 +1863,9 @@ function PdfViewer({
                   : []
               }
               activeSearchHitId={activeSearchHitId}
+              indexedSelection={isActiveDocumentSource && viewerMode !== "presentation" ? indexedPages?.get(page.sourcePageIndex + 1) : undefined}
+              indexedHit={isActiveDocumentSource && indexedHit?.pageNumber === page.sourcePageIndex + 1 ? indexedHit : undefined}
+              onRedactText={onRedactText}
               isIncomingPage={isIncoming}
               presentation={viewerMode === "presentation"}
               renderEnabled={!scrolling || continuousRenderPageNumbers?.has(page.displayPageNumber) === true}
@@ -2809,7 +2839,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const [propertiesPanelWidth, setPropertiesPanelWidth] = useState(272);
   const [textMarkupSelection, setTextMarkupSelection] = useState<TextMarkupSelection | null>(null);
   const [textMarkupColor, setTextMarkupColor] = useState("#eab308");
-  const [pendingComment, setPendingComment] = useState<{ page: number; point: import("./editing/types").PdfPoint } | null>(null);
+  const [pendingComment, setPendingComment] = useState<{ documentId: string; page: number; rect: PdfRect; rects?: PdfRect[] } | null>(null);
   const [commentDraft, setCommentDraft] = useState("");
   const [commentAuthorDraft, setCommentAuthorDraft] = useState(() => storedPreferences?.commentAuthor ?? "");
   const [lastCommentAuthor, setLastCommentAuthor] = useState(() => storedPreferences?.commentAuthor ?? "");
@@ -2838,6 +2868,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   // application without changing the PDF or its undo/dirty state.
   const [formUiLockedByDocument, setFormUiLockedByDocument] = useState<Record<string, boolean>>({});
   const [isFormLockConfirmOpen, setIsFormLockConfirmOpen] = useState(false);
+  const [redactionHit, setRedactionHit] = useState<PdfSearchHit | null>(null);
+  const [redactionTextDocumentId, setRedactionTextDocumentId] = useState<string | null>(null);
   const [redactionSearchDocumentId, setRedactionSearchDocumentId] = useState<string | null>(null);
   const [watermarkPreview, setWatermarkPreview] = useState<{ documentId: string; edits: StampEdit[] } | null>(null);
   const watermarkGeneration = useRef(0);
@@ -2941,7 +2973,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       organizationPlans[activeDocument.id] ??
       createInitialPagePlan(activeDocument.id, activeDocument.fileName, activeDocument.pageCount)
     );
-  }, [activeDocument, organizationPlans]);
+  }, [activeDocument?.id, activeDocument?.fileName, activeDocument?.pageCount, organizationPlans]);
   const activePageNumber = activeDocument
     ? Math.min(
         Math.max(1, activePageByDocument[activeDocument.id] ?? 1),
@@ -2954,7 +2986,21 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   const activeDocumentEditingState = activeDocument
     ? getDocumentEditingState(pdfEditsByDocument, activeDocument.id)
     : null;
-  const activePdfEdits = activeDocumentEditingState?.edits ?? [];
+  const activePdfEdits = activeDocumentEditingState?.edits ?? EMPTY_PDF_EDITS;
+  const redactionSearchOpen = Boolean(activeDocument && activeEditingTool === "redaction" && activeDocument.id === redactionSearchDocumentId);
+  useEffect(() => {
+    if (activeEditingTool !== "redaction" || workspaceMode !== "read") {
+      setRedactionSearchDocumentId(null);
+      setRedactionTextDocumentId(null);
+      setRedactionHit(null);
+    }
+  }, [activeEditingTool, workspaceMode]);
+  const redactionTextActive = Boolean(activeDocument && activeEditingTool === "redaction" && activeDocument.id === redactionTextDocumentId);
+  const redactionIndex = useRedactionIndex(backendUrl, activeDocument?.file ?? null, activeDocument?.pageCount ?? 0,
+    workspaceMode === "read" && (redactionSearchOpen || redactionTextActive), activePdfEdits, fontLibraryRevision);
+  const redactionSourcePages = useMemo(() => [...new Set(activeOrganizationPlan?.pages.flatMap((page) =>
+    page.sourceDocumentId === activeDocumentId ? [page.sourcePageIndex + 1] : []))], [activeOrganizationPlan, activeDocumentId]);
+  const redactionZones = useMemo(() => activePdfEdits.filter((edit) => edit.type === "redaction"), [activePdfEdits]);
   const activePdfFormLock = activePdfEdits.find(
     (edit): edit is PdfFormLockEdit => edit.type === "form_lock",
   ) ?? null;
@@ -3156,9 +3202,24 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     };
   }, [exitPresentation, viewerMode]);
 
-  useLayoutEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
+  const [customThemes, setCustomThemes] = useState(loadCustomThemes);
+  const [themeEditor, setThemeEditor] = useState(false);
+  const [themePreview, setThemePreview] = useState<CustomTheme | null>(null);
+  const [themeError, setThemeError] = useState("");
+  const customTheme = customThemes.themes.find((candidate) => candidate.id === customThemes.activeId) ?? null;
+  useThemeAppearance(theme, themePreview ?? customTheme);
+  const changeCustomThemes = (themes: CustomTheme[], activeId: string | null) => {
+    try {
+      saveCustomThemes(themes, activeId);
+      setCustomThemes({ themes, activeId });
+      setThemeError("");
+      return true;
+    } catch {
+      setThemeError("Impossible d’enregistrer les thèmes dans le stockage local.");
+      return false;
+    }
+  };
+  const closeThemeEditor = () => { setThemePreview(null); setThemeEditor(false); };
 
   useEffect(() => {
     if (pendingFocusTargetRef.current === null) {
@@ -3494,15 +3555,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     if (!activeDocument) return;
     recordActivePage(activeDocument.id, pageNumber);
     setPageNavigationRequest({ documentId: activeDocument.id, pageNumber, requestId: ++pageNavigationRequestId.current });
-  }, [activeDocument, recordActivePage]);
+  }, [activeDocument?.id, recordActivePage]);
 
   const {
     activeSearch,
     openPdfSearch,
     closePdfSearch,
     updatePdfSearchQuery,
-    updatePdfSearchOptions,
-    selectPdfSearchHit,
     navigatePdfSearch,
     forgetPdfSearchDocument,
   } = usePdfSearch({
@@ -3511,6 +3570,13 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     workspaceMode,
     onNavigateToPage: navigateToSearchResult,
   });
+
+  const navigateToRedaction = useCallback((hit: PdfSearchHit | null) => {
+    setRedactionHit(hit);
+    if (!hit) return;
+    const display = activeOrganizationPlan?.pages.find((page) => page.sourceDocumentId === activeDocumentId && page.sourcePageIndex === hit.pageNumber - 1);
+    if (display) navigateToSearchResult(display.displayPageNumber);
+  }, [activeDocumentId, activeOrganizationPlan, navigateToSearchResult]);
 
   const changeViewerMode = useCallback((nextMode: ViewerMode) => {
     if (!activeDocument || nextMode === viewerMode) return;
@@ -3688,21 +3754,23 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
   );
 
   const clearWatermarkPreview = useCallback(() => { watermarkGeneration.current++; setWatermarkPreview(null); }, []);
-  const previewWatermark = useCallback(async (draft: WatermarkDraft) => {
+  const previewWatermark = useCallback(async (draft: WatermarkDraft, pageNumber = 1) => {
     if (!activeDocument || !activeOrganizationPlan) return;
     const generation = ++watermarkGeneration.current;
-    const pages = watermarkPages(draft.scope, draft.range, activePageNumber, activeOrganizationPlan.pages.length);
+    if (!draft.text.trim()) return;
+    const pages = watermarkPages(draft.scope, draft.range, pageNumber, activeOrganizationPlan.pages.length);
     if (activeOrganizationPlan.pages.some((page) => page.sourceDocumentId !== activeDocument.id) || new Set(activeOrganizationPlan.pages.map((page) => page.sourcePageIndex)).size !== activeOrganizationPlan.pages.length) throw new Error("Filigrane : appliquez-le dans chaque document source avant la composition ou la duplication des pages.");
     const groupId = `watermarks-${crypto.randomUUID()}`;
     const edits: StampEdit[] = [];
     for (const displayPage of pages) {
       const sourceIndex = activeOrganizationPlan.pages[displayPage - 1].sourcePageIndex;
       const page = await activeDocument.pdfDocument.getPage(sourceIndex + 1);
+      if (generation !== watermarkGeneration.current) return;
       const [x0, y0, x1, y1] = page.view;
       edits.push(createWatermark(sourceIndex + 1, { x0, y0, x1, y1 }, draft, groupId));
     }
     if (generation === watermarkGeneration.current) setWatermarkPreview({ documentId: activeDocument.id, edits });
-  }, [activeDocument, activeOrganizationPlan, activePageNumber]);
+  }, [activeDocument?.id, activeDocument?.pdfDocument, activeOrganizationPlan]);
 
   const addStampEdit = useCallback((page: number, rect: PdfRect) => {
     if (!activeDocument) return;
@@ -3720,6 +3788,20 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
     setSelectedEditId(edit.id);
     setExportFeedback(null);
   }, [activeDocument]);
+
+  const addRedactions = useCallback((hits: Array<{ pageNumber: number; rects?: PdfRect[] }>) => {
+    if (!activeDocument || activeDocument.media?.kind === "image") return 0;
+    const edits = redactionEdits(hits, activePdfEdits);
+    if (edits.length) dispatchPdfEdits({ type: "batch", documentId: activeDocument.id, add: edits });
+    setSelectedEditId(null);
+    setExportFeedback(null);
+    return edits.length;
+  }, [activeDocument, activePdfEdits]);
+
+  const redactSelection = useCallback((pageNumber: number, rects: PdfRect[]) => {
+    try { addRedactions([{ pageNumber, rects }]); }
+    catch (error) { setExportFeedback({ kind: "error", message: error instanceof Error ? error.message : "Biffage impossible." }); }
+  }, [addRedactions]);
 
   const addShapeEdit = useCallback(
     (pageNumber: number, shapeType: ShapeType, rect: PdfRect, line?: LineGeometry) => {
@@ -3768,20 +3850,21 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
 
   const startComment = useCallback((page: number, point: import("./editing/types").PdfPoint) => {
     if (!activeDocument) return;
-    setPendingComment({ page, point });
+    setPendingComment({ documentId: activeDocument.id, page, rect: { x0: point.x, y0: point.y, x1: point.x + 18, y1: point.y + 18 } });
     setCommentDraft("");
     setCommentAuthorDraft(lastCommentAuthor);
   }, [activeDocument, lastCommentAuthor]);
 
   const addComment = useCallback(() => {
-    if (!activeDocument || !pendingComment || !commentDraft.trim()) return;
+    if (!activeDocument || pendingComment?.documentId !== activeDocument.id || !commentDraft.trim()) return;
     const now = new Date().toISOString();
     const edit: PdfCommentEdit = {
       id: `comment-${Date.now()}-${nextCommentEditId.current++}`,
       type: "comment",
       commentType: "text",
       page: pendingComment.page,
-      rect: { x0: pendingComment.point.x, y0: pendingComment.point.y, x1: pendingComment.point.x + 18, y1: pendingComment.point.y + 18 },
+      rect: pendingComment.rect,
+      rects: pendingComment.rects,
       content: commentDraft.trim(), author: commentAuthorDraft.trim() || undefined, createdAt: now, modifiedAt: now, source: "local",
     };
     dispatchPdfEdits({ type: "add", documentId: activeDocument.id, edit });
@@ -4522,7 +4605,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
       return remainingSelection;
     });
     removeOrganizationPlan(activeDocument.id);
-  }, [activeDocument, organizationPlans]);
+  }, [activeDocument?.id, activeDocument?.fileName, activeDocument?.pageCount, organizationPlans]);
 
   const authenticateWorkingFile = useCallback(async (file: File) => {
     if (protectedOpeningRef.current) throw new PdfUnlockError("Une ouverture protégée est déjà en cours.");
@@ -4729,33 +4812,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         pendingFocusTargetRef.current = "viewer";
         return;
       }
-      const openedDocument = await loadOpenPdfDocument(selected.file, null,
-        { type: "desktop", documentId: selected.documentId });
-      // Update immediately: another queued file can arrive before React commits.
-      documentsRef.current = [...documentsRef.current, openedDocument];
-      setDocuments((current) => [...current, openedDocument]);
-      setActiveDocumentId(openedDocument.id);
-      pendingFocusTargetRef.current = "viewer";
-      setWorkspaceMode("read");
-      setStatus("");
-      if (!import.meta.env.MODE.startsWith("test")) void loadPdfComments(backendUrl, openedDocument.file).then((comments) => {
-        if (comments.length) dispatchPdfEdits({ type: "hydrate", documentId: openedDocument.id, edits: comments });
-      });
-    });
-    desktopOpenChainRef.current = operation.catch(() => undefined);
-    return operation;
-  }, [backendUrl, loadOpenPdfDocument]);
-  const openDesktopFileRef = useRef(openDesktopFile);
-  openDesktopFileRef.current = openDesktopFile;
-
-  const openDesktopFile = useCallback((selected: DesktopPdfFile): Promise<void> => {
-    const operation = desktopOpenChainRef.current.then(async () => {
-      const existing = findDesktopDocument(documentsRef.current, selected.documentId);
-      if (existing) {
-        setActiveDocumentId(existing.id);
-        pendingFocusTargetRef.current = "viewer";
-        return;
-      }
 
       setStatus("Ouverture du PDF...");
       const document = await loadOpenPdfDocument(
@@ -4805,7 +4861,6 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         message: error instanceof Error ? error.message : "Impossible d'ouvrir le PDF sélectionné.",
       });
     }
-  }, [isRestoringDocuments, openDesktopFile]);
   }, [isRestoringDocuments, openDesktopFile]);
 
   useEffect(() => {
@@ -4920,8 +4975,8 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
         const details = remaining > 0 ? `${list} et ${remaining} autre(s)` : list;
         const preflight = [
           `Biffage sécurisé de la copie, pages de sortie concernées : ${details}.`,
-          "Vérifiez les rectangles « En attente ». Leur contenu sera supprimé définitivement dans la copie. Le PDF source sera conservé.",
-          "Le contenu hors des zones et les métadonnées peuvent rester dans la copie. Ce traitement ne nettoie pas les pièces jointes, formulaires, annotations ou autres structures sensibles. Le moteur refuse les structures incompatibles et les zones qu’il ne peut pas traiter de façon sûre.",
+          "Vérifiez les zones noires. Leur contenu sera supprimé définitivement dans la copie. Le PDF source sera conservé.",
+          "Le contenu hors des zones et les métadonnées peuvent rester dans la copie. Ce traitement ne nettoie pas les pièces jointes, formulaires, annotations ou autres structures sensibles. Les annotations touchées sont supprimées avec leur contenu. Le moteur refuse les structures et les zones dont il ne peut pas vérifier le traitement.",
         ].join("\n\n");
         if (!window.confirm(preflight)) {
           setExportFeedback({ kind: "warning", message: "Opération annulée avant le biffage." });
@@ -5562,12 +5617,32 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
           <span className="toolbar-actions__spacer" aria-hidden="true" />
           <div className="theme-selector">
             <span className="theme-selector__preview" aria-hidden="true"><i /><i /><i /></span>
-            <select aria-label="Thème de l’interface" value={theme} onChange={(event) => {
+            <select aria-label="Thème de l’interface" value={customThemes.activeId ?? theme} onChange={(event) => {
               const value = event.currentTarget.value;
-              if (isThemeId(value)) setTheme(value);
+              closeThemeEditor();
+              if (isThemeId(value)) {
+                if (!customThemes.activeId || changeCustomThemes(customThemes.themes, null)) setTheme(value);
+              } else changeCustomThemes(customThemes.themes, value);
             }}>
               {THEMES.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
+              {customThemes.themes.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
             </select>
+            <button type="button" aria-label="Personnaliser le thème" aria-expanded={themeEditor}
+              onClick={() => themeEditor ? closeThemeEditor() : setThemeEditor(true)}>Personnaliser</button>
+            {themeEditor ? createPortal(<CustomThemeEditor active={customTheme} base={theme} onPreview={setThemePreview}
+              onSave={(draft) => {
+                const themes = customThemes.themes.some((candidate) => candidate.id === draft.id)
+                  ? customThemes.themes.map((candidate) => candidate.id === draft.id ? draft : candidate)
+                  : [...customThemes.themes, draft];
+                if (changeCustomThemes(themes, draft.id)) closeThemeEditor();
+              }}
+              onDelete={(draft) => {
+                if (changeCustomThemes(customThemes.themes.filter((candidate) => candidate.id !== draft.id), null)) {
+                  setTheme(draft.base);
+                  closeThemeEditor();
+                }
+              }} onClose={closeThemeEditor} />, document.body) : null}
+            {themeError ? <span role="alert">{themeError}</span> : null}
           </div>
           <div className="toolbar-action-group" aria-label="Fichier">
             <div className="file-menu">
@@ -5972,6 +6047,9 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             fontLibraryRevision={fontLibraryRevision}
             searchHits={activeSearch.hits}
             activeSearchHitId={activeSearch.hits[activeSearch.activeHitIndex]?.id ?? null}
+            indexedPages={redactionTextActive ? redactionIndex.pages : undefined}
+            indexedHit={redactionSearchOpen ? redactionHit ?? undefined : undefined}
+            onRedactText={redactSelection}
             focusRequest={viewerFocusRequest}
             pageNavigationRequest={pageNavigationRequest?.documentId === activeDocument.id ? pageNavigationRequest : null}
             viewerMode={viewerMode}
@@ -6041,7 +6119,7 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             /> : <p>Tracez un rectangle pour ajouter un lien, ou cliquez sur un lien pour le modifier. Les destinations nommées et certaines actions PDF sont en lecture seule.</p>}
           </section> : null}
           {workspaceMode === "read" && activeEditingTool === "watermark" ? (
-            <WatermarkComposer key={activeDocument?.id} previewReady={watermarkPreview?.documentId === activeDocument?.id && Boolean(watermarkPreview?.edits.length)}
+            <WatermarkComposer key={activeDocument?.id} currentPage={activePageNumber} previewReady={watermarkPreview?.documentId === activeDocument?.id && Boolean(watermarkPreview?.edits.length)}
               onPreview={previewWatermark} onClear={clearWatermarkPreview}
               onCancel={() => { clearWatermarkPreview(); setActiveEditingTool("select"); }}
               onApply={() => {
@@ -6051,19 +6129,14 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
                 dispatchPdfEdits({ type: "batch", documentId: activeDocument.id, add });
                 setSelectedEditId(add[0]?.id ?? null); clearWatermarkPreview(); setActiveEditingTool("select");
               }} />
-          ) : workspaceMode === "read" && activeDocument && activeSearch.isOpen && redactionSearchDocumentId === activeDocument.id ? (
-            <RedactionSearchPanel search={activeSearch}
-              currentPage={(activeOrganizationPlan?.pages.find((page) => page.displayPageNumber === activePageNumber)?.sourcePageIndex ?? activePageNumber - 1) + 1}
-              onQuery={updatePdfSearchQuery} onOptions={updatePdfSearchOptions} onNavigate={selectPdfSearchHit}
-              onClose={() => { closePdfSearch(); setRedactionSearchDocumentId(null); }}
-              onCreate={async (hits, signal) => {
-                const target = activeDocument;
-                const edits = await prepareSearchRedactions(target.file, backendUrl, hits, getDocumentEditingState(pdfEditsByDocument, target.id).edits, signal);
-                if (signal.aborted || documentsRef.current.every((document) => document.id !== target.id)) throw new Error("Le document n’est plus ouvert ; aucune zone créée.");
-                dispatchPdfEdits({ type: "batch", documentId: target.id, add: edits });
-                setSelectedEditId(null);
-                return edits.length;
-              }} />
+          ) : workspaceMode === "read" && activeDocument && redactionSearchOpen ? (
+            <RedactionSearchPanel key={activeDocument.id} index={redactionIndex} total={activeDocument.pageCount}
+              sourcePages={redactionSourcePages} zones={redactionZones}
+              currentPage={activeOrganizationPlan?.pages[activePageNumber - 1]?.sourceDocumentId === activeDocument.id
+                ? activeOrganizationPlan.pages[activePageNumber - 1].sourcePageIndex + 1 : 0}
+              onNavigate={navigateToRedaction}
+              onClose={() => { setRedactionSearchDocumentId(null); setRedactionHit(null); }}
+              onCreate={addRedactions} />
           ) : workspaceMode === "read" && selectedPdfEdit?.type === "stamp" ? (
             <StampInspector edit={selectedPdfEdit} onUpdate={(edit, key) => updatePdfEdit(edit, key ? `${edit.id}:${key}` : undefined)} onFinish={(key) => finishPdfEditCoalescing(selectedPdfEdit.id, key)} onDelete={() => deletePdfEdit(selectedPdfEdit.id)} onDeleteGroup={selectedPdfEdit.purpose === "watermark" && selectedPdfEdit.groupId ? () => {
               if (!activeDocument) return;
@@ -6084,9 +6157,17 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
             <section className="properties-panel__empty"><strong>Masquage visuel (réversible)</strong><p>Ce masque ne supprime pas les informations : elles peuvent être copiées ou récupérées. Pour cacher des données sensibles, utiliser Biffage sécurisé.</p><p>Tracez un rectangle ; ajustez ensuite ses propriétés.</p></section>
           ) : workspaceMode === "read" && (activeEditingTool === "redaction" || selectedPdfEdit?.type === "redaction") ? (
             <section className="properties-panel__empty" aria-label="Biffage sécurisé">
-              <strong>Biffage sécurisé · En attente</strong>
-              <button type="button" onClick={() => { if (!activeDocument) return; if (activeOrganizationPlan?.pages.some((page) => page.sourceDocumentId !== activeDocument.id)) { setExportFeedback({ kind: "error", message: "Recherche de biffage : ouvrez chaque PDF source avant la composition multi-document." }); return; } setRedactionSearchDocumentId(activeDocument.id); updatePdfSearchOptions({ geometryProof: true }); openPdfSearch(); }}>Rechercher et biffer…</button>
-              <p>Tracez des rectangles. Le biffage ne devient irréversible que dans le PDF exporté.</p>
+              <strong>Biffage sécurisé</strong>
+              <button type="button" onClick={() => { closePdfSearch(); setActiveEditingTool("redaction"); setRedactionSearchDocumentId(activeDocument?.id ?? null); }}>Rechercher et biffer…</button>
+              <button type="button" aria-pressed={redactionTextActive} onClick={() => {
+                setActiveEditingTool("redaction");
+                setRedactionTextDocumentId(redactionTextActive ? null : activeDocument?.id ?? null);
+              }}>{redactionTextActive ? "Tracer une zone" : "Sélectionner le texte à biffer"}</button>
+              {redactionTextActive && !redactionIndex.complete && !redactionIndex.error ? <p role="status">Analyse du texte et OCR · {redactionIndex.scanned}/{activeDocument?.pageCount} pages</p> : null}
+              {redactionTextActive && redactionIndex.error ? <p role="alert">{redactionIndex.error}</p> : null}
+              {redactionTextActive && [...redactionIndex.pages.values()].some((page) => page.issue) ?
+                <p role="status">OCR à vérifier, pages source {[...redactionIndex.pages.values()].filter((page) => page.issue).map((page) => page.page).join(", ")}.</p> : null}
+              <p>{redactionTextActive ? "Glissez sur le passage ou double-cliquez sur un mot." : "Tracez un rectangle."} La suppression définitive s’effectue lors de la génération du PDF.</p>
               <p>Le biffage par zones ne supprime pas les données ailleurs dans le document, notamment les métadonnées.</p>
               {selectedPdfEdit?.type === "redaction" ? <button type="button" onClick={() => deletePdfEdit(selectedPdfEdit.id)}>Supprimer le biffage</button> : null}
             </section>
@@ -6201,6 +6282,24 @@ export function App({ backendUrl = getWebBackendBaseUrl() }: AppProps = {}) {
               setTextMarkupSelection(null);
               window.getSelection()?.removeAllRanges();
             }}><ToolbarIcon name="link" /></button>
+          <button type="button" disabled={textMarkupSelection.rects.length > 500} onClick={() => {
+            if (!activeDocument) return;
+            const { page, rects } = textMarkupSelection;
+            setPendingComment({ documentId: activeDocument.id, page, rect: coveringRect(rects), rects });
+            setCommentDraft("");
+            setCommentAuthorDraft(lastCommentAuthor);
+            setTextMarkupSelection(null);
+            window.getSelection()?.removeAllRanges();
+          }}>Commenter</button>
+          {activeDocument?.media?.kind !== "image" ? <button type="button" onClick={() => {
+            const { page, rects } = textMarkupSelection;
+            redactSelection(page, rects.map((box) => {
+              const inset = Math.min(0.1, (box.x1 - box.x0) / 4, (box.y1 - box.y0) / 4);
+              return { x0: box.x0 + inset, y0: box.y0 + inset, x1: box.x1 - inset, y1: box.y1 - inset };
+            }));
+            setTextMarkupSelection(null);
+            window.getSelection()?.removeAllRanges();
+          }}>Biffer</button> : null}
           <ColorPicker compact label="Couleur de l'annotation" value={textMarkupColor} onChange={setTextMarkupColor} />
         </div>, document.body) : null}
 

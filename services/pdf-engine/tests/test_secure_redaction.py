@@ -134,15 +134,13 @@ def test_shared_image_refused():
 
 
 @pytest.mark.parametrize(
-    "kind", ["annotation", "form", "layer", "attachment", "alternative"]
+    "kind", ["form", "layer", "attachment", "alternative"]
 )
 def test_complex_sources_fail_closed(kind):
     with fitz.open() as doc:
         page = doc.new_page(width=400, height=400)
         page.insert_text((40, 110), SECRET)
-        if kind == "annotation":
-            page.add_text_annot((40, 100), SECRET)
-        elif kind == "form":
+        if kind == "form":
             widget = fitz.Widget()
             widget.field_name = "private"
             widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
@@ -250,3 +248,22 @@ def test_image_soft_mask_under_zone_is_refused():
     with pytest.raises(HTTPException) as error:
         export(source, [zone()])
     assert "transparence" in error.value.detail
+
+
+def test_touched_annotation_objects_are_removed_and_other_notes_remain():
+    with fitz.open() as doc:
+        page = doc.new_page(width=400, height=400)
+        page.insert_text((40, 110), SECRET)
+        private = page.add_text_annot((40, 100), SECRET)
+        private.set_popup(fitz.Rect(100, 80, 220, 150))
+        page.add_text_annot((40, 220), "PUBLIC_NOTE")
+        source = doc.tobytes()
+    output = export(source, [zone()])
+    with fitz.open(stream=output, filetype="pdf") as doc:
+        page = doc[0]
+        assert SECRET not in page.get_text()
+        assert [annot.info["content"] for annot in page.annots()] == ["PUBLIC_NOTE"]
+        for xref in range(1, doc.xref_length()):
+            assert SECRET not in doc.xref_object(xref)
+            if doc.xref_is_stream(xref):
+                assert SECRET.encode().hex().encode() not in doc.xref_stream(xref).lower()

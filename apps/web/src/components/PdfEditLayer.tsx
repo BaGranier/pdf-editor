@@ -325,11 +325,9 @@ export function PdfEditLayer({
 
         if (edit.type === "redaction") {
           return <div key={edit.id} className="pdf-edit-object" style={{ zIndex: 10000 + order }}>
-            <ShapeEditBlock edit={{ ...edit, type: "shape", shapeType: "rectangle", style: { strokeColor: "#dc2626", strokeWidth: 2, fillColor: "#111111", opacity: 0.65 } }}
-              label={`Biffage en attente page ${edit.page}`} viewport={viewport} selected={edit.id === selectedEditId}
-              onSelect={() => onSelect(edit.id)} onMove={(rect) => onUpdate({ ...edit, rect })}>
-              <span className="pdf-redaction-label">En attente</span>
-            </ShapeEditBlock>
+            <ShapeEditBlock edit={{ ...edit, type: "shape", shapeType: "rectangle", style: { strokeColor: "#000000", strokeWidth: 0, fillColor: "#000000", opacity: 1 } }}
+              label={`Biffage page ${edit.page}`} viewport={viewport} selected={edit.id === selectedEditId}
+              onSelect={() => onSelect(edit.id)} onMove={(rect) => onUpdate({ ...edit, rect })} />
           </div>;
         }
 

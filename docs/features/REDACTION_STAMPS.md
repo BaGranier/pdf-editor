@@ -2,46 +2,28 @@
 
 ## Inspection et architecture
 
-Inspection initiale : branche `agent/20261116T122234979691Z`, HEAD `293f064`,
-worktree propre. Aucun fichier local préexistant à préserver. Aucun nouvel endpoint
-ni dépendance. Les objets `PdfEdit` sont persistés avec le document dans IndexedDB ;
-`pdfEditsReducer` gère révisions, dirty state et undo/redo. Les déplacements et
-redimensionnements utilisent les helpers existants et valident au relâchement.
-Le viewport PDF.js convertit les coordonnées écran en points PDF natifs (origine
-bas gauche, CropBox comprise), indépendamment du zoom et du DPR. L'export multipart
-unique compose les pages, applique les éditions, puis finalise le PDF. Tauri
-utilise ce même contrat et les dialogues natifs.
+Les objets d’édition sont persistés avec le document. Les zones groupées partagent
+une étape d’annulation et de rétablissement. Le viewport PDF.js convertit les
+coordonnées écran en points PDF, indépendamment du zoom et de la rotation.
 
 ## Biffage
 
-« Biffer » crée des rectangles **en attente**, déplaçables et redimensionnables.
-Le biffage ne devient irréversible que dans le PDF exporté. Le texte barré existant
-reste un marquage visuel et n'efface aucune donnée. L'export demande confirmation,
-et le biffage est appliqué après toutes les éditions, avant compression/chiffrement.
-Sur desktop, un biffage passe systématiquement par Enregistrer sous afin de garder
-le fichier source. Les zones restent éditables dans l'état de travail original.
+« Biffer » permet de tracer une zone, de sélectionner du texte ou de rechercher
+des occurrences. Les zones validées s’affichent en noir. La suppression du contenu
+intervient lors de la génération du PDF. Sur Desktop, les trois commandes de
+sauvegarde demandent une destination distincte lorsque le document est biffé.
 
-PyMuPDF verrouillé en 1.26.3 : `add_redact_annot`, `apply_redactions` avec suppression
-du texte, remplacement des pixels d'images, suppression des tracés vectoriels
-**touchés** (le tracé entier peut disparaître). Nettoyage des ressources de pages
-et réécriture complète `garbage=4, clean=True, deflate=True, incremental=False`.
-Aucune rasterisation globale ni sauvegarde incrémentale.
+Le moteur applique le biffage après la composition et les éditions. Il supprime le
+texte, remplace les pixels concernés et retire les tracés vectoriels intersectés
+dans leur intégralité. Il supprime aussi les annotations et liens touchés. Il
+nettoie les ressources, réécrit le fichier dans son intégralité et rouvre le PDF
+pour rechercher du texte résiduel dans les zones. Une erreur arrête la génération.
 
-Périmètre conservateur : l'export avec biffage refuse les PDF réparés/chiffrés,
-annotations (y compris liens), formulaires et signatures numériques, calques
-optionnels, contenu alternatif/tagué, pièces jointes et scripts détectés.
-Les images partagées, inline ou avec masque de transparence touchées sont également refusées : une autre
-occurrence pourrait exposer les pixels originaux. Les commentaires et deltas de
-formulaires ajoutés sont refusés avec un biffage. Les erreurs sont explicites.
-Aucune promesse de conserver une signature cryptographique après modification.
-
-Le prévol indique les pages de sortie à contrôler. Les métadonnées, les pièces
-jointes et les informations hors zones restent hors du périmètre de suppression
-garanti et peuvent subsister dans une sortie acceptée. L'utilisateur doit choisir
-toutes les zones nécessaires. La sélection native multiligne reste une évolution distincte ;
-le MVP utilise le tracé rectangulaire. Agrandir les rectangles pour inclure les
-caractères de bordure. Le moteur retire tout caractère dont la boîte intersecte
-une zone, et non uniquement sa portion visuelle.
+Le moteur refuse les PDF réparés ou chiffrés, les formulaires, les signatures,
+les calques, les représentations alternatives et les pièces jointes. Les formes
+XObject sources sur une page biffée et les images partagées, inline ou masquées
+touchées sont également refusées. Le biffage porte sur les zones choisies.
+Les informations situées ailleurs dans le document peuvent rester dans la copie.
 
 ## Qualification
 
@@ -112,27 +94,20 @@ texte des limites de taille fixe ci-dessus ne concerne plus ce style nouveau.
 
 ## Rechercher et biffer
 
-Depuis Biffer, « Rechercher et biffer… » partage le matcher et les surbrillances
-Ctrl+F : casse, mot entier, page courante ou document, sélection individuelle,
-de page ou de toutes les occurrences. Une confirmation précède la création en
-masse ; la recherche et les sélections ne rendent pas dirty. La création forme
-une seule étape d'historique. Les zones déjà couvertes sont dédupliquées.
+« Rechercher et biffer… » permet de choisir la casse, les mots entiers, la portée
+et les occurrences. La validation groupée crée une seule entrée d’historique.
+L’index conserve les coordonnées des glyphes natifs, du texte ajouté ou modifié
+et de l’OCR des zones visuelles. L’interface indique la progression et les pages
+où la reconnaissance est à vérifier ou a échoué. Les recherches successives
+réutilisent l’index du fichier ouvert et les changements de texte réindexent les
+pages éditées. La couche OCR ajoutée pour la recherche reste dans l’index local.
 
-La recherche utilise le texte du PDF source, pas les objets ajoutés dans l'éditeur.
-NFC et casse Unicode sont gérés ; les accents restent significatifs. Les espaces
-et fins de ligne PDF.js sont équivalents pour une expression. Pas de regex, de
-recherche multi-termes ni de décomposition automatique des ligatures.
-Un scan sans couche texte ne donne aucun résultat : utiliser le biffage manuel ou
-l'OCR existant puis rouvrir sa copie. Limite de préparation : 2 000 occurrences/zones.
+« Sélectionner le texte à biffer » permet de glisser sur un passage ou de
+double-cliquer sur un mot dans une page indexée. Dans le mode Sélection, la barre
+du texte natif propose également « Biffer » et « Commenter ». Un commentaire
+ancré est conservé dans le PDF sous forme d’annotation de surbrillance avec note.
 
-La nouvelle route locale `/pdf/redaction/resolve` ne réimplémente pas la recherche :
-elle vérifie les offsets sélectionnés et l'empreinte SHA-256 de la séquence textuelle
-contre les caractères natifs PyMuPDF. Elle produit des rectangles natifs par ligne,
-avec marge de 0,5 pt, sans exploiter les rectangles DOM des surbrillances.
-Toute divergence d'ordre/d'encodage, géométrie vide ou page invalide fait échouer
-le lot entier. Les séquences décomposées complexes et les caractères hors BMP
-sont refusés pour cette résolution. Les zones restent ajustables dans le travail.
-
-L'export réutilise la suppression réelle finale et toutes ses restrictions de
-sécurité. Cette recherche ne détecte pas tous les secrets, ne garantit pas la
-qualité d'une couche OCR et n'anonymise pas les métadonnées ou contenus ailleurs.
+L’index accepte les PDF jusqu’à 100 Mio et 2 000 pages. Une opération de biffage
+accepte jusqu’à 2 000 zones. Les accents restent significatifs. La reconnaissance
+se limite aux langues française et anglaise disponibles et porte sur les images
+présentes dans le PDF source.

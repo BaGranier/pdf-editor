@@ -155,6 +155,7 @@ export type TextMarkupEdit = BasePdfEdit & {
 export type PdfCommentEdit = BasePdfEdit & {
   type: "comment";
   commentType: PdfCommentType;
+  rects?: PdfRect[];
   content: string;
   author?: string;
   createdAt?: string;

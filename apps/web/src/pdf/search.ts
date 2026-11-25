@@ -1,4 +1,7 @@
+import type { PdfRect } from "../editing/types";
+
 export type PdfSearchHit = {
+  rects?: PdfRect[];
   id: string;
   pageNumber: number;
   context: string;

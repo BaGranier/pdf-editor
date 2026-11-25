@@ -65,11 +65,11 @@ test("tiled watermark: mixed pages, live preview, history, persistence, zoom and
   await page.getByLabel("Texte du filigrane", { exact: true }).fill("Test");
   await page.getByLabel("Pages du filigrane", { exact: true }).selectOption("all");
   await page.getByLabel("Densité du filigrane", { exact: true }).selectOption("Discret");
-  await expect(page.getByRole("button", { name: "Appliquer le filigrane", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Valider le filigrane", exact: true })).toBeEnabled();
   const mark = page.getByLabel("Filigrane page 1", { exact: true });
   expect(await mark.locator("text").count()).toBeGreaterThan(20);
   expect(JSON.stringify(await getStoredDocuments(page))).not.toContain('"watermarkMode":"tiled"');
-  await page.getByRole("button", { name: "Appliquer le filigrane", exact: true }).click();
+  await page.getByRole("button", { name: "Valider le filigrane", exact: true }).click();
   await page.getByLabel("Opacité du filigrane", { exact: true }).press("ArrowRight");
   await expect(page.getByLabel("Opacité du filigrane", { exact: true })).toHaveValue("26");
   await page.getByRole("button", { name: "Annuler", exact: true }).click();
@@ -147,8 +147,8 @@ test.describe("high DPI", () => {
     expect(await page.evaluate(() => window.devicePixelRatio)).toBe(2);
     await chooseNavigationTool(page, "Filigrane");
     await page.getByLabel("Mode du filigrane", { exact: true }).selectOption("tiled");
-    await expect(page.getByRole("button", { name: "Appliquer le filigrane", exact: true })).toBeEnabled();
-    await page.getByRole("button", { name: "Appliquer le filigrane", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Valider le filigrane", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Valider le filigrane", exact: true }).click();
     const mark = page.getByLabel("Filigrane page 1", { exact: true });
     const positions = await mark.locator("text").evaluateAll((nodes) => nodes.map((node) => [node.getAttribute("x"), node.getAttribute("y")]));
     expect(positions.length).toBeGreaterThan(10);

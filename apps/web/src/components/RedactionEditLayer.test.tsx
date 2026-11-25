@@ -14,8 +14,8 @@ describe("pending redaction", () => {
     const update = vi.fn();
     const select = vi.fn();
     render(<PdfEditLayer pageNumber={1} viewport={viewport} edits={[{ id: "r", type: "redaction", page: 1, rect: { x0: 30, y0: 260, x1: 210, y1: 310 } }]} images={{}} selectedEditId="r" activeTool="select" freehandStyle={{ color: "#000000", opacity: 1, strokeWidth: 1 }} pendingSignatureImage={null} onAddRedaction={vi.fn()} onAddText={vi.fn()} onAddShape={vi.fn()} onPlaceSignature={vi.fn()} onAddFreehand={vi.fn()} onStartComment={vi.fn()} onSelect={select} onUpdate={update} onDelete={vi.fn()} />);
-    const zone = screen.getByLabelText("Biffage en attente page 1");
-    expect(screen.getByText("En attente")).toBeVisible();
+    const zone = screen.getByLabelText("Biffage page 1");
+    expect(screen.queryByText("En attente")).toBeNull();
     fireEvent.mouseDown(zone, { button: 0, clientX: 30, clientY: 90 });
     fireEvent.mouseMove(window, { clientX: 40, clientY: 100 });
     expect(update).not.toHaveBeenCalled();

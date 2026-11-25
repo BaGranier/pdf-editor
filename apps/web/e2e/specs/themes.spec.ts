@@ -86,3 +86,38 @@ test("six palettes préservent la page, l’outil, les couleurs PDF et les préf
   await openPdf(page, fixtures.fivePages);
   await expect(selector).toHaveValue("sand");
 });
+
+test("crée, prévisualise, duplique et conserve plusieurs thèmes personnalisés", async ({ page }) => {
+  await openApp(page);
+  const select = page.getByRole("combobox", { name: "Thème de l’interface" });
+  await select.selectOption("forest");
+  const open = page.getByRole("button", { name: "Personnaliser le thème" });
+  await open.click();
+  const editor = page.getByRole("region", { name: "Personnaliser le thème" });
+  await expect(editor.getByLabel("Thème de base")).toHaveValue("forest");
+  await editor.getByLabel("Nom", { exact: true }).fill("Recette");
+  await editor.getByLabel("Accentuation").fill("#136843");
+  const accent = () => page.locator("html").evaluate((root) => getComputedStyle(root).getPropertyValue("--accent").trim());
+  await expect.poll(accent).toBe("#136843");
+  await editor.getByRole("button", { name: "Enregistrer le thème" }).click();
+  await page.reload();
+  await expect(select.locator("option:checked")).toHaveText("Recette");
+  await expect.poll(accent).toBe("#136843");
+  await open.click();
+  await editor.getByRole("button", { name: "Dupliquer" }).click();
+  await editor.getByLabel("Nom", { exact: true }).fill("Deuxième");
+  await editor.getByRole("button", { name: "Enregistrer le thème" }).click();
+  await expect(select.locator("option:checked")).toHaveText("Deuxième");
+  await expect(select.locator("option")).toHaveCount(8);
+  await open.click();
+  await editor.getByLabel("Fond", { exact: true }).fill("#ffffff");
+  await editor.getByRole("button", { name: "Annuler" }).click();
+  await open.click();
+  await expect(editor.getByLabel("Fond", { exact: true })).not.toHaveValue("#ffffff");
+  await editor.getByRole("button", { name: "Supprimer le thème" }).click();
+  await expect(select).toHaveValue("forest");
+  await select.selectOption({ label: "Recette" });
+  await expect.poll(accent).toBe("#136843");
+  await select.selectOption("forest");
+  await expect.poll(accent).not.toBe("#136843");
+});

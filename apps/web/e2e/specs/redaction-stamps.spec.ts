@@ -23,12 +23,12 @@ test("redaction stamp: two pages, history, persistence and secure copy", async (
     await page.mouse.down();
     await page.mouse.move(box.x + 220 * scale, box.y + 140 * scale, { steps: 5 });
     await page.mouse.up();
-    await expect(page.getByLabel(`Biffage en attente page ${number}`, { exact: true })).toBeVisible();
+    await expect(page.getByLabel(`Biffage page ${number}`, { exact: true })).toBeVisible();
   }
   await page.getByRole("button", { name: "Annuler", exact: true }).click();
-  await expect(page.getByLabel("Biffage en attente page 2", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Biffage page 2", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Rétablir", exact: true }).click();
-  await expect(page.getByLabel("Biffage en attente page 2", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Biffage page 2", { exact: true })).toBeVisible();
   await chooseNavigationTool(page, "Tampon");
   await page.getByLabel("Tampon prédéfini").selectOption("APPROUVÉ");
   const layer = page.getByLabel("Couche d'édition de la page 2", { exact: true });
@@ -53,8 +53,8 @@ test("redaction stamp: two pages, history, persistence and secure copy", async (
   await expect.poll(async () => JSON.stringify(await getStoredDocuments(page))).toContain('"rotation":15');
   await page.reload();
   await expect(page.getByLabel("Tampon page 2", { exact: true })).toHaveCount(1);
-  await expect(page.getByLabel("Biffage en attente page 1", { exact: true })).toHaveCount(1);
-  const pendingZone = page.getByLabel("Biffage en attente page 1", { exact: true });
+  await expect(page.getByLabel("Biffage page 1", { exact: true })).toHaveCount(1);
+  const pendingZone = page.getByLabel("Biffage page 1", { exact: true });
   for (const [button, clicks] of [["Réduire le zoom", 5], ["Augmenter le zoom", 10], ["Réduire le zoom", 5]] as const) {
     for (let i = 0; i < clicks; i++) await page.getByRole("button", { name: button, exact: true }).click();
     await pendingZone.scrollIntoViewIfNeeded();

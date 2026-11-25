@@ -1,21 +1,24 @@
 import { isEditableKeyboardTarget } from "../commands/appShortcuts";
 import { WatermarkPatternControls } from "./WatermarkPatternControls";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DEFAULT_WATERMARK, WATERMARK_PRESETS, type WatermarkDraft } from "../editing/watermarks";
 import { ColorPicker } from "./ColorPicker";
 import { PropertySlider } from "./PropertySlider";
 
-export function WatermarkComposer({ onPreview, onApply, onClear, onCancel, previewReady }: { onPreview: (draft: WatermarkDraft) => Promise<void>; onApply: () => void; onClear: () => void; onCancel: () => void; previewReady: boolean }) {
+export function WatermarkComposer({ onPreview, onApply, onClear, onCancel, previewReady, currentPage }: { onPreview: (draft: WatermarkDraft, page?: number) => Promise<void>; onApply: () => void; onClear: () => void; onCancel: () => void; previewReady: boolean; currentPage: number }) {
   const [draft, setDraft] = useState(DEFAULT_WATERMARK), [error, setError] = useState(""), [busy, setBusy] = useState(false);
+  const scopedPage = draft.scope === "page" ? currentPage : undefined;
+  const previewRequest = useRef(0);
   const update = (patch: Partial<WatermarkDraft>) => { setDraft((current) => ({ ...current, ...patch })); setError(""); onClear(); };
   useEffect(() => {
-    if (draft.mode !== "tiled") return;
-    let cancelled = false;
+    onClear();
+    const request = ++previewRequest.current;
     const timeout = window.setTimeout(() => {
-      void onPreview(draft).then(() => { if (!cancelled) setError(""); }).catch((error: unknown) => { if (!cancelled) { onClear(); setError(error instanceof Error ? error.message : "Aperçu impossible."); } });
+      if (request !== previewRequest.current) return;
+      void onPreview(draft, scopedPage).then(() => { if (request === previewRequest.current) setError(""); }).catch((error: unknown) => { if (request === previewRequest.current) { onClear(); setError(error instanceof Error ? error.message : "Aperçu impossible."); } });
     }, 150);
-    return () => { cancelled = true; window.clearTimeout(timeout); };
-  }, [draft, onPreview, onClear]);
+    return () => { previewRequest.current++; window.clearTimeout(timeout); onClear(); };
+  }, [draft, scopedPage, onPreview, onClear]);
   return <section className="shape-edit-toolbar" aria-label="Créer un filigrane" onKeyDown={(event) => { if (event.key === "Escape" && !isEditableKeyboardTarget(event.target)) { event.stopPropagation(); onCancel(); } }}>
     <strong>Filigrane · Aperçu non enregistré</strong>
     <p>Marquage visuel non destructif : les informations d’origine restent récupérables.</p>
@@ -28,8 +31,8 @@ export function WatermarkComposer({ onPreview, onApply, onClear, onCancel, previ
     <PropertySlider signed label="Rotation du filigrane" value={draft.rotation} min={-180} max={180} step={1} unit="°" color={draft.color} previewLabel="Rotation" onChange={(rotation) => update({ rotation })} onCommit={() => undefined} />
     <label>Pages du filigrane<select aria-label="Pages du filigrane" value={draft.scope} onChange={(event) => update({ scope: event.target.value as WatermarkDraft["scope"] })}><option value="page">Page actuelle</option><option value="all">Toutes les pages</option><option value="range">Plage de pages</option></select></label>
     {draft.scope === "range" ? <label>Plage<input aria-label="Plage du filigrane" placeholder="1-3, 5, 8-10" value={draft.range} onChange={(event) => update({ range: event.target.value })} /></label> : null}
-    <button type="button" disabled={busy || !draft.text.trim()} onClick={async () => { setBusy(true); setError(""); try { await onPreview(draft); } catch (error) { setError(error instanceof Error ? error.message : "Aperçu impossible."); } finally { setBusy(false); } }}>Prévisualiser le filigrane</button>
-    <button type="button" disabled={busy || !previewReady} onClick={onApply}>Appliquer le filigrane</button>
+    <button type="button" disabled={busy || !draft.text.trim()} onClick={async () => { setBusy(true); setError(""); try { previewRequest.current++; await onPreview(draft, scopedPage); } catch (error) { setError(error instanceof Error ? error.message : "Aperçu impossible."); } finally { setBusy(false); } }}>Prévisualiser le filigrane</button>
+    <button type="button" disabled={busy || !previewReady} onClick={onApply}>Valider le filigrane</button>
     <button type="button" onClick={onCancel}>Annuler le filigrane</button>
     {error ? <p role="alert">{error}</p> : null}
     <p>Les polices, taille/échelle et décalages sont modifiables dans l’inspecteur après insertion. Les changements d’un groupe concernent toutes ses pages.</p>

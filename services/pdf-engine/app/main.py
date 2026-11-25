@@ -18,7 +18,7 @@ from urllib.parse import quote
 import fitz
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import (
     BaseModel,
     Field,
@@ -36,6 +36,12 @@ from app.image_documents import make_png_mask_portable, router as image_document
 from app.stamp_layout import layout_stamp
 from app.watermark_tiling import layout_watermark_tiles
 from app.stamp_font_metrics import write_stamp_unicode_map
+from app.redaction_index import (
+    recognize_page,
+    redaction_languages,
+    text_lines,
+    without_text_overlap,
+)
 from app.redaction_geometry import ResolveMatches, resolve_matches
 from app.export_options import ExportOptions, finalize_export
 from app.conversion import router as conversion_router
@@ -277,6 +283,7 @@ class PdfCommentEdit(BaseModel):
     page: int = Field(ge=1)
     rect: PdfEditRect
     comment_type: Literal["text"] = Field(default="text", alias="commentType")
+    rects: list[PdfEditRect] = Field(default_factory=list, max_length=500)
     content: str = Field(min_length=1, max_length=10_000)
     author: str | None = Field(default=None, max_length=200)
     created_at: str | None = Field(default=None, alias="createdAt")
@@ -1627,12 +1634,16 @@ def apply_visual_edits(
                     elif isinstance(edit, AddTextEdit):
                         if not edit.text:
                             continue
+                        rotation = page.rotation
+                        page.set_rotation(0)
+                        page_rect = pdf_rect * page.transformation_matrix
                         fontname = _resolve_insert_font(
                             page, edit.style, edit.text, font_resources
                         )
                         rendering = _insert_text_best_effort(
                             page, page_rect, edit, fontname
                         )
+                        page.set_rotation(rotation)
                         if rendering != "exact":
                             warning = ExportWarning(
                                 editId=edit.id,
@@ -1694,7 +1705,9 @@ def apply_visual_edits(
                             keep_proportion=not isinstance(edit, ImageEdit),
                             overlay=True,
                         )
-                        if isinstance(edit, ImageEdit) and stream.startswith(b"\x89PNG"):
+                        if isinstance(edit, ImageEdit) and stream.startswith(
+                            b"\x89PNG"
+                        ):
                             make_png_mask_portable(document, image_xref)
                     elif isinstance(edit, TextMarkupEdit):
                         # PDF annotations always paint above page content. Local
@@ -1727,6 +1740,24 @@ def apply_visual_edits(
                                     overlay=True,
                                 )
                     elif isinstance(edit, PdfCommentEdit):
+                        if edit.rects:
+                            rotation = page.rotation
+                            page.set_rotation(0)
+                            boxes = [
+                                fitz.Rect(rect.x0, rect.y0, rect.x1, rect.y1)
+                                * page.transformation_matrix
+                                for rect in edit.rects
+                            ]
+                            annotation = page.add_highlight_annot(boxes)
+                            annotation.set_info(
+                                title=edit.author or "",
+                                content=edit.content,
+                                creationDate=edit.created_at,
+                                modDate=edit.modified_at,
+                            )
+                            annotation.update()
+                            page.set_rotation(rotation)
+                            continue
                         # Ordered vector marker; retain comment metadata without a
                         # second annotation appearance above all page content.
                         page.draw_rect(
@@ -2185,7 +2216,9 @@ def _redaction_error(reason: str) -> HTTPException:
     return HTTPException(status_code=422, detail=f"Biffage sécurisé refusé : {reason}")
 
 
-def _check_redaction_source(source: bytes) -> None:
+def _check_redaction_source(
+    source: bytes, target_pages: set[int] | None = None
+) -> None:
     """Conservative qualification boundary, checked BEFORE page composition.
 
     Metadata and content outside the zones are not anonymized. Reject alternate
@@ -2197,12 +2230,36 @@ def _check_redaction_source(source: bytes) -> None:
             if document.is_encrypted or document.is_repaired:
                 raise _redaction_error("PDF chiffré ou réparé non pris en charge.")
             forbidden = re.compile(
-                r"/(?:Annots|AcroForm|FT|OCProperties|OC|ActualText|Alt|StructTreeRoot|"
+                r"/(?:AcroForm|FT|OCProperties|OC|ActualText|Alt|StructTreeRoot|"
                 r"EmbeddedFiles|Filespec|JavaScript|JS|AA|OpenAction|Collection|AF|"
-                r"RichMedia|XFA|PieceInfo)\b"
+                r"RichMedia|XFA|PieceInfo|IRT|Redact)\b"
             )
             content_streams: set[int] = set()
+            supported = {
+                fitz.PDF_ANNOT_TEXT,
+                fitz.PDF_ANNOT_FREE_TEXT,
+                fitz.PDF_ANNOT_HIGHLIGHT,
+                fitz.PDF_ANNOT_UNDERLINE,
+                fitz.PDF_ANNOT_STRIKE_OUT,
+                fitz.PDF_ANNOT_SQUIGGLY,
+                fitz.PDF_ANNOT_LINE,
+                fitz.PDF_ANNOT_SQUARE,
+                fitz.PDF_ANNOT_CIRCLE,
+                fitz.PDF_ANNOT_POLYGON,
+                fitz.PDF_ANNOT_POLY_LINE,
+                fitz.PDF_ANNOT_INK,
+            }
             for page in document:
+                if (
+                    target_pages
+                    and page.number + 1 in target_pages
+                    and page.get_xobjects()
+                ):
+                    raise _redaction_error(
+                        "objets de formulaire XObject dans une page source à biffer."
+                    )
+                if any(annot.type[0] not in supported for annot in page.annots() or ()):
+                    raise _redaction_error("type d’annotation non qualifié.")
                 content_streams.update(page.get_contents())
                 content_streams.update(item[0] for item in page.get_xobjects())
             for xref in range(1, document.xref_length()):
@@ -2255,6 +2312,8 @@ def _apply_secure_redactions(
     try:
         with fitz.open(stream=source, filetype="pdf") as document:
             image_uses: dict[int, int] = {}
+            replaced_images: set[int] = set()
+            verified_zones: dict[int, list[fitz.Rect]] = {}
             for page in document:
                 for image in page.get_image_info(xrefs=True):
                     xref = image["xref"]
@@ -2265,6 +2324,21 @@ def _apply_secure_redactions(
                 rotation = page.rotation
                 page.set_rotation(0)
                 rects = [_redaction_rect(page, edit) for edit in edits]
+                verified_zones[index] = rects
+                resources = document.xref_get_key(page.xref, "Resources")
+                if resources[0] == "xref":
+                    resource_xref = int(resources[1].split()[0])
+                    resources = ("dict", document.xref_object(resource_xref))
+                if re.search(r"/(?:Pattern|Shading)\b", resources[1]):
+                    raise _redaction_error("motifs ou ombrages sur une page à biffer.")
+                # Remove the annotation object and its popup, including any contents
+                # or appearance stream associated with a touched annotation.
+                for annot in list(page.annots() or ()):
+                    if any(annot.rect.intersects(rect) for rect in rects):
+                        page.delete_annot(annot)
+                for link in page.get_links():
+                    if any(link["from"].intersects(rect) for rect in rects):
+                        page.delete_link(link)
                 masked_images = {
                     item[0]
                     for item in page.get_images(full=True)
@@ -2281,22 +2355,44 @@ def _apply_secure_redactions(
                                 "image partagée ou inline sous une zone ; "
                                 "isolez cette image avant de biffer."
                             )
+                        replaced_images.add(image["xref"])
                 for rect in rects:
                     page.add_redact_annot(rect, fill=(0, 0, 0), cross_out=False)
-                page.apply_redactions(
+                if not page.apply_redactions(
                     images=fitz.PDF_REDACT_IMAGE_PIXELS,
                     graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,
                     text=fitz.PDF_REDACT_TEXT_REMOVE,
-                )
+                ):
+                    raise _redaction_error("les zones n’ont pas été appliquées.")
                 page.set_rotation(rotation)
             for page in document:
                 page.clean_contents(sanitize=True)
-            return document.tobytes(
-                garbage=4,
-                clean=True,
-                deflate=True,
-                incremental=False,
+                if replaced_images.intersection(
+                    image[0] for image in page.get_images(full=True)
+                ):
+                    raise _redaction_error("une image d’origine est encore référencée.")
+            page_count = document.page_count
+            output = document.tobytes(
+                garbage=2, clean=True, deflate=True, incremental=False
             )
+        with fitz.open(stream=output, filetype="pdf") as verified:
+            if verified.is_repaired or verified.page_count != page_count:
+                raise _redaction_error("le PDF réécrit ne peut pas être vérifié.")
+            for index, rects in verified_zones.items():
+                page = verified[index]
+                page.set_rotation(0)
+                inverse = ~page.transformation_matrix
+                pdf_zones = [rect * inverse for rect in rects]
+                for line in text_lines(page):
+                    for glyph, bounds in line:
+                        center = (fitz.Rect(bounds).tl + fitz.Rect(bounds).br) / 2
+                        if glyph.strip() and any(
+                            rect.contains(center) for rect in pdf_zones
+                        ):
+                            raise _redaction_error(
+                                f"du texte subsiste dans une zone de la page {index + 1}."
+                            )
+        return output
     except HTTPException:
         raise
     except (RuntimeError, ValueError) as error:
@@ -2336,10 +2432,16 @@ def export_organized_pdf(
                     status_code=422, detail="PDF source du tampon illisible."
                 ) from error
     if plan.redactions:
-        for source in sources.values():
-            _check_redaction_source(source)
-        if plan.comments or plan.form_values or plan.form_locks:
-            raise _redaction_error("commentaires ou formulaires ajoutés non qualifiés.")
+        for source_id, source in sources.items():
+            target_pages = {
+                edit.page
+                for edit in plan.redactions
+                if edit.source_document_id == source_id
+                or (edit.source_document_id is None and len(sources) == 1)
+            }
+            _check_redaction_source(source, target_pages)
+        if plan.form_values or plan.form_locks:
+            raise _redaction_error("formulaires ajoutés non qualifiés.")
 
     readers = {
         document_id: read_source_pdf(source) for document_id, source in sources.items()
@@ -2799,6 +2901,112 @@ async def extract_pdf_annotations(
         raise HTTPException(
             status_code=422, detail="Les annotations du PDF sont illisibles."
         ) from error
+
+
+class RedactionIndexRequest(BaseModel):
+    edits: list[AddTextEdit] = Field(default_factory=list, max_length=2000)
+    native_text_edits: list[NativeTextEdit] = Field(
+        default_factory=list, alias="nativeTextEdits", max_length=2000
+    )
+    font_resources: list[FontResourcePayload] = Field(
+        default_factory=list, alias="fontResources", max_length=32
+    )
+    edited_only: bool = Field(default=False, alias="editedOnly")
+
+
+@app.post("/pdf/redaction/index")
+async def index_redaction_text(
+    file: Annotated[UploadFile, File(description="PDF source")],
+    options: Annotated[str, Form()] = "{}",
+) -> StreamingResponse:
+    try:
+        request = RedactionIndexRequest.model_validate_json(options)
+    except ValidationError as error:
+        raise HTTPException(422, "Paramètres d’indexation invalides.") from error
+    source = await file.read(100 * 1024 * 1024 + 1)
+    if len(source) > 100 * 1024 * 1024:
+        raise HTTPException(413, "L’indexation est limitée aux PDF de 100 Mio.")
+    by_page: dict[int, list[AddTextEdit]] = {}
+    native_by_page: dict[int, list[NativeTextEdit]] = {}
+    for edit in request.edits:
+        by_page.setdefault(edit.page - 1, []).append(edit)
+    for edit in request.native_text_edits:
+        native_by_page.setdefault(edit.page - 1, []).append(edit)
+
+    async def stream():
+        languages: str | None = None
+        with fitz.open(stream=source, filetype="pdf") as document:
+            indexes = (
+                sorted(by_page.keys() | native_by_page.keys())
+                if request.edited_only
+                else range(document.page_count)
+            )
+            for index in indexes:
+                page = document[index]
+                page.set_rotation(0)
+                native = text_lines(page)
+                ocr = []
+                issue = None
+                if not request.edited_only and (
+                    page.get_image_info() or (not native and page.get_drawings())
+                ):
+                    if languages is None:
+                        try:
+                            languages = await redaction_languages()
+                        except (OcrError, RuntimeError, ValueError):
+                            languages = ""
+                    try:
+                        if not languages:
+                            raise ValueError("OCR indisponible")
+                        recognized = await recognize_page(page, languages)
+                        ocr = without_text_overlap(recognized, native)
+                        if not recognized:
+                            issue = "aucun texte reconnu dans les zones visuelles"
+                        else:
+                            issue = "reconnaissance à vérifier"
+                    except (OcrError, OSError, RuntimeError, TimeoutError, ValueError):
+                        issue = "OCR indisponible ou en échec"
+                yield (
+                    json.dumps(
+                        {
+                            "page": index + 1,
+                            "native": native,
+                            "ocr": ocr,
+                            "issue": issue,
+                        },
+                        separators=(",", ":"),
+                    )
+                    + "\n"
+                )
+
+    try:
+        with fitz.open(stream=source, filetype="pdf") as document:
+            if any(
+                index >= document.page_count
+                for index in by_page.keys() | native_by_page.keys()
+            ):
+                raise ValueError("Invalid page")
+            if (
+                document.is_encrypted
+                or document.is_repaired
+                or document.page_count > 2000
+            ):
+                raise ValueError("PDF unsupported")
+    except (RuntimeError, ValueError) as error:
+        raise HTTPException(
+            422, "PDF illisible, protégé ou de plus de 2 000 pages."
+        ) from error
+    if request.edited_only:
+        source = apply_visual_edits(
+            source,
+            by_page,
+            {},
+            {},
+            native_text_edits_by_output_page=native_by_page,
+            font_resources=_decode_font_resources(request.font_resources),
+        )
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
 
 
 @app.post("/pdf/redaction/resolve")

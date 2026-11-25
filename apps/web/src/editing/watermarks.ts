@@ -3,7 +3,7 @@ import type { PdfRect, StampEdit } from "./types";
 
 export const WATERMARK_PRESETS = ["CONFIDENTIEL", "BROUILLON", "COPIE", "NON VALIDÉ", "POUR INFORMATION", "ARCHIVÉ"] as const;
 export type WatermarkDraft = { mode?: "single" | "tiled"; tile?: StampEdit["tile"]; fontSize?: number; text: string; color: string; opacity: number; rotation: number; scale: number; fontFamily: StampEdit["fontFamily"]; scope: "page" | "all" | "range"; range: string };
-export const DEFAULT_WATERMARK: WatermarkDraft = { text: "CONFIDENTIEL", color: "#b91c1c", opacity: 0.25, rotation: -45, scale: 0.9, fontFamily: "Helvetica", scope: "page", range: "" };
+export const DEFAULT_WATERMARK: WatermarkDraft = { text: "CONFIDENTIEL", color: "#b91c1c", opacity: 0.25, rotation: -45, scale: 0.9, fontFamily: "Helvetica", scope: "all", range: "" };
 
 /** Display page numbers; expanded only after syntax and document bounds checks. */
 export function watermarkPages(scope: WatermarkDraft["scope"], range: string, currentPage: number, count: number): number[] {
@@ -23,6 +23,9 @@ export function watermarkPages(scope: WatermarkDraft["scope"], range: string, cu
 }
 
 export function createWatermark(page: number, rect: PdfRect, draft: WatermarkDraft, groupId: string): StampEdit {
+  if (!draft.text.trim() || [...draft.text].some((char) => char !== "\n" && (char.charCodeAt(0) < 32 || (char.charCodeAt(0) >= 127 && char.charCodeAt(0) < 160) || char.charCodeAt(0) > 255))) {
+    throw new Error("Utilisez du texte Latin-1 imprimable pour le filigrane.");
+  }
   const edit: StampEdit = { id: `watermark-${crypto.randomUUID()}`, type: "stamp", purpose: "watermark", groupId, page, rect, layoutVersion: 2,
     text: draft.text, color: draft.color, opacity: draft.opacity, rotation: draft.rotation, watermarkScale: draft.scale,
     fontFamily: draft.fontFamily, fontSize: 72, fontSizeMode: "fit", align: "center", border: false, fillOpacity: 0, paddingRatio: 0.04, offsetX: 0, offsetY: 0,
