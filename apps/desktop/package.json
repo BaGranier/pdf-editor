@@ -1,6 +1,6 @@
 {
   "name": "@pdf-editor-mvp/desktop",
-  "version": "0.3.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "release:sources": "uv run --directory ../.. --project services/pdf-engine python -m scripts.redistribution kit",

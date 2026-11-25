@@ -218,3 +218,12 @@ MVP-004 reste une référence historique.
 - Suppression PDF après composition, contrôle des zones et conservation des annotations compatibles hors zone.
 - Commentaire ancré au texte sélectionné et palettes personnalisées persistantes.
 - Candidate Windows 0.3.0. Recette sur VM propre à consigner séparément.
+
+
+### 2026-11-25 — Recette expérimentale Windows 0.2.0
+
+- Sélection dans le rail, actions par icône et commentaires ancrés dans l’inspecteur.
+- Paramètres du rail pour le thème, les préférences globales et la langue française ou anglaise des parcours concernés.
+- Panneau de biffage avec occurrences repliables et conservation du brouillon à la fermeture.
+- Reconstruction bornée des pages avec des Form XObjects touchés et des pages partageant leurs ressources.
+- Version de recette 0.2.0 et qualification sur VM Windows propre à consigner séparément.
