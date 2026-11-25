@@ -42,6 +42,15 @@ from app.redaction_index import (
     text_lines,
     without_text_overlap,
 )
+from app.redaction_forms import (
+    DPI,
+    MAX_PAGE_PIXELS,
+    MAX_TOTAL_PIXELS,
+    intersects_form,
+    rasterize_page,
+    related_raster_pages,
+    stream_digest,
+)
 from app.redaction_geometry import ResolveMatches, resolve_matches
 from app.export_options import ExportOptions, finalize_export
 from app.conversion import router as conversion_router
@@ -299,6 +308,7 @@ class PdfAnnotationResponse(BaseModel):
     rect: PdfEditRect
     content: str = ""
     appearance_hidden: bool = Field(default=False, alias="appearanceHidden")
+    rects: list[PdfEditRect] | None = None
     author: str | None = None
     created_at: str | None = Field(default=None, alias="createdAt")
     modified_at: str | None = Field(default=None, alias="modifiedAt")
@@ -694,6 +704,11 @@ class ExportWarning(BaseModel):
     edit_id: str = Field(alias="editId")
     page: int = Field(ge=1)
     rendering: Literal["expanded", "partial"]
+
+
+class RasterizedRedactionWarning(BaseModel):
+    type: Literal["redaction_rasterized"] = "redaction_rasterized"
+    page: int = Field(ge=1)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -1466,7 +1481,7 @@ def apply_visual_edits(
     text_edits_by_output_page: dict[int, list[AddTextEdit]],
     signature_edits_by_output_page: dict[int, list[SignatureEdit]],
     signature_images: dict[str, bytes],
-    export_warnings: list[ExportWarning] | None = None,
+    export_warnings: list[ExportWarning | RasterizedRedactionWarning] | None = None,
     shape_edits_by_output_page: dict[int, list[ShapeEdit]] | None = None,
     freehand_edits_by_output_page: dict[int, list[FreehandEdit]] | None = None,
     text_markup_edits_by_output_page: dict[int, list[TextMarkupEdit]] | None = None,
@@ -2216,9 +2231,7 @@ def _redaction_error(reason: str) -> HTTPException:
     return HTTPException(status_code=422, detail=f"Biffage sécurisé refusé : {reason}")
 
 
-def _check_redaction_source(
-    source: bytes, target_pages: set[int] | None = None
-) -> None:
+def _check_redaction_source(source: bytes) -> set[int]:
     """Conservative qualification boundary, checked BEFORE page composition.
 
     Metadata and content outside the zones are not anonymized. Reject alternate
@@ -2249,15 +2262,10 @@ def _check_redaction_source(
                 fitz.PDF_ANNOT_POLY_LINE,
                 fitz.PDF_ANNOT_INK,
             }
+            form_pages = set()
             for page in document:
-                if (
-                    target_pages
-                    and page.number + 1 in target_pages
-                    and page.get_xobjects()
-                ):
-                    raise _redaction_error(
-                        "objets de formulaire XObject dans une page source à biffer."
-                    )
+                if page.get_xobjects():
+                    form_pages.add(page.number)
                 if any(annot.type[0] not in supported for annot in page.annots() or ()):
                     raise _redaction_error("type d’annotation non qualifié.")
                 content_streams.update(page.get_contents())
@@ -2277,6 +2285,7 @@ def _check_redaction_source(
                         raise _redaction_error(
                             "contenu alternatif ou calque non qualifié."
                         )
+            return form_pages
     except HTTPException:
         raise
     except (RuntimeError, ValueError) as error:
@@ -2299,7 +2308,10 @@ def _redaction_rect(page: fitz.Page, edit: RedactionEdit | StampEdit) -> fitz.Re
 
 
 def _apply_secure_redactions(
-    source: bytes, zones: dict[int, list[RedactionEdit]]
+    source: bytes,
+    zones: dict[int, list[RedactionEdit]],
+    form_pages: set[int],
+    export_warnings: list[ExportWarning | RasterizedRedactionWarning] | None = None,
 ) -> bytes:
     """Last content mutation: remove text, intersecting vectors and image pixels.
 
@@ -2314,6 +2326,32 @@ def _apply_secure_redactions(
             image_uses: dict[int, int] = {}
             replaced_images: set[int] = set()
             verified_zones: dict[int, list[fitz.Rect]] = {}
+            raster_pages = related_raster_pages(document, form_pages)
+            original_streams = set()
+            raster_digests: dict[int, bytes] = {}
+            total_pixels = 0
+            for index in sorted(raster_pages):
+                page = document[index]
+                pixels = math.ceil(page.rect.width * DPI / 72) * math.ceil(
+                    page.rect.height * DPI / 72
+                )
+                total_pixels += pixels
+                if pixels > MAX_PAGE_PIXELS or total_pixels > MAX_TOTAL_PIXELS:
+                    raise _redaction_error(
+                        "pages XObject trop volumineuses à reconstruire. Exportez un ensemble de pages plus petit."
+                    )
+                original_streams.update(
+                    stream_digest(document, xref) for xref in page.get_contents()
+                )
+                original_streams.update(
+                    stream_digest(document, item[0]) for item in page.get_xobjects()
+                )
+                original_streams.update(
+                    stream_digest(document, xref)
+                    for image_info in page.get_images(full=True)
+                    for xref in image_info[:2]
+                    if xref
+                )
             for page in document:
                 for image in page.get_image_info(xrefs=True):
                     xref = image["xref"]
@@ -2329,7 +2367,9 @@ def _apply_secure_redactions(
                 if resources[0] == "xref":
                     resource_xref = int(resources[1].split()[0])
                     resources = ("dict", document.xref_object(resource_xref))
-                if re.search(r"/(?:Pattern|Shading)\b", resources[1]):
+                if index not in raster_pages and re.search(
+                    r"/(?:Pattern|Shading)\b", resources[1]
+                ):
                     raise _redaction_error("motifs ou ombrages sur une page à biffer.")
                 # Remove the annotation object and its popup, including any contents
                 # or appearance stream associated with a touched annotation.
@@ -2339,6 +2379,9 @@ def _apply_secure_redactions(
                 for link in page.get_links():
                     if any(link["from"].intersects(rect) for rect in rects):
                         page.delete_link(link)
+                if index in raster_pages:
+                    page.set_rotation(rotation)
+                    continue
                 masked_images = {
                     item[0]
                     for item in page.get_images(full=True)
@@ -2365,6 +2408,10 @@ def _apply_secure_redactions(
                 ):
                     raise _redaction_error("les zones n’ont pas été appliquées.")
                 page.set_rotation(rotation)
+            for index in sorted(raster_pages):
+                raster_digests[index] = rasterize_page(
+                    document, index, verified_zones.get(index, [])
+                )
             for page in document:
                 page.clean_contents(sanitize=True)
                 if replaced_images.intersection(
@@ -2378,6 +2425,27 @@ def _apply_secure_redactions(
         with fitz.open(stream=output, filetype="pdf") as verified:
             if verified.is_repaired or verified.page_count != page_count:
                 raise _redaction_error("le PDF réécrit ne peut pas être vérifié.")
+            if original_streams:
+                for xref in range(1, verified.xref_length()):
+                    if (
+                        verified.xref_is_stream(xref)
+                        and stream_digest(verified, xref) in original_streams
+                    ):
+                        raise _redaction_error(
+                            "un flux XObject ou une ressource d’origine reste accessible."
+                        )
+            for index in raster_pages:
+                page = verified[index]
+                images = page.get_images()
+                if page.get_xobjects() or len(images) != 1 or page.get_texttrace():
+                    raise _redaction_error(
+                        f"ressources de la page reconstruite {index + 1} non vérifiables."
+                    )
+                pixmap = fitz.Pixmap(verified, images[0][0])
+                if hashlib.sha256(pixmap.samples_mv).digest() != raster_digests[index]:
+                    raise _redaction_error(
+                        f"pixels de la page reconstruite {index + 1} non vérifiables."
+                    )
             for index, rects in verified_zones.items():
                 page = verified[index]
                 page.set_rotation(0)
@@ -2392,19 +2460,24 @@ def _apply_secure_redactions(
                             raise _redaction_error(
                                 f"du texte subsiste dans une zone de la page {index + 1}."
                             )
+        if export_warnings is not None:
+            export_warnings.extend(
+                RasterizedRedactionWarning(page=index + 1)
+                for index in sorted(raster_pages)
+            )
         return output
     except HTTPException:
         raise
     except (RuntimeError, ValueError) as error:
         raise _redaction_error(
-            "le moteur ne peut pas garantir cette opération."
+            "le moteur ne peut pas garantir cette opération. Isolez les pages concernées et réessayez."
         ) from error
 
 
 def export_organized_pdf(
     sources: dict[str, bytes],
     plan: OrganizeExportPlan,
-    export_warnings: list[ExportWarning] | None = None,
+    export_warnings: list[ExportWarning | RasterizedRedactionWarning] | None = None,
     image_binaries: dict[str, bytes] | None = None,
 ) -> bytes:
     if not plan.pages:
@@ -2431,15 +2504,12 @@ def export_organized_pdf(
                 raise HTTPException(
                     status_code=422, detail="PDF source du tampon illisible."
                 ) from error
+    source_forms: dict[str, set[int]] = {}
     if plan.redactions:
-        for source_id, source in sources.items():
-            target_pages = {
-                edit.page
-                for edit in plan.redactions
-                if edit.source_document_id == source_id
-                or (edit.source_document_id is None and len(sources) == 1)
-            }
-            _check_redaction_source(source, target_pages)
+        source_forms = {
+            source_id: _check_redaction_source(source)
+            for source_id, source in sources.items()
+        }
         if plan.form_values or plan.form_locks:
             raise _redaction_error("formulaires ajoutés non qualifiés.")
 
@@ -2467,6 +2537,19 @@ def export_organized_pdf(
             edit
         )
     redactions_by_output_page: dict[int, list[RedactionEdit]] = {}
+    affected_source_forms = {
+        (source_id, page_index)
+        for (source_id, page_index), redactions in redactions_by_source_page.items()
+        if page_index in source_forms[source_id]
+        and intersects_form(
+            readers[source_id].pages[page_index],
+            [
+                fitz.Rect(edit.rect.x0, edit.rect.y0, edit.rect.x1, edit.rect.y1)
+                for edit in redactions
+            ],
+        )
+    }
+    affected_output_forms: set[int] = set()
 
     writer = PdfWriter()
     preserve_acroform = _can_preserve_acroform(plan, readers)
@@ -2673,6 +2756,11 @@ def export_organized_pdf(
         )
         if page_redactions:
             redactions_by_output_page[output_page_index] = page_redactions
+            if (
+                source_document_id,
+                page_plan.source_page_index,
+            ) in affected_source_forms:
+                affected_output_forms.add(output_page_index)
 
         if page_plan.source_page_index >= len(reader.pages):
             raise HTTPException(
@@ -2750,7 +2838,9 @@ def export_organized_pdf(
         font_resources=font_resources,
         stamp_edits_by_output_page=stamps_by_output_page,
     )
-    composed = _apply_secure_redactions(composed, redactions_by_output_page)
+    composed = _apply_secure_redactions(
+        composed, redactions_by_output_page, affected_output_forms, export_warnings
+    )
     return finalize_export(composed, plan.export_options)
 
 
@@ -2862,11 +2952,31 @@ async def extract_pdf_annotations(
         with fitz.open(stream=source, filetype="pdf") as document:
             annotations: list[PdfAnnotationResponse] = []
             for page_index, page in enumerate(document):
+                page.set_rotation(0)
                 annotation = page.first_annot
                 inverse = ~page.transformation_matrix
                 while annotation:
                     info = annotation.info or {}
                     rect = annotation.rect * inverse
+                    vertices = (
+                        annotation.vertices
+                        if annotation.type[0] == fitz.PDF_ANNOT_HIGHLIGHT
+                        else None
+                    )
+                    rects = None
+                    if vertices and len(vertices) % 4 == 0:
+                        rects = []
+                        for start in range(0, len(vertices), 4):
+                            points = [
+                                fitz.Point(point) * inverse
+                                for point in vertices[start : start + 4]
+                            ]
+                            xs, ys = zip(*points, strict=True)
+                            rects.append(
+                                PdfEditRect(
+                                    x0=min(xs), y0=min(ys), x1=max(xs), y1=max(ys)
+                                )
+                            )
                     annotations.append(
                         PdfAnnotationResponse(
                             id=f"pdf-annot-{page_index}-{annotation.xref}",
@@ -2876,6 +2986,7 @@ async def extract_pdf_annotations(
                                 x0=rect.x0, y0=rect.y0, x1=rect.x1, y1=rect.y1
                             ),
                             content=str(info.get("content") or ""),
+                            rects=rects,
                             appearanceHidden=bool(
                                 annotation.flags
                                 & (fitz.PDF_ANNOT_IS_HIDDEN | fitz.PDF_ANNOT_IS_NO_VIEW)
@@ -3093,7 +3204,7 @@ async def export_organize_pdf(
         raise HTTPException(status_code=400, detail="Un fichier PDF source est vide.")
 
     output_name = build_output_name(source_files[0].filename, organize_plan.output_name)
-    export_warnings: list[ExportWarning] = []
+    export_warnings: list[ExportWarning | RasterizedRedactionWarning] = []
     result = export_organized_pdf(
         sources, organize_plan, export_warnings, image_binaries
     )
